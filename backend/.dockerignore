@@ -1,0 +1,30 @@
+# Python virtual environments
+venv/
+.venv/
+env/
+
+# Byte-compiled / optimised files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Local environment files (secrets are passed via docker-compose env_file)
+.env
+.env.*
+
+# Test artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

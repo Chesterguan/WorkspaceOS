@@ -1,0 +1,41 @@
+import uuid
+from datetime import datetime
+from typing import List, Optional
+
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
+
+
+class MemoryEntry(Base):
+    __tablename__ = "memory_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Entry types: narrative_fact, commit_summary, release_note, user_annotation, faq_answer
+    entry_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Source reference — e.g. commit SHA, release tag, or "manual"
+    source_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # 1536-dimensional embedding from text-embedding-3-small
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1536), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    project: Mapped["Project"] = relationship(  # noqa: F821
+        "Project", back_populates="memory_entries"
+    )
