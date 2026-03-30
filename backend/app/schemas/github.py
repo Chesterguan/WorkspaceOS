@@ -21,17 +21,31 @@ class GitHubRepoResponse(BaseModel):
 class RepoImportItem(BaseModel):
     """A single repo selected by the user for import."""
 
-    full_name: str = Field(..., description="owner/repo format")
+    full_name: str = Field(
+        ...,
+        description="owner/repo format",
+        examples=["octocat/Hello-World"],
+    )
     # name is optional; if omitted it is derived from full_name (the part after '/')
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = None
-    default_branch: str = Field(default="main", max_length=100)
+    default_branch: str = Field(default="main", max_length=100, examples=["main"])
 
 
 class RepoImportRequest(BaseModel):
-    """Request body for POST /github/repos/import."""
+    """
+    Request body for POST /github/repos/import.
 
-    repos: List[RepoImportItem] = Field(..., min_length=1)
+    Example::
+
+        {"repos": [{"full_name": "owner/repo", "default_branch": "main"}]}
+    """
+
+    repos: List[RepoImportItem] = Field(
+        ...,
+        min_length=1,
+        examples=[[{"full_name": "octocat/Hello-World", "default_branch": "main"}]],
+    )
     # user_id is optional; if omitted the router falls back to the first user in the DB
     user_id: Optional[str] = Field(default=None, description="UUID of the owning user")
 

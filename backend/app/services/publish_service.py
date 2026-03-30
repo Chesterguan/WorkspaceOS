@@ -223,14 +223,22 @@ async def publish_github_release(
             response_data = response.json()
 
             if response.status_code not in (200, 201):
+                if response.status_code in (403, 404):
+                    error_msg = (
+                        "GitHub token lacks permission to create releases. "
+                        "Generate a new token with 'repo' scope at "
+                        "https://github.com/settings/tokens"
+                    )
+                else:
+                    error_msg = (
+                        f"GitHub API error {response.status_code}: "
+                        f"{response_data.get('message', 'Unknown error')}"
+                    )
                 return {
                     "success": False,
                     "post_url": None,
                     "post_record_id": None,
-                    "error": (
-                        f"GitHub API error {response.status_code}: "
-                        f"{response_data.get('message', 'Unknown error')}"
-                    ),
+                    "error": error_msg,
                     "details": response_data,
                 }
 

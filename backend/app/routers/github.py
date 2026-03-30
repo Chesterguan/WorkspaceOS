@@ -63,6 +63,8 @@ async def import_repos(
     Create projects from a list of selected GitHub repos.
     Derives the slug from the repo name. Skips repos whose slug already exists
     for this user. Returns lists of created and skipped slugs.
+
+    Body: {"repos": [{"full_name": "owner/repo", "default_branch": "main"}]}
     """
     # Resolve user_id: parse the provided value or fall back to the first user in the DB
     if body.user_id is not None:

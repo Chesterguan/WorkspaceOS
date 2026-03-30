@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -27,7 +28,7 @@ async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
 @router.post("/scan", response_model=WorkspaceSnapshotResponse, status_code=status.HTTP_201_CREATED)
 async def scan_workspace(
     project_id: uuid.UUID,
-    body: WorkspaceScanRequest,
+    body: Optional[WorkspaceScanRequest] = None,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
 ) -> WorkspaceSnapshotResponse:
@@ -36,10 +37,11 @@ async def scan_workspace(
 
     Uses `local_path` from the request body if provided; otherwise falls back
     to the path stored on the project record.  Raises 422 if neither is set.
+    Body is optional — sending no body or an empty body is allowed.
     """
     project = await _require_project(project_id, db)
 
-    local_path = body.local_path or project.local_path
+    local_path = (body.local_path if body else None) or project.local_path
     if not local_path:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
