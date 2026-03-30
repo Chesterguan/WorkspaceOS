@@ -34,6 +34,24 @@ _KEY_FILENAMES = [
     "CHANGELOG.md", "ARCHITECTURE.md", "CONTRIBUTING.md",
 ]
 
+# Media file extensions to discover for post attachments
+_MEDIA_EXTENSIONS = {
+    # Images
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico",
+    # Videos
+    ".mp4", ".webm", ".mov", ".avi", ".mkv",
+    # Animated
+    ".gif",
+    # Diagrams (source)
+    ".mmd", ".mermaid", ".puml", ".plantuml",
+}
+
+# Directories likely to contain media assets
+_MEDIA_DIRS = {
+    "assets", "images", "img", "media", "screenshots", "docs",
+    "static", "public", "resources", "figures", "demo", "examples",
+}
+
 # Directories to skip entirely when building the file tree
 _SKIP_DIRS = {
     ".git", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache",
@@ -118,6 +136,87 @@ def _recent_changed_files(root: str) -> str:
     return output
 
 
+def _discover_media_assets(root: str) -> str:
+    """
+    Scan for media files (images, videos, GIFs, diagrams) that could be
+    attached to social posts. Searches the root + known media directories.
+
+    Returns a formatted string listing found assets with type, path, and size.
+    """
+    assets: List[Dict[str, str]] = []
+
+    def _scan_dir(dirpath: str, rel_prefix: str = "") -> None:
+        try:
+            entries = os.scandir(dirpath)
+        except (PermissionError, FileNotFoundError):
+            return
+        for entry in entries:
+            if entry.is_file(follow_symlinks=False):
+                ext = os.path.splitext(entry.name)[1].lower()
+                if ext in _MEDIA_EXTENSIONS:
+                    try:
+                        size = entry.stat().st_size
+                    except OSError:
+                        size = 0
+                    rel_path = os.path.join(rel_prefix, entry.name) if rel_prefix else entry.name
+                    # Categorize
+                    if ext in (".mp4", ".webm", ".mov", ".avi", ".mkv"):
+                        media_type = "video"
+                    elif ext == ".gif":
+                        media_type = "gif"
+                    elif ext in (".svg", ".mmd", ".mermaid", ".puml", ".plantuml"):
+                        media_type = "diagram"
+                    else:
+                        media_type = "image"
+                    size_str = f"{size / 1024:.0f}KB" if size < 1024 * 1024 else f"{size / (1024*1024):.1f}MB"
+                    assets.append({
+                        "type": media_type,
+                        "path": rel_path,
+                        "size": size_str,
+                        "name": entry.name,
+                    })
+            elif entry.is_dir(follow_symlinks=False) and entry.name in _MEDIA_DIRS:
+                _scan_dir(entry.path, os.path.join(rel_prefix, entry.name) if rel_prefix else entry.name)
+
+    # Scan root level files
+    _scan_dir(root)
+
+    # Also scan common subdirectories that might have media
+    for subdir in _MEDIA_DIRS:
+        sub_path = os.path.join(root, subdir)
+        if os.path.isdir(sub_path):
+            _scan_dir(sub_path, subdir)
+
+    # Also check docs/ subdirectories recursively (up to 2 levels)
+    for docs_dir in ("docs", "doc", "documentation"):
+        docs_path = os.path.join(root, docs_dir)
+        if os.path.isdir(docs_path):
+            for sub_entry in os.scandir(docs_path):
+                if sub_entry.is_dir(follow_symlinks=False):
+                    _scan_dir(sub_entry.path, os.path.join(docs_dir, sub_entry.name))
+
+    if not assets:
+        return ""
+
+    # Deduplicate by path
+    seen = set()
+    unique = []
+    for a in assets:
+        if a["path"] not in seen:
+            seen.add(a["path"])
+            unique.append(a)
+
+    # Sort: videos first, then gifs, then images
+    type_order = {"video": 0, "gif": 1, "diagram": 2, "image": 3}
+    unique.sort(key=lambda a: (type_order.get(a["type"], 9), a["path"]))
+
+    lines = [f"Found {len(unique)} media assets:"]
+    for a in unique:
+        lines.append(f"  [{a['type']:7s}] {a['path']} ({a['size']})")
+
+    return "\n".join(lines)
+
+
 def scan_local_workspace(local_path: str) -> Dict[str, str]:
     """
     Synchronous function that collects workspace context from the filesystem.
@@ -165,6 +264,9 @@ def scan_local_workspace(local_path: str) -> Dict[str, str]:
     # Recently changed files
     context["recently_changed"] = _recent_changed_files(local_path)
 
+    # Media assets (images, videos, GIFs, diagrams)
+    context["media_assets"] = _discover_media_assets(local_path)
+
     return context
 
 
@@ -199,6 +301,8 @@ async def perform_scan(
         summary_input_parts.append(f"## Unpushed Commits\n{raw_data['git_unpushed']}")
     if raw_data.get("key_files"):
         summary_input_parts.append(f"## Key Files\n{raw_data['key_files']}")
+    if raw_data.get("media_assets"):
+        summary_input_parts.append(f"## Available Media Assets\n{raw_data['media_assets']}")
     summary_input = "\n\n".join(summary_input_parts)
 
     # Summarise with the LOCAL model — workspace code never reaches cloud AI
@@ -213,7 +317,10 @@ async def perform_scan(
                 "2. Current git state (branch, uncommitted changes, unpushed work)\n"
                 "3. Recent development activity (commit messages)\n"
                 "4. Tech stack inferred from config files\n"
-                "5. Any notable or in-progress work\n\n"
+                "5. Any notable or in-progress work\n"
+                "6. Available media assets (images, videos, GIFs, diagrams) that could "
+                "be used in social media posts or documentation — note their paths and "
+                "what they likely depict based on filenames and location\n\n"
                 "Be specific. Cite actual file names and commit messages. "
                 "Do NOT include API keys, tokens, passwords, or credentials."
             ),

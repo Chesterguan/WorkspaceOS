@@ -39,3 +39,5 @@ class WorkspaceContextResponse(BaseModel):
     file_tree: Optional[str] = None
     # Key config file contents
     key_files: Optional[str] = None
+    # Discovered media assets (images, videos, GIFs, diagrams)
+    media_assets: Optional[str] = None

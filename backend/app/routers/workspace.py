@@ -83,4 +83,5 @@ async def get_workspace_context(
         recent_local_commits=raw.get("git_unpushed"),
         file_tree=raw.get("file_tree"),
         key_files=raw.get("key_files"),
+        media_assets=raw.get("media_assets"),
     )
