@@ -68,10 +68,17 @@ Stop if:
 - High-risk operation needs human approval (schema changes, public API changes, deployment)
 
 ## Current Priorities
-1. Stabilize and test all existing features
-2. LinkedIn OAuth integration
-3. UI/UX polish
-4. Production readiness (proper auth, env management)
+1. UI/UX polish
+2. Production readiness (proper auth, env management)
+3. Auto-sync on schedule
+4. Dashboard analytics
+
+## Completed
+- All features built and tested (50/50 API endpoints pass)
+- LinkedIn OAuth integration
+- GitHub Releases auto-publish
+- Agent harness system
+- Git repo initialized (4 commits)
 
 ## Known Constraints
 - Docker runs on OrbStack (macOS), DNS via 0.250.250.200
@@ -79,5 +86,8 @@ Stop if:
 - Demo projects (ProjectScribe, FastCache) have no local directories
 - Medium API closed Jan 2025 — manual only
 - Xiaohongshu has no public API — manual only
+- Twitter/X API requires paid Basic tier ($100/mo) — manual only
+- LinkedIn token stored in-memory, lost on backend restart (re-auth needed)
+- GitHub token needs `repo` write scope for release publishing
 
-Last updated: 2026-03-27
+Last updated: 2026-03-29
