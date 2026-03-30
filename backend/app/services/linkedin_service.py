@@ -44,6 +44,7 @@ LINKEDIN_SCOPES = "w_member_social"
 # ---------------------------------------------------------------------------
 
 _access_token: Optional[str] = None
+_member_id: Optional[str] = None
 
 
 def get_stored_token() -> Optional[str]:
@@ -58,10 +59,22 @@ def store_token(token: str) -> None:
     logger.info("LinkedIn access token stored in memory.")
 
 
+def get_stored_member_id() -> Optional[str]:
+    """Return the cached LinkedIn member ID, if any."""
+    return _member_id
+
+
+def store_member_id(member_id: str) -> None:
+    """Cache the LinkedIn member ID."""
+    global _member_id
+    _member_id = member_id
+
+
 def clear_token() -> None:
-    """Clear the in-memory token (disconnect)."""
-    global _access_token
+    """Clear the in-memory token and member ID (disconnect)."""
+    global _access_token, _member_id
     _access_token = None
+    _member_id = None
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +201,7 @@ async def get_profile(access_token: str) -> dict:
                 # userinfo returns 'sub' as the member ID
                 if data.get("sub"):
                     data["id"] = data["sub"]
+                    store_member_id(data["sub"])
                 return data
         except Exception:
             pass
@@ -202,7 +216,10 @@ async def get_profile(access_token: str) -> dict:
                 },
             )
             if resp.status_code == 200:
-                return resp.json()
+                data = resp.json()
+                if data.get("id"):
+                    store_member_id(data["id"])
+                return data
         except Exception:
             pass
 
@@ -212,7 +229,10 @@ async def get_profile(access_token: str) -> dict:
             headers={"Authorization": f"Bearer {access_token}"},
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if data.get("id"):
+            store_member_id(data["id"])
+        return data
 
 
 # ---------------------------------------------------------------------------

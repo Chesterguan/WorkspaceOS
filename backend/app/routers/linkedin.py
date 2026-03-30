@@ -141,14 +141,10 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> dict:
     if not token:
         return {"connected": False}
 
-    try:
-        profile = await linkedin_service.get_profile(token)
-        name = profile.get("name") or profile.get("given_name", "")
-        return {"connected": True, "name": name}
-    except Exception as exc:
-        logger.warning("LinkedIn status check failed (token may be expired): %s", exc)
-        # Token exists but is no longer valid — treat as disconnected
-        return {"connected": False}
+    # We have a token — report connected. Profile lookup requires extra scopes
+    # (openid/profile) that may not be approved, so we skip it and just confirm
+    # the token exists. If it's expired, the publish call will surface the error.
+    return {"connected": True}
 
 
 # ---------------------------------------------------------------------------
