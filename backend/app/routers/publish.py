@@ -18,6 +18,7 @@ from app.models.draft import Draft
 from app.models.project import Project
 from app.schemas.publish import (
     PublishGitHubReleaseRequest,
+    PublishLinkedInRequest,
     PublishResponse,
     PublishTweetRequest,
 )
@@ -129,6 +130,44 @@ async def publish_twitter(
 
     return PublishResponse(
         platform="twitter",
+        success=result["success"],
+        post_url=result["post_url"],
+        post_record_id=result["post_record_id"],
+        error=result["error"],
+        details=result["details"],
+    )
+
+
+@router.post(
+    "/linkedin",
+    response_model=PublishResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Publish draft as a LinkedIn post",
+)
+async def publish_linkedin(
+    project_id: uuid.UUID,
+    draft_id: uuid.UUID,
+    body: PublishLinkedInRequest,  # noqa: ARG001 — no fields yet, kept for API consistency
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> PublishResponse:
+    """
+    Post the draft to LinkedIn.
+
+    Requires a valid OAuth access token stored by completing the LinkedIn
+    OAuth flow via GET /linkedin/auth. The draft status is updated to
+    'published' and a PostRecord is created on success.
+    """
+    await _require_project_and_draft(project_id, draft_id, db)
+
+    result = await publish_service.publish_linkedin(
+        project_id=project_id,
+        draft_id=draft_id,
+        db=db,
+    )
+
+    return PublishResponse(
+        platform="linkedin",
         success=result["success"],
         post_url=result["post_url"],
         post_record_id=result["post_record_id"],

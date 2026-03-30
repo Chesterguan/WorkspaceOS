@@ -19,6 +19,7 @@ from app.config import settings
 from app.models.draft import Draft
 from app.models.posting import PostRecord
 from app.models.project import Project
+from app.services import linkedin_service
 
 logger = logging.getLogger(__name__)
 
@@ -465,4 +466,157 @@ async def publish_tweet(
             "tweet_count": len(posted),
             "tweets": posted,
         },
+    }
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn publishing
+# ---------------------------------------------------------------------------
+
+async def publish_linkedin(
+    project_id: uuid.UUID,
+    draft_id: uuid.UUID,
+    db: AsyncSession,
+) -> dict:
+    """
+    Publish a draft as a LinkedIn post.
+
+    Requires a valid access token stored via the OAuth flow
+    (GET /linkedin/auth → /linkedin/callback).
+
+    Returns a dict with keys: success, post_url, post_record_id, error, details.
+    Never raises.
+    """
+    access_token = linkedin_service.get_stored_token()
+    if not access_token:
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": (
+                "LinkedIn is not connected. "
+                "Visit /linkedin/auth to authorize your account."
+            ),
+            "details": None,
+        }
+
+    draft = await _load_draft(draft_id, db)
+    if draft is None or draft.project_id != project_id:
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": f"Draft {draft_id} not found.",
+            "details": None,
+        }
+
+    # Fetch the LinkedIn profile to get the author URN
+    try:
+        profile = await linkedin_service.get_profile(access_token)
+    except httpx.HTTPStatusError as exc:
+        logger.exception(
+            "LinkedIn profile fetch failed for project=%s draft=%s: %s",
+            project_id, draft_id, exc,
+        )
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": f"LinkedIn profile fetch failed ({exc.response.status_code}). Token may have expired.",
+            "details": None,
+        }
+    except httpx.RequestError as exc:
+        logger.exception(
+            "Network error fetching LinkedIn profile for project=%s draft=%s",
+            project_id, draft_id,
+        )
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": f"Network error contacting LinkedIn: {exc}",
+            "details": None,
+        }
+
+    person_id = profile.get("sub")
+    if not person_id:
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": "LinkedIn profile response missing 'sub' field (person ID).",
+            "details": profile,
+        }
+
+    author_urn = f"urn:li:person:{person_id}"
+
+    # Post to LinkedIn
+    try:
+        post_data = await linkedin_service.publish_post(
+            access_token=access_token,
+            author_urn=author_urn,
+            text=draft.content,
+        )
+    except httpx.HTTPStatusError as exc:
+        body: dict = {}
+        try:
+            body = exc.response.json()
+        except Exception:
+            pass
+        logger.exception(
+            "LinkedIn API error publishing draft=%s: %s", draft_id, exc
+        )
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": (
+                f"LinkedIn API error {exc.response.status_code}: "
+                f"{body.get('message') or body.get('serviceErrorCode') or 'Unknown error'}"
+            ),
+            "details": body,
+        }
+    except httpx.RequestError as exc:
+        logger.exception(
+            "Network error publishing LinkedIn post for draft=%s", draft_id
+        )
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": f"Network error contacting LinkedIn: {exc}",
+            "details": None,
+        }
+
+    # LinkedIn does not return a direct post URL from the REST Posts API;
+    # we store the post URN and link to the user's activity feed as a fallback.
+    post_urn = post_data.get("post_urn")
+    post_url: Optional[str] = None
+    if post_urn:
+        # Encode the URN for use in the URL (colons must be percent-encoded)
+        encoded_urn = post_urn.replace(":", "%3A")
+        post_url = f"https://www.linkedin.com/feed/update/{encoded_urn}/"
+
+    record = await _create_post_record(
+        draft_id=draft_id,
+        project_id=project_id,
+        platform="linkedin",
+        post_url=post_url,
+        db=db,
+    )
+
+    draft.status = "published"
+    await db.flush()
+
+    logger.info(
+        "LinkedIn post published: project=%s draft=%s urn=%s",
+        project_id, draft_id, post_urn,
+    )
+
+    return {
+        "success": True,
+        "post_url": post_url,
+        "post_record_id": record.id,
+        "error": None,
+        "details": {"post_urn": post_urn, "author_urn": author_urn},
     }

@@ -20,6 +20,11 @@ class PublishTweetRequest(BaseModel):
     pass
 
 
+class PublishLinkedInRequest(BaseModel):
+    # No extra params needed — content is pulled from the draft
+    pass
+
+
 class PublishResponse(BaseModel):
     platform: str
     success: bool

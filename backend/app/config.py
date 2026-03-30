@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     twitter_access_token: str = ""   # User access token
     twitter_access_secret: str = ""  # User access token secret
 
+    # LinkedIn OAuth 2.0
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+    linkedin_redirect_uri: str = "http://localhost:8989/api/v1/linkedin/callback"
+
     # Sync limits
     max_commits_per_sync: int = 50
 
