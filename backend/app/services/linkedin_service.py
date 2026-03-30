@@ -37,7 +37,7 @@ LINKEDIN_POSTS_URL = "https://api.linkedin.com/rest/posts"
 
 # Only request the scope that is approved on the LinkedIn app.
 # w_member_social allows creating posts. openid/profile require app review.
-LINKEDIN_SCOPES = "profile w_member_social"
+LINKEDIN_SCOPES = "w_member_social"
 
 # ---------------------------------------------------------------------------
 # In-memory token cache (fallback when no DB session is provided)
@@ -167,24 +167,52 @@ async def exchange_code(code: str, db=None) -> dict:
 
 async def get_profile(access_token: str) -> dict:
     """
-    Fetch the authenticated member's LinkedIn profile via /v2/me.
+    Fetch the authenticated member's LinkedIn profile.
 
-    Returns a dict that includes an 'id' field. Use that to build the
-    author URN: urn:li:person:{id}.
+    Tries multiple endpoints since scope availability varies:
+    1. /v2/userinfo (works with openid)
+    2. /v2/me (works with profile or r_liteprofile)
+    3. /v2/me without version header (legacy, sometimes works with w_member_social)
 
-    /v2/me works with w_member_social scope — no openid approval needed.
+    Returns a dict with 'id' or 'sub' field for building the author URN.
     """
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(
+        # Try 1: /v2/userinfo
+        try:
+            resp = await client.get(
+                "https://api.linkedin.com/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                # userinfo returns 'sub' as the member ID
+                if data.get("sub"):
+                    data["id"] = data["sub"]
+                return data
+        except Exception:
+            pass
+
+        # Try 2: /v2/me with version header
+        try:
+            resp = await client.get(
+                LINKEDIN_ME_URL,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "LinkedIn-Version": "202401",
+                },
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+
+        # Try 3: /v2/me without version header (legacy)
+        resp = await client.get(
             LINKEDIN_ME_URL,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                # LinkedIn REST API version header
-                "LinkedIn-Version": "202401",
-            },
+            headers={"Authorization": f"Bearer {access_token}"},
         )
-        response.raise_for_status()
-        return response.json()
+        resp.raise_for_status()
+        return resp.json()
 
 
 # ---------------------------------------------------------------------------
