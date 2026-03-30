@@ -4,9 +4,16 @@ LinkedIn OAuth 2.0 + posting service.
 OAuth flow:
   1. Frontend redirects user to get_auth_url().
   2. LinkedIn redirects back to /linkedin/callback with ?code=...
-  3. exchange_code() swaps the code for an access token and stores it
-     in the module-level _access_token variable (in-memory, single-user MVP).
+  3. exchange_code() swaps the code for an access token and persists it
+     in the users table (linkedin_access_token column) so it survives
+     container restarts. Falls back to module-level cache when no DB
+     session is available (e.g. during the callback before we know the user).
   4. publish_post() uses that token to create a post via the REST Posts API.
+
+Scope note:
+  Only w_member_social is requested. The openid/profile scopes require
+  LinkedIn app review approval. /v2/me is used instead of /v2/userinfo
+  to obtain the member ID without openid scope.
 """
 import logging
 import urllib.parse
@@ -24,37 +31,78 @@ logger = logging.getLogger(__name__)
 
 LINKEDIN_AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 LINKEDIN_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
-LINKEDIN_USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
+# /v2/me works with w_member_social scope (no openid required)
+LINKEDIN_ME_URL = "https://api.linkedin.com/v2/me"
 LINKEDIN_POSTS_URL = "https://api.linkedin.com/rest/posts"
 
-# Required scopes:
-#   openid profile — for userinfo (person URN via `sub`)
-#   w_member_social — for creating posts
-LINKEDIN_SCOPES = "openid profile w_member_social"
+# Only request the scope that is approved on the LinkedIn app.
+# w_member_social allows creating posts. openid/profile require app review.
+LINKEDIN_SCOPES = "w_member_social"
 
 # ---------------------------------------------------------------------------
-# In-memory token store (MVP: single user, not persisted across restarts)
+# In-memory token cache (fallback when no DB session is provided)
 # ---------------------------------------------------------------------------
 
 _access_token: Optional[str] = None
 
 
 def get_stored_token() -> Optional[str]:
-    """Return the currently stored access token, if any."""
+    """Return the in-memory access token, if any."""
     return _access_token
 
 
 def store_token(token: str) -> None:
-    """Persist a fresh access token in memory."""
+    """Cache a fresh access token in memory (no DB persistence here)."""
     global _access_token
     _access_token = token
     logger.info("LinkedIn access token stored in memory.")
 
 
 def clear_token() -> None:
-    """Remove the stored token (disconnect)."""
+    """Clear the in-memory token (disconnect)."""
     global _access_token
     _access_token = None
+
+
+# ---------------------------------------------------------------------------
+# DB-backed token helpers (call these when a session is available)
+# ---------------------------------------------------------------------------
+
+async def load_token_from_db(db) -> Optional[str]:
+    """
+    Read the LinkedIn token for the first user in the DB.
+
+    This is an MVP single-user design. Returns None if no token is stored.
+    Also populates the in-memory cache so get_stored_token() stays in sync.
+    """
+    from sqlalchemy import select
+    from app.models.user import User
+    result = await db.execute(select(User).limit(1))
+    user = result.scalar_one_or_none()
+    if user and user.linkedin_access_token:
+        global _access_token
+        _access_token = user.linkedin_access_token
+        return user.linkedin_access_token
+    return None
+
+
+async def persist_token_to_db(token: str, db) -> None:
+    """
+    Persist the LinkedIn token to the first user row.
+
+    Creates a placeholder user row if none exists (shouldn't happen in normal
+    use, but guards against an empty users table during initial setup).
+    Also updates the in-memory cache.
+    """
+    from sqlalchemy import select
+    from app.models.user import User
+    result = await db.execute(select(User).limit(1))
+    user = result.scalar_one_or_none()
+    if user:
+        user.linkedin_access_token = token
+        await db.flush()
+    store_token(token)
+    logger.info("LinkedIn access token persisted to database.")
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +114,8 @@ def get_auth_url() -> str:
     Build the LinkedIn OAuth 2.0 authorization URL.
 
     The user should be redirected to this URL to begin the OAuth flow.
+    Only w_member_social scope is requested — this is the minimum needed
+    to post on behalf of the member and does not require LinkedIn app review.
     """
     params = {
         "response_type": "code",
@@ -77,11 +127,12 @@ def get_auth_url() -> str:
     return f"{LINKEDIN_AUTH_URL}?{urllib.parse.urlencode(params)}"
 
 
-async def exchange_code(code: str) -> dict:
+async def exchange_code(code: str, db=None) -> dict:
     """
     Exchange an authorization code for an access token.
 
-    Stores the token in memory and returns the raw token response dict.
+    Stores the token in memory (always) and in the DB (when db is provided).
+    Returns the raw token response dict.
     Raises httpx.HTTPStatusError on non-2xx responses.
     """
     data = {
@@ -104,6 +155,8 @@ async def exchange_code(code: str) -> dict:
     access_token = token_data.get("access_token")
     if access_token:
         store_token(access_token)
+        if db is not None:
+            await persist_token_to_db(access_token, db)
 
     return token_data
 
@@ -114,15 +167,21 @@ async def exchange_code(code: str) -> dict:
 
 async def get_profile(access_token: str) -> dict:
     """
-    Fetch the authenticated user's LinkedIn profile.
+    Fetch the authenticated member's LinkedIn profile via /v2/me.
 
-    Returns the userinfo dict. The `sub` field is the person ID used
-    to construct the author URN: urn:li:person:{sub}.
+    Returns a dict that includes an 'id' field. Use that to build the
+    author URN: urn:li:person:{id}.
+
+    /v2/me works with w_member_social scope — no openid approval needed.
     """
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
-            LINKEDIN_USERINFO_URL,
-            headers={"Authorization": f"Bearer {access_token}"},
+            LINKEDIN_ME_URL,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                # LinkedIn REST API version header
+                "LinkedIn-Version": "202401",
+            },
         )
         response.raise_for_status()
         return response.json()

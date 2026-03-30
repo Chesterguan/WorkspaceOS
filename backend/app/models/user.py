@@ -20,6 +20,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     github_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # LinkedIn OAuth access token — persisted to survive container restarts.
+    # Written by linkedin_service after exchange_code(); read by publish_post().
+    linkedin_access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

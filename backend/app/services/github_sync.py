@@ -243,6 +243,7 @@ async def run_sync(project_id: uuid.UUID, db: AsyncSession) -> SyncRun:
     # immediately and extraction proceeds in the background.
     if sync_run.status == "completed":
         _schedule_extraction(sync_run.id)
+        _schedule_evolution_summary(sync_run.id)
 
     return sync_run
 
@@ -408,6 +409,32 @@ def _schedule_extraction(sync_run_id: uuid.UUID) -> None:
                 await extract_sync_themes(sync_run_id, task_db)
         except Exception:
             logger.exception("Background extraction task failed for sync_run=%s", sync_run_id)
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_run())
+    except RuntimeError:
+        # No running event loop (e.g. during testing) — skip silently
+        pass
+
+
+def _schedule_evolution_summary(sync_run_id: uuid.UUID) -> None:
+    """
+    Schedule generate_evolution_summary as a background asyncio task.
+
+    Opens its own DB session so it is fully decoupled from the request
+    lifecycle. Errors are logged but never propagate to the caller.
+    """
+    async def _run() -> None:
+        from app.services.ai_generation import generate_evolution_summary  # local import to avoid circular
+        from app.database import AsyncSessionLocal
+        try:
+            async with AsyncSessionLocal() as task_db:
+                await generate_evolution_summary(sync_run_id, task_db)
+        except Exception:
+            logger.exception(
+                "Background evolution summary task failed for sync_run=%s", sync_run_id
+            )
 
     try:
         loop = asyncio.get_running_loop()

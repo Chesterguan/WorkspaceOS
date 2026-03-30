@@ -29,8 +29,8 @@ class MemoryEntry(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # Source reference — e.g. commit SHA, release tag, or "manual"
     source_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    # 1536-dimensional embedding from text-embedding-3-small
-    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1536), nullable=True)
+    # 768-dimensional embedding (nomic-embed-text / Gemini text-embedding-004)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

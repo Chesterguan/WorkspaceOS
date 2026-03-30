@@ -42,10 +42,21 @@ _reviewer_client = None
 
 
 def _get_reviewer():
-    """OpenAI client for review/judging. Separate from the generator."""
+    """
+    Return the reviewer client for draft judging.
+
+    Prefers OpenAI (stronger reasoning) but falls back to the configured
+    cloud client (e.g. Gemini) when no OpenAI API key is present so the
+    pipeline still works in single-provider setups.
+    """
     global _reviewer_client
     if _reviewer_client is None:
-        _reviewer_client = OpenAIClient()
+        from app.config import settings
+        if settings.openai_api_key:
+            _reviewer_client = OpenAIClient()
+        else:
+            # Fall back to cloud client for review when OpenAI key is absent
+            _reviewer_client = get_cloud_client()
     return _reviewer_client
 
 
@@ -89,8 +100,10 @@ async def _privacy_scan(content: str) -> Tuple[bool, str]:
             return True, "Clean"
         return False, result
     except Exception as e:
-        logger.warning("Privacy scan failed, proceeding with caution: %s", e)
-        return True, "Scan unavailable"
+        # Fail-closed: treat an unavailable scanner as a flagged result so
+        # we never accidentally publish a draft that skipped the privacy check.
+        logger.warning("Privacy scan failed: %s", e)
+        return False, "Privacy scan unavailable — treating as flagged for safety"
 
 
 async def agentic_generate_draft(

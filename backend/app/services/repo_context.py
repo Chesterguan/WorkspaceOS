@@ -11,7 +11,8 @@ Privacy-aware:
     only the summary reaches cloud AI
 """
 import logging
-from typing import Dict, List, Optional
+import time
+from typing import Dict, List, Optional, Tuple
 
 import httpx
 
@@ -25,6 +26,26 @@ GITHUB_HEADERS = {
     "Accept": "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
 }
+
+# ---------------------------------------------------------------------------
+# In-process TTL cache for repo context (avoids redundant GitHub API calls)
+# ---------------------------------------------------------------------------
+
+_context_cache: Dict[str, Tuple[float, str]] = {}
+_CACHE_TTL = 600  # 10 minutes
+
+# ---------------------------------------------------------------------------
+# Reused HTTP client (avoid creating a new TCP connection on every call)
+# ---------------------------------------------------------------------------
+
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(timeout=15.0)
+    return _http_client
 
 # Files that reveal project architecture and purpose
 KEY_FILES = [
@@ -48,10 +69,9 @@ def _headers() -> Dict[str, str]:
 
 async def _fetch_json(url: str, params: Optional[Dict] = None) -> Optional[object]:
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, params=params or {}, headers=_headers())
-            if resp.status_code == 200:
-                return resp.json()
+        resp = await _get_http_client().get(url, params=params or {}, headers=_headers())
+        if resp.status_code == 200:
+            return resp.json()
     except Exception as e:
         logger.debug("GitHub API fetch failed for %s: %s", url, e)
     return None
@@ -60,10 +80,9 @@ async def _fetch_json(url: str, params: Optional[Dict] = None) -> Optional[objec
 async def _fetch_text(url: str) -> Optional[str]:
     try:
         headers = {**_headers(), "Accept": "application/vnd.github.raw+json"}
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                return resp.text
+        resp = await _get_http_client().get(url, headers=headers)
+        if resp.status_code == 200:
+            return resp.text
     except Exception as e:
         logger.debug("GitHub API raw fetch failed for %s: %s", url, e)
     return None
@@ -321,12 +340,20 @@ async def get_generation_context(
     is_private: bool = False,
 ) -> str:
     """
-    Main entry point. Deep-fetches repo context.
+    Main entry point. Deep-fetches repo context with a 10-minute TTL cache.
 
     Public repos: returns full raw context for cloud AI.
     Private repos: fetches everything, then LOCAL model produces a
     comprehensive summary — raw private data never leaves your machine.
     """
+    cache_key = f"{github_repo}:{is_private}"
+    now = time.time()
+    if cache_key in _context_cache:
+        cached_time, cached_result = _context_cache[cache_key]
+        if now - cached_time < _CACHE_TTL:
+            logger.debug("repo_context cache hit for %s", github_repo)
+            return cached_result
+
     raw_context = await fetch_repo_context(github_repo)
     formatted = format_context_block(raw_context)
 
@@ -350,7 +377,9 @@ async def get_generation_context(
                 "internal URLs, passwords, or sensitive credentials.",
                 f"Repository data:\n\n{formatted}",
             )
-            return f"## Repository Deep Context (summarized for privacy)\n{summary}"
+            result = f"## Repository Deep Context (summarized for privacy)\n{summary}"
+            _context_cache[cache_key] = (now, result)
+            return result
         except Exception as e:
             logger.warning("Local model summarization failed: %s", e)
             safe_parts = []
@@ -362,4 +391,5 @@ async def get_generation_context(
                 safe_parts.append(f"Topics: {raw_context['topics']}")
             return "\n".join(safe_parts) if safe_parts else "No repository context available."
 
+    _context_cache[cache_key] = (now, formatted)
     return formatted

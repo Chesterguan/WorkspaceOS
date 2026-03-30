@@ -126,17 +126,17 @@ class GeminiClient(AIClient):
                 headers=headers,
             )
             response.raise_for_status()
-        data = response.json()["data"][0]["embedding"]
-        # Gemini text-embedding-004 returns 768 dims, pad to 1536
-        if len(data) < 1536:
-            data = data + [0.0] * (1536 - len(data))
-        return data
+        # Gemini text-embedding-004 returns 768 dims — return as-is so it
+        # matches the pgvector column dimension without zero-padding corruption.
+        return response.json()["data"][0]["embedding"]
 
 
 class OllamaClient(AIClient):
     """Local model via Ollama API."""
 
-    _EMBED_DIM = 1536
+    # nomic-embed-text produces 768-dim vectors; store the native dimension
+    # so cosine similarity is meaningful (no zero-padding corruption).
+    _EMBED_DIM = 768
 
     def __init__(self) -> None:
         self.base_url = settings.ollama_base_url
@@ -172,11 +172,11 @@ class OllamaClient(AIClient):
                 json=payload,
             )
             response.raise_for_status()
+        # Return the raw vector — no padding. Dimension must match the
+        # pgvector column size (768). Truncate only if the model returns more.
         vector: List[float] = response.json()["embeddings"][0]
-        if len(vector) < self._EMBED_DIM:
-            vector = vector + [0.0] * (self._EMBED_DIM - len(vector))
-        elif len(vector) > self._EMBED_DIM:
-            vector = vector[:self._EMBED_DIM]
+        if len(vector) > self._EMBED_DIM:
+            vector = vector[: self._EMBED_DIM]
         return vector
 
 

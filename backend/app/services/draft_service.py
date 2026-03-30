@@ -57,8 +57,18 @@ async def list_drafts(
 async def update_draft(
     draft: Draft, data: DraftUpdate, db: AsyncSession
 ) -> Draft:
-    """Apply a partial update to an existing draft in place."""
+    """
+    Apply a partial update to an existing draft.
+
+    If the content is actually changing, the current state is snapshotted as
+    a new version in the chain before the update is applied. This matches the
+    pattern used by blog_service so the full edit history is preserved.
+    """
     update_data = data.model_dump(exclude_unset=True)
+    new_content = update_data.get("content")
+    if new_content is not None and new_content != draft.content:
+        # Snapshot current state before overwriting
+        await save_new_version(draft.id, draft.content, draft.generation_prompt, db)
     for field, value in update_data.items():
         setattr(draft, field, value)
     await db.flush()

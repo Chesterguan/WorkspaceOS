@@ -41,6 +41,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
     volumes:
       - /Volumes/extraSupply/Projects:/projects:ro
+      - backend_data:/app/data
     command: >
       sh -c "
         alembic upgrade head &&
@@ -69,3 +70,4 @@ services:
 
 volumes:
   postgres_data:
+  backend_data:
