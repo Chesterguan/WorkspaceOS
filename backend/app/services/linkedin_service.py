@@ -37,7 +37,7 @@ LINKEDIN_POSTS_URL = "https://api.linkedin.com/rest/posts"
 
 # Only request the scope that is approved on the LinkedIn app.
 # w_member_social allows creating posts. openid/profile require app review.
-LINKEDIN_SCOPES = "w_member_social"
+LINKEDIN_SCOPES = "profile w_member_social"
 
 # ---------------------------------------------------------------------------
 # In-memory token cache (fallback when no DB session is provided)

@@ -8,10 +8,12 @@ Endpoints:
 """
 import logging
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.dependencies import get_db
 from app.services import linkedin_service
 
 logger = logging.getLogger(__name__)
@@ -57,7 +59,7 @@ async def get_auth_url() -> dict:
     summary="LinkedIn OAuth callback",
     include_in_schema=False,  # Not a public API endpoint; only LinkedIn calls this
 )
-async def oauth_callback(request: Request) -> HTMLResponse:
+async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """
     Handle the OAuth redirect from LinkedIn.
 
@@ -92,7 +94,8 @@ async def oauth_callback(request: Request) -> HTMLResponse:
         )
 
     try:
-        await linkedin_service.exchange_code(code)
+        await linkedin_service.exchange_code(code, db=db)
+        await db.commit()
     except Exception as exc:
         logger.exception("LinkedIn token exchange failed: %s", exc)
         return HTMLResponse(
@@ -124,7 +127,7 @@ async def oauth_callback(request: Request) -> HTMLResponse:
     "/status",
     summary="Check LinkedIn connection status",
 )
-async def get_status() -> dict:
+async def get_status(db: AsyncSession = Depends(get_db)) -> dict:
     """
     Return whether a LinkedIn access token is stored and the associated
     profile name when available.
@@ -132,6 +135,9 @@ async def get_status() -> dict:
     Response: { connected: bool, name?: str }
     """
     token = linkedin_service.get_stored_token()
+    if not token:
+        # Try loading from DB (e.g. after container restart)
+        token = await linkedin_service.load_token_from_db(db)
     if not token:
         return {"connected": False}
 
