@@ -32,6 +32,38 @@ def _repo_name_to_slug(name: str) -> str:
     return slug or "repo"
 
 
+@router.get("/status", summary="Check GitHub connection status")
+async def github_status(
+    _key: str = Depends(verify_api_key),
+) -> dict:
+    """
+    Verify that a GitHub token is configured and return the authenticated
+    username by calling GET https://api.github.com/user.
+
+    Response: { connected: bool, username: str }
+    """
+    if not settings.github_token:
+        return {"connected": False, "username": ""}
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {settings.github_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return {"connected": True, "username": data.get("login", "")}
+            return {"connected": False, "username": ""}
+    except Exception:
+        return {"connected": False, "username": ""}
+
+
 @router.get("/repos", response_model=List[GitHubRepoResponse])
 async def list_github_repos(
     _key: str = Depends(verify_api_key),

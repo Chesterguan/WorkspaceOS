@@ -148,6 +148,39 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Disconnect
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/disconnect",
+    summary="Disconnect LinkedIn (clear stored token)",
+)
+async def disconnect(db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Clear the stored LinkedIn access token from both the in-memory cache and
+    the database, effectively disconnecting the account.
+
+    Response: { disconnected: true }
+    """
+    linkedin_service.clear_token()
+
+    # Also wipe the persisted token in the DB so it does not reload on restart
+    try:
+        from sqlalchemy import select
+        from app.models.user import User
+        result = await db.execute(select(User).limit(1))
+        user = result.scalar_one_or_none()
+        if user and user.linkedin_access_token:
+            user.linkedin_access_token = None
+            await db.commit()
+            logger.info("LinkedIn access token removed from database.")
+    except Exception as exc:
+        logger.warning("Could not clear LinkedIn token from DB: %s", exc)
+
+    return {"disconnected": True}
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
