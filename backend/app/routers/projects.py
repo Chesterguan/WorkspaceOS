@@ -2,12 +2,20 @@ import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, verify_api_key
+from app.models.draft import Draft
 from app.models.project import Project
-from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
+from app.models.sync import SyncRun
+from app.schemas.project import (
+    ProjectCreate,
+    ProjectResponse,
+    ProjectStatsItem,
+    ProjectStatsResponse,
+    ProjectUpdate,
+)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -55,6 +63,52 @@ async def create_project(
     await db.flush()
     await db.refresh(project)
     return project
+
+
+@router.get("/stats", response_model=ProjectStatsResponse)
+async def get_projects_stats(
+    user_id: Optional[uuid.UUID] = None,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> ProjectStatsResponse:
+    """
+    Return draft counts and last sync timestamps for all projects in one query.
+    Used by the project cards on the dashboard to show activity indicators.
+    """
+    # Draft counts per project (root drafts only, no version children)
+    draft_query = (
+        select(Draft.project_id, func.count(Draft.id).label("draft_count"))
+        .where(Draft.parent_draft_id.is_(None))
+        .group_by(Draft.project_id)
+    )
+    draft_result = await db.execute(draft_query)
+    draft_counts: dict = {row.project_id: row.draft_count for row in draft_result.all()}
+
+    # Last completed sync run per project
+    sync_query = (
+        select(SyncRun.project_id, func.max(SyncRun.completed_at).label("last_sync_at"))
+        .where(SyncRun.status == "completed")
+        .group_by(SyncRun.project_id)
+    )
+    sync_result = await db.execute(sync_query)
+    last_syncs: dict = {row.project_id: row.last_sync_at for row in sync_result.all()}
+
+    # All project IDs in scope
+    proj_query = select(Project.id)
+    if user_id:
+        proj_query = proj_query.where(Project.user_id == user_id)
+    proj_result = await db.execute(proj_query)
+    project_ids = [row[0] for row in proj_result.all()]
+
+    stats = [
+        ProjectStatsItem(
+            project_id=pid,
+            draft_count=draft_counts.get(pid, 0),
+            last_sync_at=last_syncs.get(pid),
+        )
+        for pid in project_ids
+    ]
+    return ProjectStatsResponse(stats=stats)
 
 
 @router.get("", response_model=List[ProjectResponse])

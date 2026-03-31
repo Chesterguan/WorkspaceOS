@@ -1,13 +1,27 @@
 import uuid
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, verify_api_key
+from app.models.draft import Draft
 from app.models.project import Project
-from app.schemas.ai import GenerateRequest, GenerateResponse, SummaryRequest
-from app.services.ai_generation import generate_draft, generate_evolution_summary
+from app.models.sync import SyncRun
+from app.schemas.ai import (
+    DashboardSummaryResponse,
+    GenerateRequest,
+    GenerateResponse,
+    PortfolioGenerateRequest,
+    PortfolioGenerateResponse,
+    SummaryRequest,
+)
+from app.services.ai_generation import (
+    generate_draft,
+    generate_evolution_summary,
+    generate_portfolio_draft,
+)
 
 router = APIRouter(tags=["ai"])
 
@@ -46,6 +60,95 @@ async def generate_content(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     return GenerateResponse(content=content, platform=body.platform, draft_id=draft_id)
+
+
+@router.post("/portfolio/generate", response_model=PortfolioGenerateResponse)
+async def generate_portfolio(
+    body: PortfolioGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> PortfolioGenerateResponse:
+    """
+    Generate a combined social post covering multiple projects.
+    The draft is saved under the first project in the list.
+    """
+    if len(body.project_ids) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least 2 project_ids are required for a portfolio post.",
+        )
+    if len(body.project_ids) > 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At most 5 project_ids are allowed per portfolio post.",
+        )
+
+    try:
+        content, draft_id, project_names = await generate_portfolio_draft(
+            project_ids=body.project_ids,
+            platform=body.platform,
+            theme=body.theme,
+            additional_context=body.additional_context,
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    return PortfolioGenerateResponse(
+        content=content,
+        platform=body.platform,
+        draft_id=draft_id,
+        projects_included=project_names,
+    )
+
+
+@router.get("/dashboard/summary", response_model=DashboardSummaryResponse)
+async def dashboard_summary(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> DashboardSummaryResponse:
+    """
+    Return cross-project stats and recent activity for the dashboard.
+    """
+    # Total counts
+    project_count_result = await db.execute(select(func.count()).select_from(Project))
+    total_projects: int = project_count_result.scalar_one()
+
+    draft_count_result = await db.execute(select(func.count()).select_from(Draft))
+    total_drafts: int = draft_count_result.scalar_one()
+
+    sync_count_result = await db.execute(
+        select(func.count()).select_from(SyncRun).where(SyncRun.status == "completed")
+    )
+    total_syncs: int = sync_count_result.scalar_one()
+
+    # Recent activity: last 10 completed sync runs with project names
+    recent_runs_result = await db.execute(
+        select(SyncRun, Project.name)
+        .join(Project, Project.id == SyncRun.project_id)
+        .where(SyncRun.status == "completed")
+        .order_by(SyncRun.completed_at.desc())
+        .limit(10)
+    )
+    recent_activity = []
+    for run, project_name in recent_runs_result.all():
+        recent_activity.append({
+            "type": "sync",
+            "project_name": project_name,
+            "project_id": str(run.project_id),
+            "sync_run_id": str(run.id),
+            "commits_fetched": run.commits_fetched,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        })
+
+    return DashboardSummaryResponse(
+        total_projects=total_projects,
+        total_drafts=total_drafts,
+        total_syncs=total_syncs,
+        recent_activity=recent_activity,
+    )
 
 
 @router.post("/generate/summary", response_model=GenerateResponse)

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,16 @@ class ProjectUpdate(BaseModel):
     status: Optional[str] = None
     # Local filesystem path for workspace scanning (e.g. /projects/MyApp)
     local_path: Optional[str] = None
+
+
+class ProjectStatsItem(BaseModel):
+    project_id: uuid.UUID
+    draft_count: int
+    last_sync_at: Optional[datetime]
+
+
+class ProjectStatsResponse(BaseModel):
+    stats: List[ProjectStatsItem]
 
 
 class ProjectResponse(BaseModel):

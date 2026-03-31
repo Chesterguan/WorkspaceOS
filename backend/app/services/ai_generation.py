@@ -161,6 +161,85 @@ async def generate_draft(
     return content, draft.id
 
 
+async def generate_portfolio_draft(
+    project_ids: List[uuid.UUID],
+    platform: str,
+    theme: Optional[str],
+    additional_context: Optional[str],
+    db: AsyncSession,
+) -> Tuple[str, Optional[uuid.UUID], List[str]]:
+    """
+    Generate a combined post covering multiple projects.
+
+    1. For each project: load narrative, fetch repo context (cached), get recent memory.
+    2. Build a combined context block with all projects.
+    3. Use the portfolio prompt template.
+    4. Generate with cloud AI.
+    5. Save as a draft under the FIRST project (with a title noting it's a portfolio post).
+    6. Return (content, draft_id, project_names).
+    """
+    project_contexts: List[dict] = []
+    project_names: List[str] = []
+    first_project_id: Optional[uuid.UUID] = None
+
+    for project_id in project_ids:
+        project = await _load_project(project_id, db)
+        if first_project_id is None:
+            first_project_id = project_id
+
+        project_names.append(project.name)
+        narrative = await get_or_create(project_id, db)
+        narrative_ctx = build_context_block(narrative)
+
+        memory_query = narrative.one_liner or project.name
+        memory_context = await _build_memory_context(project_id, memory_query, db)
+
+        repo_context = ""
+        if project.github_repo:
+            is_private = project.status == "private"
+            repo_context = await get_generation_context(project.github_repo, is_private=is_private)
+
+        changes_summary = await build_changes_summary(project_id, None, db)
+
+        project_contexts.append({
+            "name": project.name,
+            "github_url": f"https://github.com/{project.github_repo}" if project.github_repo else "",
+            "one_liner": narrative_ctx.get("one_liner", ""),
+            "repo_context": repo_context,
+            "memory_context": memory_context,
+            "changes_summary": changes_summary,
+        })
+
+    ctx = {
+        "platform": platform,
+        "theme": theme or "",
+        "additional_context": additional_context or "",
+        "projects": project_contexts,
+    }
+
+    template_fn = get_template("portfolio")
+    system, user = template_fn(ctx)
+    rendered_prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
+
+    ai_client = get_ai_client()
+    content = await ai_client.complete(system, user)
+
+    # Compose a descriptive title for the draft
+    names_joined = ", ".join(project_names)
+    title_theme = f" — {theme}" if theme else ""
+    draft_title = f"Portfolio Post{title_theme}: {names_joined}"
+
+    draft_data = DraftCreate(
+        platform=platform,
+        title=draft_title,
+        content=content,
+        generation_prompt=rendered_prompt,
+        sync_run_id=None,
+    )
+    draft = await create_draft(first_project_id, draft_data, db)
+    return content, draft.id, project_names
+
+
 async def generate_evolution_summary(sync_run_id: uuid.UUID, db: AsyncSession) -> str:
     """
     Generate a prose summary of what changed during a sync run and attach it

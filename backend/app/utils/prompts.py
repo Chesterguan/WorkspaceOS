@@ -4,7 +4,7 @@ Templates receive a context dict and return a (system, user) tuple.
 
 Supported keys for each template are documented in the function's docstring.
 """
-from typing import Tuple
+from typing import List, Tuple
 
 
 def _base_system(extra: str = "") -> str:
@@ -349,6 +349,90 @@ Write the consolidated summary now."""
     return system, user
 
 
+def portfolio_template(ctx: dict) -> Tuple[str, str]:
+    """
+    Generate a cohesive post covering multiple projects.
+
+    Required ctx keys: platform, projects (list of dicts with keys:
+        name, github_url, one_liner, repo_context, memory_context, changes_summary).
+    Optional ctx keys: theme, additional_context.
+    """
+    platform = ctx.get("platform", "linkedin")
+    theme = ctx.get("theme", "")
+    theme_instruction = f"The overall theme of this post is: {theme}." if theme else ""
+
+    platform_instructions = {
+        "linkedin": (
+            "You write for LinkedIn: professional but human. Posts should be 200-350 words, "
+            "start with a punchy hook (no 'I am excited to announce'), use short paragraphs, "
+            "weave all projects together into a coherent narrative, and end with a clear "
+            "call-to-action. Include 3-5 relevant hashtags on the last line."
+        ),
+        "twitter": (
+            "You write Twitter/X threads for developer audiences. Each tweet must be under 280 "
+            "characters. Format as a numbered thread (1/, 2/, ...) of 6-10 tweets that covers "
+            "all projects. The first tweet is the hook — make it worth clicking. End with a "
+            "reply-bait question."
+        ),
+        "xiaohongshu": (
+            "You write posts for Xiaohongshu (小红书 / RedNote) in Simplified Chinese. "
+            "Use a warm, personal diary-style voice. Include an emoji-rich title line, "
+            "cover each project in its own section with emoji titles, and end with 5-10 "
+            "hashtags in Chinese."
+        ),
+        "medium_outline": (
+            "You write detailed article outlines for Medium. The outline must include: "
+            "a working title, a subtitle, an intro paragraph, one H2 section per project "
+            "with 3-4 bullet points each, a cross-project synthesis section, and suggested "
+            "SEO tags. Format in Markdown."
+        ),
+    }
+    platform_hint = platform_instructions.get(
+        platform, platform_instructions["linkedin"]
+    )
+
+    # Build the per-project context blocks
+    projects = ctx.get("projects", [])
+    project_sections: List[str] = []
+    for i, proj in enumerate(projects, start=1):
+        section_lines = [
+            f"### Project {i}: {proj.get('name', 'Unknown')}",
+            f"GitHub: {proj.get('github_url', 'N/A')}",
+            f"One-liner: {proj.get('one_liner', 'N/A')}",
+        ]
+        if proj.get("changes_summary"):
+            section_lines.append(f"Recent changes: {proj['changes_summary']}")
+        if proj.get("repo_context"):
+            # Keep repo context brief for multi-project prompts
+            rc = proj["repo_context"]
+            if len(rc) > 1500:
+                rc = rc[:1500] + "\n... (truncated)"
+            section_lines.append(f"Repository context:\n{rc}")
+        if proj.get("memory_context"):
+            section_lines.append(f"Relevant memory:\n{proj['memory_context']}")
+        project_sections.append("\n".join(section_lines))
+
+    projects_block = "\n\n".join(project_sections)
+
+    system = _base_system(platform_hint)
+    user = f"""Write a single {platform} post that covers ALL of the following projects in a cohesive way.
+
+{theme_instruction}
+
+Do NOT write separate posts per project — weave them together into one unified narrative.
+Reference the GitHub URL for each project exactly as provided — never use placeholder links.
+
+## Projects to cover
+
+{projects_block}
+
+## Additional context
+{ctx.get('additional_context', 'None provided.')}
+
+Write the {platform} post now."""
+    return system, user
+
+
 def preference_context_template(ctx: dict) -> Tuple[str, str]:
     """
     Produce a prose block describing user content preferences derived from feedback.
@@ -369,6 +453,7 @@ Write a concise guidance paragraph that a content generator should follow."""
 
 # Registry mapping platform slug -> template function
 TEMPLATE_REGISTRY = {
+    "portfolio": portfolio_template,
     "linkedin": linkedin_template,
     "twitter": twitter_template,
     "xiaohongshu": xiaohongshu_template,
