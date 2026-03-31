@@ -212,7 +212,7 @@ async def get_profile(access_token: str) -> dict:
                 LINKEDIN_ME_URL,
                 headers={
                     "Authorization": f"Bearer {access_token}",
-                    "LinkedIn-Version": "202501",
+                    "LinkedIn-Version": "202603",
                 },
             )
             if resp.status_code == 200:
@@ -263,7 +263,7 @@ async def publish_post(access_token: str, author_urn: str, text: str) -> dict:
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
         # LinkedIn REST API requires this version header
-        "LinkedIn-Version": "202501",
+        "LinkedIn-Version": "202603",
         "X-Restli-Protocol-Version": "2.0.0",
     }
 
