@@ -35,9 +35,9 @@ LINKEDIN_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 LINKEDIN_ME_URL = "https://api.linkedin.com/v2/me"
 LINKEDIN_POSTS_URL = "https://api.linkedin.com/rest/posts"
 
-# Only request the scope that is approved on the LinkedIn app.
-# w_member_social allows creating posts. openid/profile require app review.
-LINKEDIN_SCOPES = "w_member_social"
+# openid + profile: get member ID (via "Sign In with LinkedIn using OpenID Connect" product)
+# w_member_social: create posts on behalf of the user
+LINKEDIN_SCOPES = "openid profile w_member_social"
 
 # ---------------------------------------------------------------------------
 # In-memory token cache (fallback when no DB session is provided)
