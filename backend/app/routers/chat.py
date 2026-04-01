@@ -1,4 +1,5 @@
 import uuid
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -9,8 +10,12 @@ from app.models.chat import ChatMessage
 from app.models.project import Project
 from app.schemas.chat import ChatHistoryResponse, ChatMessageResponse, ChatSendRequest
 from app.services import chat_service
+from app.services.chat_service import STRATEGIC_STARTERS
 
 router = APIRouter(prefix="/projects/{project_id}/chat", tags=["chat"])
+
+# Separate router for non-project-scoped chat endpoints
+starters_router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
@@ -63,3 +68,15 @@ async def clear_history(
     """Delete all chat messages for the project."""
     await _require_project(project_id, db)
     await chat_service.clear_history(project_id, db)
+
+
+# ---------------------------------------------------------------------------
+# Non-project-scoped chat endpoints
+# ---------------------------------------------------------------------------
+
+@starters_router.get("/starters")
+async def get_starters(
+    _key: str = Depends(verify_api_key),
+) -> List[dict]:
+    """Return grouped strategic conversation starters for the Co-Founder AI."""
+    return STRATEGIC_STARTERS

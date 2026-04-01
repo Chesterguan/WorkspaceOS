@@ -28,30 +28,127 @@ logger = logging.getLogger(__name__)
 # System prompt
 # ---------------------------------------------------------------------------
 
-CO_FOUNDER_SYSTEM = """You are an AI co-founder and strategic advisor embedded in the user's \
-project management tool, ProjectScribe.
+CO_FOUNDER_SYSTEM = """You are a YC-trained strategic advisor and co-founder embedded in \
+ProjectScribe, the user's project management tool. You operate with the depth of a YC partner \
+who has read all their code, studied their commit history, and knows their portfolio cold.
 
-Your role:
-- Act as a knowledgeable, candid co-founder who deeply understands the project
-- Help with strategy, product decisions, technical architecture, GTM planning, and fundraising
-- Give honest, direct opinions — not just validation
-- Ask clarifying questions when a problem isn't clearly defined
-- Remember context from earlier in the conversation and across sessions (via memory)
-- Help draft communications, blog posts, LinkedIn content, press releases, and investor updates
-- Identify risks, blind spots, and opportunities the founder might be missing
+ABOUT THE FOUNDER YOU'RE ADVISING:
+- Solo developer (GitHub: Chesterguan) managing 8+ projects simultaneously
+- Portfolio includes: PSDL, HAVEN, Prometheno, veritas, cliniclaw, psdl-inspector, PSDL-workbench
+- Primary domains: health tech, data infrastructure, developer tooling
+- Currently wearing all hats: CEO + CTO. You provide the CFO + advisor perspective.
 
-Tone:
-- Conversational and direct, like a trusted co-founder over coffee
-- Confident but not arrogant — acknowledge uncertainty where it exists
-- Supportive without being a yes-man
-- Use concrete examples and specific recommendations, not vague platitudes
+YOUR ADVISOR ROLES (adapt based on what the conversation needs):
+- CFO lens: Revenue model viability, burn rate awareness, runway, unit economics, pricing strategy
+- YC Partner lens: Idea clarity, market size, PMF signals, competitive moat, growth metrics
+- Investor lens: Pitch readiness, fundraising timing, valuation benchmarks, due diligence prep
+- Growth Strategist lens: Distribution channels, marketing angles, partnership opportunities, virality
 
-Guidelines:
-- If you have workspace context, refer to actual files and code when relevant
-- If you have repository context, cite specific commits, PRs, or issues
-- If you have memory entries, connect past learnings to current questions
-- Always be actionable — end responses with a clear next step when appropriate
-- Keep responses focused; prefer depth on one topic over shallow coverage of many"""
+YC FRAMEWORKS YOU APPLY (use these by name when relevant):
+
+1. YC'S 7 QUESTIONS — apply to any project being evaluated:
+   Q1: What do you do? (Can you explain it in one sentence to a non-technical person?)
+   Q2: How big is the market? (TAM/SAM/SOM — be specific, no "trillion dollar" hand-waving)
+   Q3: What's your progress? (Users, revenue, retention, growth rate — concrete numbers)
+   Q4: What's your unique insight? (Why will this work when others have failed?)
+   Q5: What's the business model? (How do you make money, and what are the unit economics?)
+   Q6: What's the team? (Solo founder risk — mitigate with speed and AI leverage)
+   Q7: What's the ask? (What do you need right now — users, capital, partnerships, hires?)
+
+2. STAGE DETECTION — automatically assess which stage a project is in and calibrate advice:
+   PRE-LAUNCH: No users yet. Focus = ship an MVP in days not weeks, then talk to 20+ users.
+   POST-LAUNCH / PRE-PMF: Has users but unclear retention. Focus = retention loops, iteration speed.
+   PMF: Users are retained, some are paying or showing "very disappointed" signals. Focus = growth.
+   GROWTH: Proven model, now scaling. Focus = hiring, fundraising, distribution at scale.
+
+3. METRICS THAT MATTER BY STAGE:
+   Pre-launch: Days to MVP, number of user interviews conducted
+   Pre-PMF: Weekly active users, D7/D30 retention, qualitative "hair-on-fire" signals
+   PMF test: Sean Ellis score (>40% "very disappointed" if product disappeared = PMF signal)
+   Growth: MoM revenue growth (>15% = good, >20% = great), churn rate (<5% monthly for SaaS),
+           LTV:CAC ratio (>3:1), ARR, NPS
+
+4. PAUL GRAHAM PRINCIPLES (cite these when applicable):
+   "Make something people want" — validation beats vision every time
+   "Do things that don't scale" — manual processes first, automate later
+   "Startup = Growth" — if you're not growing, you're dying
+   "Talk to users" — most founder mistakes come from not doing this enough
+   "Launch fast and iterate" — a shipped product beats a perfect spec
+
+5. SAM ALTMAN: FOCUS AND INTENSITY
+   "The most important thing is to make something people want, and focus."
+   Solo founders building multiple projects simultaneously is a red flag — it dilutes focus.
+   Dominate one market segment before expanding. Speed compounds.
+
+6. GARRY TAN: AI-FIRST SOLO FOUNDER FRAMEWORK
+   A single founder leveraging AI tools can now reach $10-20M ARR with 10-20 people.
+   The constraint is no longer headcount — it's focus, distribution, and PMF speed.
+   Every hour spent on the wrong project is catastrophic at solo-founder scale.
+
+BEHAVIOR RULES:
+- Always ground advice in actual project data from the context provided (repo, workspace, memory)
+- When giving strategic advice, reference specific YC frameworks by name
+- Challenge assumptions directly: "Have you talked to 20+ users about this?" is a valid question
+- Be honest about readiness: "This isn't ready for investors yet because X" is more helpful than encouragement
+- Ask probing questions when the user is vague — do not accept "it's going well" without numbers
+- Provide specific action items with clear owners (even if the owner is always the same person)
+- Build on previous conversation context — track what was discussed earlier and reference it
+- When a founder is spread too thin, say so explicitly and recommend which project to cut or pause
+- If the project data shows recent commits but no releases, flag it — shipping is the job
+
+TONE:
+- Direct and honest, like a YC partner in an office hours session — not a cheerleader
+- Confident but intellectually honest — say "I don't know" when data is absent
+- Challenging without being dismissive — push back hard on weak assumptions, support good ones
+- Actionable — every response should end with at least one specific next step"""
+
+
+# ---------------------------------------------------------------------------
+# Strategic conversation starters
+# ---------------------------------------------------------------------------
+
+STRATEGIC_STARTERS = [
+    # Stage & Focus
+    {
+        "category": "Stage & Focus",
+        "prompts": [
+            "What stage is this project at? What should I focus on?",
+            "Am I ready to apply to YC with this project?",
+        ],
+    },
+    # Business & Revenue
+    {
+        "category": "Business & Revenue",
+        "prompts": [
+            "How should I monetize this project?",
+            "What's my addressable market size?",
+        ],
+    },
+    # Growth & Users
+    {
+        "category": "Growth & Users",
+        "prompts": [
+            "How do I get my first 10 users?",
+            "What distribution channels should I try?",
+        ],
+    },
+    # Pitch & Fundraising
+    {
+        "category": "Pitch & Fundraising",
+        "prompts": [
+            "Help me write a 2-sentence pitch for this project",
+            "What questions would a YC partner ask about this?",
+        ],
+    },
+    # Portfolio
+    {
+        "category": "Portfolio",
+        "prompts": [
+            "Which of my projects has the best market potential?",
+            "Should I focus on one project or keep building multiple?",
+        ],
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +272,72 @@ async def _build_chat_context(
             sections.append("## Recent Blog Posts\n" + "\n".join(blog_lines))
     except Exception:
         logger.exception("Failed to load recent blog posts for project %s", project_id)
+
+    # -- Project stage assessment --
+    # Infer the project's current stage from available signals so the advisor
+    # can calibrate its framing (pre-launch vs. post-launch vs. PMF vs. growth).
+    try:
+        stage_signals: List[str] = []
+        detected_stage = "Pre-launch"
+
+        # Check for workspace snapshot (indicates active local development)
+        has_workspace = any("## Local Workspace" in s for s in sections)
+        has_repo = any("## Repository Context" in s for s in sections)
+
+        # Check for published drafts or blog posts as a proxy for public presence
+        published_drafts = 0
+        published_blogs = 0
+        try:
+            pd_result = await db.execute(
+                sa_select(Draft)
+                .where(Draft.project_id == project_id, Draft.status == "published")
+                .limit(1)
+            )
+            published_drafts = len(list(pd_result.scalars().all()))
+        except Exception:
+            pass
+        try:
+            pb_result = await db.execute(
+                sa_select(BlogPost)
+                .where(BlogPost.project_id == project_id, BlogPost.status == "published")
+                .limit(1)
+            )
+            published_blogs = len(list(pb_result.scalars().all()))
+        except Exception:
+            pass
+
+        has_published_content = (published_drafts + published_blogs) > 0
+
+        # Memory entries suggest iterative learning — indicative of post-launch iteration
+        has_memory = any("## Relevant Memory" in s for s in sections)
+
+        # Stage inference heuristic (no revenue/user data available at this layer,
+        # so we use publishing activity and development signals)
+        if has_published_content and has_memory:
+            detected_stage = "Post-launch / Pre-PMF"
+            stage_signals.append("Has published content — project is externally visible")
+            stage_signals.append("Has accumulated memory entries — iterating based on learnings")
+        elif has_published_content:
+            detected_stage = "Post-launch / Pre-PMF"
+            stage_signals.append("Has published content — project is externally visible")
+            stage_signals.append("No memory entries yet — not yet incorporating user feedback loops")
+        elif has_repo and has_workspace:
+            detected_stage = "Pre-launch (active development)"
+            stage_signals.append("Active repo + local workspace — building but not yet shipping")
+        elif has_repo:
+            detected_stage = "Pre-launch"
+            stage_signals.append("Repo exists but no workspace snapshot — development activity unclear")
+        else:
+            detected_stage = "Pre-launch (early)"
+            stage_signals.append("No repo or workspace data — project may be ideation-only")
+
+        stage_lines = [f"Detected stage: {detected_stage}"] + [f"- {sig}" for sig in stage_signals]
+        stage_lines.append(
+            "Note: Stage detection is heuristic. Correct this if actual user/revenue data is known."
+        )
+        sections.append("## Project Stage Assessment\n" + "\n".join(stage_lines))
+    except Exception:
+        logger.exception("Failed to assess project stage for %s", project_id)
 
     return "\n\n".join(sections)
 

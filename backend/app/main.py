@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import ai, drafts, memory, narratives, projects, sync
 from app.routers import agentic, blog, chat, github, linkedin, posting, publish, workspace
+from app.routers.chat import starters_router as chat_starters_router
 
 app = FastAPI(
     title="AI PR Secretary",
@@ -34,6 +35,7 @@ app.include_router(blog.router, prefix=API_PREFIX)
 app.include_router(agentic.router, prefix=API_PREFIX)
 app.include_router(workspace.router, prefix=API_PREFIX)
 app.include_router(chat.router, prefix=API_PREFIX)
+app.include_router(chat_starters_router, prefix=API_PREFIX)
 app.include_router(publish.router, prefix=API_PREFIX)
 app.include_router(linkedin.router, prefix=API_PREFIX)
 
