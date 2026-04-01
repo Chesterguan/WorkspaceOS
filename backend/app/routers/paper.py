@@ -31,11 +31,13 @@ from app.schemas.paper import (
     PaperGenerateRequest,
     PaperGenerateResponse,
     PaperVersionSummary,
+    PortfolioPaperGenerateRequest,
 )
 from app.services import paper_service
 from app.services.diagram_service import generate_architecture_diagram, render_diagram
 
 router = APIRouter(prefix="/projects/{project_id}/paper", tags=["paper"])
+portfolio_paper_router = APIRouter(prefix="/portfolio/paper", tags=["paper"])
 
 # Valid paper type values — enforced at the router layer for clear error messages
 _VALID_PAPER_TYPES = frozenset(["conference", "journal", "technical_report", "white_paper"])
@@ -238,3 +240,62 @@ async def generate_diagram(
         )
 
     return GenerateDiagramResponse(source=source, svg=svg_str)
+
+
+# ---------------------------------------------------------------------------
+# Portfolio paper endpoint (no single project scope)
+# ---------------------------------------------------------------------------
+
+@portfolio_paper_router.post(
+    "/generate",
+    response_model=PaperGenerateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate a multi-project portfolio paper with 5 peer-review passes",
+)
+async def generate_portfolio_paper(
+    body: PortfolioPaperGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> PaperGenerateResponse:
+    """
+    Run the complete multi-pass paper writing pipeline across multiple projects.
+
+    Context is assembled from every project in `project_ids` (2–5), then the same
+    5-round review pipeline used for single-project papers is executed. The resulting
+    BlogPost is stored under the first project in the list.
+
+    Useful for survey papers, portfolio technical reports, and multi-system comparison
+    papers that span several of your projects.
+
+    Progress tags format: `["paper", "portfolio", "progress:N", "step:...", "pass:N/5"]`
+    When complete: `["paper", "portfolio", "progress:100", "step:complete"]`
+    """
+    if body.paper_type not in _VALID_PAPER_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Invalid paper_type '{body.paper_type}'. "
+                f"Must be one of: {sorted(_VALID_PAPER_TYPES)}"
+            ),
+        )
+
+    try:
+        result = await paper_service.generate_portfolio_paper(
+            project_ids=body.project_ids,
+            paper_type=body.paper_type,
+            title=body.title,
+            target_venue=body.target_venue,
+            additional_instructions=body.additional_instructions,
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return PaperGenerateResponse(
+        blog_post_id=result["blog_post_id"],
+        title=result["title"],
+        final_content=result["final_content"],
+        bibtex=result["bibtex"],
+        versions=[PaperVersionSummary(**v) for v in result["versions"]],
+        review_summary=result["review_summary"],
+    )

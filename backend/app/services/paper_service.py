@@ -596,6 +596,316 @@ async def generate_paper(
 
 
 # ---------------------------------------------------------------------------
+# Multi-project (portfolio) paper pipeline
+# ---------------------------------------------------------------------------
+
+async def _build_portfolio_paper_context(
+    project_ids: List[uuid.UUID],
+    db: AsyncSession,
+) -> Tuple[str, List[dict]]:
+    """
+    Build a combined context block from multiple projects for a portfolio paper.
+
+    Iterates over each project and assembles its narrative, repo context, and
+    workspace summary into a labelled section. Literature search is performed
+    on the aggregated keyword set so that the resulting papers list spans all
+    projects. Returns (context_block: str, papers: List[dict]).
+    """
+    all_sections: List[str] = []
+    all_papers: List[dict] = []
+    all_keywords: List[str] = []
+
+    for idx, project_id in enumerate(project_ids, start=1):
+        project_sections: List[str] = []
+        narrative_ctx: dict = {}
+
+        # Fetch project name for labelling
+        project_name = f"Project {idx}"
+        try:
+            result = await db.execute(select(Project).where(Project.id == project_id))
+            project = result.scalar_one_or_none()
+            if project:
+                project_name = project.name
+        except Exception:
+            logger.exception(
+                "paper_service: failed to load project row for %s", project_id
+            )
+
+        # -- Narrative --
+        try:
+            narrative = await get_or_create(project_id, db)
+            narrative_ctx = build_context_block(narrative)
+            parts: List[str] = []
+            if narrative_ctx.get("one_liner"):
+                parts.append(f"One-liner: {narrative_ctx['one_liner']}")
+            if narrative_ctx.get("target_audience"):
+                parts.append(f"Target audience: {narrative_ctx['target_audience']}")
+            if narrative_ctx.get("origin_story"):
+                parts.append(f"Origin story / motivation: {narrative_ctx['origin_story']}")
+            if narrative_ctx.get("preferred_angles"):
+                parts.append(f"Research angles: {', '.join(narrative_ctx['preferred_angles'])}")
+            if parts:
+                project_sections.append("### Narrative\n" + "\n".join(parts))
+        except Exception:
+            logger.exception(
+                "paper_service: failed to load narrative for project %s", project_id
+            )
+
+        # -- GitHub repo context --
+        try:
+            result = await db.execute(select(Project).where(Project.id == project_id))
+            project = result.scalar_one_or_none()
+            if project and project.github_repo:
+                repo_ctx = await get_generation_context(project.github_repo, is_private=False)
+                if repo_ctx and repo_ctx.strip():
+                    if len(repo_ctx) > 6000:
+                        repo_ctx = repo_ctx[:6000] + "\n\n[... truncated ...]"
+                    project_sections.append(
+                        f"### Repository Context (architecture/methods)\n{repo_ctx}"
+                    )
+        except Exception:
+            logger.exception(
+                "paper_service: failed to load repo context for project %s", project_id
+            )
+
+        # -- Workspace snapshot --
+        try:
+            snapshot = await get_latest_snapshot(project_id, db)
+            if snapshot:
+                ws_parts = [snapshot.summary]
+                if snapshot.git_branch:
+                    ws_parts.append(f"Current branch: {snapshot.git_branch}")
+                project_sections.append(
+                    "### Local Workspace\n" + "\n".join(ws_parts)
+                )
+        except Exception:
+            logger.exception(
+                "paper_service: failed to load workspace for project %s", project_id
+            )
+
+        if project_sections:
+            all_sections.append(
+                f"## Project: {project_name}\n\n" + "\n\n".join(project_sections)
+            )
+
+        # Accumulate keywords for the combined literature search
+        if narrative_ctx.get("one_liner"):
+            all_keywords.append(narrative_ctx["one_liner"])
+        if narrative_ctx.get("origin_story"):
+            first_sent = narrative_ctx["origin_story"].split(".")[0].strip()
+            if first_sent and len(first_sent) > 10:
+                all_keywords.append(first_sent[:120])
+        for angle in (narrative_ctx.get("preferred_angles") or [])[:1]:
+            if angle:
+                all_keywords.append(str(angle))
+
+    # -- Combined literature search --
+    try:
+        if all_keywords:
+            # Deduplicate while preserving order (Python 3.9-compatible)
+            seen: set = set()
+            unique_kw: List[str] = []
+            for kw in all_keywords:
+                if kw not in seen:
+                    seen.add(kw)
+                    unique_kw.append(kw)
+            all_papers = await find_related_work(unique_kw[:6], limit=25)
+            if all_papers:
+                all_sections.append(format_papers_for_prompt(all_papers))
+    except Exception:
+        logger.exception(
+            "paper_service: Semantic Scholar search failed for portfolio paper"
+        )
+
+    return "\n\n".join(all_sections), all_papers
+
+
+async def generate_portfolio_paper(
+    project_ids: List[uuid.UUID],
+    paper_type: str,
+    title: str,
+    target_venue: Optional[str],
+    additional_instructions: Optional[str],
+    db: AsyncSession,
+) -> Dict:
+    """
+    Generate a paper covering multiple projects (e.g. a survey paper,
+    portfolio technical report, or multi-system comparison paper).
+
+    Same 5-round review pipeline as single-project papers, but context is
+    assembled from ALL specified projects, following the pattern used by
+    generate_portfolio_draft() in ai_generation.py.
+
+    The resulting BlogPost is stored under the first project in the list.
+
+    Returns the same structure as generate_paper().
+    """
+    cloud_ai = get_cloud_client()
+    total_passes = len(REVIEW_PASSES)
+    first_project_id = project_ids[0]
+
+    # 1. Build combined context
+    logger.info(
+        "paper_service: building multi-project context for %d projects", len(project_ids)
+    )
+    context_block, papers = await _build_portfolio_paper_context(project_ids, db)
+
+    # 2. Generate initial draft
+    logger.info("paper_service: generating portfolio paper draft — title: %s", title)
+    draft_prompt = _build_draft_prompt(
+        paper_type=paper_type,
+        title=title,
+        target_venue=target_venue,
+        additional_instructions=additional_instructions,
+        context_block=context_block,
+    )
+
+    try:
+        initial_draft = await cloud_ai.complete(system=_WRITER_SYSTEM, user=draft_prompt)
+    except Exception:
+        logger.exception("paper_service: portfolio paper initial draft generation failed")
+        raise
+
+    # 3. Store draft as a BlogPost under the first project
+    post = await create_blog_post(
+        project_id=first_project_id,
+        data=BlogPostCreate(
+            title=title,
+            content=initial_draft,
+            status="draft",
+            tags=_build_progress_tags("draft_complete", 1, total_passes),
+        ),
+        db=db,
+    )
+    post_id = post.id
+    logger.info(
+        "paper_service: created BlogPost %s for portfolio paper '%s'", post_id, title
+    )
+
+    version_records: List[Dict] = []
+    current_content = initial_draft
+
+    # 4. Five review + revision passes (identical to generate_paper)
+    for pass_idx, review_pass in enumerate(REVIEW_PASSES, start=1):
+        review_name = review_pass["name"]
+        reviewer_system = review_pass["system"]
+
+        logger.info(
+            "paper_service: portfolio paper review pass %d/%d — %s (post %s)",
+            pass_idx,
+            total_passes,
+            review_name,
+            post_id,
+        )
+
+        review_user_prompt = (
+            f"Review the following academic paper for: {review_name}\n\n"
+            f"## Paper\n{current_content}"
+        )
+        try:
+            critique = await cloud_ai.complete(
+                system=reviewer_system,
+                user=review_user_prompt,
+            )
+        except Exception:
+            logger.exception(
+                "paper_service: reviewer call failed for portfolio pass %d (%s)",
+                pass_idx,
+                review_name,
+            )
+            critique = f"[Review failed for pass: {review_name}]"
+
+        score = _extract_score(critique)
+
+        revision_prompt = _build_revision_prompt(
+            paper_content=current_content,
+            review_critique=critique,
+            review_name=review_name,
+            context_block=context_block,
+        )
+        try:
+            revised_content = await cloud_ai.complete(
+                system=_REVISION_SYSTEM,
+                user=revision_prompt,
+            )
+        except Exception:
+            logger.exception(
+                "paper_service: revision call failed for portfolio pass %d (%s)",
+                pass_idx,
+                review_name,
+            )
+            revised_content = current_content
+
+        diff_stats = compute_diff_stats(current_content, revised_content)
+
+        change_note = f"{review_name} (score: {score}/10)"
+        await update_blog_post(
+            post_id=post_id,
+            data=BlogPostUpdate(
+                content=revised_content,
+                change_note=change_note,
+                tags=_build_progress_tags(f"pass_{pass_idx}_complete", pass_idx + 1, total_passes),
+            ),
+            db=db,
+        )
+
+        version_records.append({
+            "version": pass_idx + 1,
+            "review_name": review_name,
+            "score": score,
+            "review_notes": critique,
+            "diff_stats": diff_stats,
+        })
+
+        current_content = revised_content
+
+    # 5. Generate BibTeX
+    logger.info("paper_service: generating BibTeX for portfolio paper (%d papers)", len(papers))
+    try:
+        bibtex = await generate_bibtex_for_papers(papers) if papers else ""
+    except Exception:
+        logger.exception("paper_service: BibTeX generation failed for portfolio paper")
+        bibtex = ""
+
+    # 6. Mark complete
+    final_tags = ["paper", "portfolio", "progress:100", "step:complete"]
+    await update_blog_post(
+        post_id=post_id,
+        data=BlogPostUpdate(
+            content=current_content,
+            tags=final_tags,
+            change_note="Pipeline complete",
+        ),
+        db=db,
+    )
+
+    # 7. Build review summary
+    scores = [v["score"] for v in version_records if v["score"] > 0]
+    avg_score = round(sum(scores) / len(scores), 1) if scores else 0.0
+    review_summary = (
+        f"Completed {total_passes} review passes. "
+        f"Scores: "
+        + ", ".join(
+            f"{v['review_name']}: {v['score']}/10" for v in version_records
+        )
+        + f". Average: {avg_score}/10."
+    )
+
+    logger.info(
+        "paper_service: portfolio pipeline complete for post %s. %s", post_id, review_summary
+    )
+
+    return {
+        "blog_post_id": str(post_id),
+        "title": title,
+        "final_content": current_content,
+        "bibtex": bibtex,
+        "versions": version_records,
+        "review_summary": review_summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # LaTeX export
 # ---------------------------------------------------------------------------
 

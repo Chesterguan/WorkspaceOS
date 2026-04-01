@@ -54,6 +54,23 @@ class ExportLatexResponse(BaseModel):
     bibtex: str
 
 
+class PortfolioPaperGenerateRequest(BaseModel):
+    project_ids: List[uuid.UUID] = Field(..., min_length=2, max_length=5)
+    title: str = Field(..., min_length=3, max_length=500)
+    paper_type: str = Field(
+        default="technical_report",
+        description="One of: conference, journal, technical_report, white_paper",
+    )
+    target_venue: Optional[str] = Field(
+        default=None,
+        description="e.g. 'AAAI 2026', 'Nature Digital Medicine', 'IEEE TNNLS'",
+    )
+    additional_instructions: Optional[str] = Field(
+        default=None,
+        description="Free-text instructions to the writer (focus areas, excluded sections, etc.)",
+    )
+
+
 class GenerateDiagramRequest(BaseModel):
     description: str = Field(
         ...,
