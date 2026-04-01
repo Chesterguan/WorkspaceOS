@@ -13,9 +13,11 @@ AI PR Secretary — a multi-project content management platform that syncs GitHu
 - Deployment: Docker Compose with 3 services on `pr-secretary` network
 
 ## Key Modules
-- **Services**: ai_client, ai_generation, agentic_generation, github_sync, memory_service, narrative_service, draft_service, blog_service, chat_service, workspace_scanner, publish_service, repo_context, extraction_service, consolidation_service, feedback_service
+- **Services**: ai_client, ai_generation, agentic_generation, github_sync, github_client, memory_service, narrative_service, draft_service, blog_service, chat_service, workspace_scanner, publish_service, linkedin_service, repo_context, extraction_service, consolidation_service, feedback_service
 - **AI Pipeline**: Gemini generates → Ollama privacy-scans → OpenAI reviews → 4 rounds max
-- **Memory**: pgvector embeddings via Ollama nomic-embed-text, cosine similarity search
+- **Memory**: pgvector 768-dim embeddings via Ollama nomic-embed-text, cosine similarity search
+- **Publishing**: GitHub Releases (API), LinkedIn (OAuth 2.0), Twitter/Medium/Xiaohongshu (manual copy)
+- **Routers**: projects, narratives, sync, drafts, ai, memory, github, posting, blog, agentic, workspace, chat, publish, linkedin (14 total)
 
 ## Commands
 ```bash
@@ -68,17 +70,25 @@ Stop if:
 - High-risk operation needs human approval (schema changes, public API changes, deployment)
 
 ## Current Priorities
-1. UI/UX polish
-2. Production readiness (proper auth, env management)
-3. Auto-sync on schedule
-4. Dashboard analytics
+1. Production readiness (proper auth, env management)
+2. Auto-sync on schedule
+3. Dashboard analytics
+4. More platform integrations
 
 ## Completed
-- All features built and tested (50/50 API endpoints pass)
-- LinkedIn OAuth integration
-- GitHub Releases auto-publish
-- Agent harness system
-- Git repo initialized (4 commits)
+- Core MVP: projects, narratives, sync, drafts, memory, blog, posting
+- Agentic AI: 3-model pipeline (Gemini/OpenAI/Ollama) with privacy scan
+- Deep repo context: file tree, configs, PRs, issues, commits from GitHub API (cached 10min)
+- Co-Founder AI chat with full project context
+- Local workspace scanner with media asset discovery
+- Publishing: GitHub Releases (API), LinkedIn (OAuth 2.0), Twitter/Medium/Xiaohongshu (manual)
+- Portfolio posts: combined drafts across multiple projects
+- Global settings page for platform connections
+- Agent harness system with custom commands
+- UI/UX polish: loading skeletons, error states, sidebar groups, page animations
+- All 50+ API endpoints tested and passing
+- Embeddings fixed: 768-dim native vectors (no zero-padding)
+- Git repo: 16 commits
 
 ## Known Constraints
 - Docker runs on OrbStack (macOS), DNS via 0.250.250.200
@@ -87,7 +97,8 @@ Stop if:
 - Medium API closed Jan 2025 — manual only
 - Xiaohongshu has no public API — manual only
 - Twitter/X API requires paid Basic tier ($100/mo) — manual only
-- LinkedIn token stored in-memory, lost on backend restart (re-auth needed)
+- LinkedIn token persisted in DB (survives restarts), API version 202603
 - GitHub token needs `repo` write scope for release publishing
+- Repo context cached 10min to avoid GitHub API rate limits
 
-Last updated: 2026-03-29
+Last updated: 2026-04-01

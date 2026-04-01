@@ -1,22 +1,17 @@
 # Next Task
 
 ## Status
-waiting
+waiting — user will specify next feature
 
 ## Task
-UI/UX polish — make the app look production-grade
+No task assigned.
 
 ## Scope
-- Files: [frontend/app/, frontend/components/]
-- Tests: [npm run build, visual check at http://localhost:3989]
+- Files: []
+- Tests: []
 
 ## Acceptance Criteria
-- [ ] Consistent spacing, typography, and color usage
-- [ ] Loading skeletons on all pages
-- [ ] Error states on all pages
-- [ ] Empty states with helpful CTAs
-- [ ] Mobile-responsive layout
-- [ ] Smooth transitions/animations
+- [ ] No criteria set
 
 ## Priority
 normal
