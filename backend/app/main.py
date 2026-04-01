@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import ai, drafts, memory, narratives, projects, sync
 from app.routers import agentic, blog, chat, github, linkedin, posting, publish, workspace
-from app.routers import research
+from app.routers import paper, research
 from app.routers.chat import starters_router as chat_starters_router
 from app.routers.research import starters_router as research_starters_router
 
@@ -42,6 +42,7 @@ app.include_router(publish.router, prefix=API_PREFIX)
 app.include_router(linkedin.router, prefix=API_PREFIX)
 app.include_router(research.router, prefix=API_PREFIX)
 app.include_router(research_starters_router, prefix=API_PREFIX)
+app.include_router(paper.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["health"])

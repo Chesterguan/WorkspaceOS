@@ -289,6 +289,304 @@ def format_paper_citation(paper: dict) -> str:
     return "".join(parts).strip()
 
 
+# ---------------------------------------------------------------------------
+# Extended integrations: CrossRef BibTeX, OpenAlex, Unpaywall, arXiv
+# ---------------------------------------------------------------------------
+
+async def doi_to_bibtex(doi: str) -> str:
+    """
+    Convert a DOI to a BibTeX entry via CrossRef content negotiation.
+
+    Sends a GET to https://doi.org/{doi} with Accept: text/x-bibliography; style=bibtex.
+    CrossRef follows the redirect and returns the raw BibTeX string.
+    Returns an empty string on failure.
+    """
+    import asyncio
+    url = f"https://doi.org/{doi}"
+    headers = {"Accept": "text/x-bibliography; style=bibtex"}
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            # Use a fresh client for this call — doi.org redirects to the publisher,
+            # so follow_redirects=True is essential.
+            async with httpx.AsyncClient(
+                timeout=15.0,
+                follow_redirects=True,
+                headers={"User-Agent": "ProjectScribe/1.0 (mailto:ziyuan9512@gmail.com)"},
+            ) as client:
+                resp = await client.get(url, headers=headers)
+            if resp.status_code == 429:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            if resp.status_code == 404:
+                logger.debug("doi_to_bibtex: DOI not found: %s", doi)
+                return ""
+            resp.raise_for_status()
+            return resp.text.strip()
+        except Exception:
+            logger.exception("doi_to_bibtex failed for DOI: %s", doi)
+            break
+    return ""
+
+
+async def search_openalex(query: str, limit: int = 10) -> List[dict]:
+    """
+    Search OpenAlex as a Semantic Scholar fallback (250M papers, generous rate limits).
+
+    Normalises the OpenAlex response to match the PaperResult-compatible dict shape
+    used throughout scholar_service (paperId, title, abstract, year, authors list of
+    {name}, citationCount, url, externalIds, venue).
+
+    Returns an empty list on error.
+    """
+    import asyncio
+    cache_key = f"openalex:{query}:{limit}"
+    now = time.time()
+    if cache_key in _search_cache:
+        cached_time, cached_result = _search_cache[cache_key]
+        if now - cached_time < _CACHE_TTL:
+            logger.debug("openalex cache hit for query: %s", query)
+            return cached_result
+
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            resp = await _get_http_client().get(
+                "https://api.openalex.org/works",
+                params={
+                    "search": query,
+                    "per-page": limit,
+                    "sort": "cited_by_count:desc",
+                    "mailto": "ziyuan9512@gmail.com",  # polite pool — faster responses
+                },
+            )
+            if resp.status_code == 429:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            results: List[dict] = []
+            for work in data.get("results", []):
+                # Normalise authors
+                authorships = work.get("authorships") or []
+                authors = []
+                for a in authorships:
+                    author_name = (a.get("author") or {}).get("display_name", "")
+                    if author_name:
+                        authors.append({"name": author_name})
+
+                # Normalise externalIds (OpenAlex uses doi as a full URL)
+                doi_raw = work.get("doi") or ""
+                doi_clean = doi_raw.replace("https://doi.org/", "").strip() or None
+
+                ext_ids: dict = {}
+                if doi_clean:
+                    ext_ids["DOI"] = doi_clean
+                arxiv_id = (work.get("ids") or {}).get("arxiv", "")
+                if arxiv_id:
+                    ext_ids["ArXiv"] = arxiv_id.replace("https://arxiv.org/abs/", "")
+
+                results.append({
+                    "paperId": work.get("id", ""),
+                    "title": work.get("title") or "Untitled",
+                    "abstract": work.get("abstract") or "",
+                    "year": work.get("publication_year"),
+                    "authors": authors,
+                    "citationCount": work.get("cited_by_count") or 0,
+                    "url": work.get("id") or "",  # OpenAlex canonical URL
+                    "externalIds": ext_ids,
+                    "venue": (work.get("primary_location") or {}).get("source", {}) and
+                             (work.get("primary_location") or {}).get("source", {}).get("display_name", ""),
+                })
+            _search_cache[cache_key] = (now, results)
+            return results
+        except Exception:
+            logger.exception("search_openalex failed for query: %s", query)
+            break
+    return []
+
+
+async def find_open_access_pdf(doi: str) -> Optional[str]:
+    """
+    Find a freely available PDF URL for a paper via Unpaywall.
+
+    Returns best_oa_location.url_for_pdf when is_oa=True, else None.
+    Unpaywall is free; email parameter is required by their API.
+    """
+    try:
+        resp = await _get_http_client().get(
+            f"https://api.unpaywall.org/v2/{doi}",
+            params={"email": "ziyuan9512@gmail.com"},
+        )
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+        if not data.get("is_oa"):
+            return None
+        best_loc = data.get("best_oa_location") or {}
+        return best_loc.get("url_for_pdf") or None
+    except Exception:
+        logger.exception("find_open_access_pdf failed for DOI: %s", doi)
+    return None
+
+
+async def search_arxiv(query: str, max_results: int = 5) -> List[dict]:
+    """
+    Search arXiv for preprints using the Atom API.
+
+    Parses the Atom XML response with stdlib string parsing (no feedparser dependency).
+    Returns a list of dicts with keys: title, authors, abstract, pdf_url, arxiv_id, year.
+    """
+    import re as _re
+    try:
+        resp = await _get_http_client().get(
+            "http://export.arxiv.org/api/query",
+            params={
+                "search_query": query,
+                "max_results": max_results,
+                "sortBy": "relevance",
+            },
+        )
+        resp.raise_for_status()
+        xml = resp.text
+
+        # Extract each <entry> block
+        entries = _re.findall(r"<entry>(.*?)</entry>", xml, _re.DOTALL)
+
+        def _text(tag: str, block: str) -> str:
+            """Extract first tag value from an XML block via regex."""
+            m = _re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", block, _re.DOTALL)
+            return m.group(1).strip() if m else ""
+
+        results: List[dict] = []
+        for entry in entries:
+            title = _re.sub(r"\s+", " ", _text("title", entry)).strip()
+            abstract = _re.sub(r"\s+", " ", _text("summary", entry)).strip()
+
+            # Authors — multiple <author><name>...</name></author> blocks
+            author_names: List[str] = []
+            for a_block in _re.findall(r"<author>(.*?)</author>", entry, _re.DOTALL):
+                name = _text("name", a_block)
+                if name:
+                    author_names.append(name)
+
+            # arxiv ID from <id>http://arxiv.org/abs/XXXX.XXXXX</id>
+            raw_id = _text("id", entry)
+            arxiv_id = raw_id.split("/abs/")[-1].strip() if "/abs/" in raw_id else raw_id
+
+            # PDF URL
+            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}" if arxiv_id else ""
+
+            # Year from <published>2023-01-15T...</published>
+            published = _text("published", entry)
+            year: Optional[int] = None
+            if published:
+                year_match = _re.match(r"(\d{4})", published)
+                if year_match:
+                    year = int(year_match.group(1))
+
+            results.append({
+                "title": title,
+                "authors": author_names,
+                "abstract": abstract,
+                "pdf_url": pdf_url,
+                "arxiv_id": arxiv_id,
+                "year": year,
+            })
+        return results
+    except Exception:
+        logger.exception("search_arxiv failed for query: %s", query)
+    return []
+
+
+async def generate_bibtex_for_papers(papers: List[dict]) -> str:
+    """
+    Generate BibTeX entries for a list of papers.
+
+    For papers that have a DOI in externalIds, fetches real BibTeX via CrossRef.
+    For papers without a DOI, synthesises a minimal @article entry from available metadata.
+    Returns a single concatenated .bib string ready to write to a file.
+    """
+    import asyncio
+    import re as _re
+
+    bib_entries: List[str] = []
+    # Process up to 5 DOI-based lookups concurrently to avoid overwhelming CrossRef
+    doi_papers = [(i, p) for i, p in enumerate(papers) if _get_doi(p)]
+    no_doi_papers = [(i, p) for i, p in enumerate(papers) if not _get_doi(p)]
+
+    async def _fetch_doi_bib(idx: int, paper: dict) -> tuple:
+        doi = _get_doi(paper)
+        bib = await doi_to_bibtex(doi)  # type: ignore[arg-type]
+        return idx, bib, paper
+
+    tasks = [_fetch_doi_bib(i, p) for i, p in doi_papers]
+    doi_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Build a lookup: index -> bibtex string
+    bib_by_index: dict = {}
+    for result in doi_results:
+        if isinstance(result, Exception):
+            continue
+        idx, bib, paper = result
+        if bib:
+            bib_by_index[idx] = bib
+        else:
+            # Fallback to synthetic entry even though DOI exists (CrossRef may have failed)
+            no_doi_papers.append((idx, paper))
+
+    # Generate synthetic entries for papers without DOI or failed CrossRef lookups
+    for idx, paper in no_doi_papers:
+        authors = _get_author_names(paper)
+        year = paper.get("year") or "n.d."
+        title = (paper.get("title") or "Untitled").strip()
+        venue = paper.get("venue") or ""
+
+        # Build a cite key: FirstAuthorLastName + Year + first significant title word
+        first_author_last = ""
+        if authors:
+            parts = authors[0].split()
+            first_author_last = _re.sub(r"[^A-Za-z]", "", parts[-1]) if parts else "Unknown"
+        title_word = ""
+        for w in title.split():
+            clean = _re.sub(r"[^A-Za-z]", "", w)
+            if len(clean) > 3:
+                title_word = clean[:10]
+                break
+        cite_key = f"{first_author_last}{year}{title_word}"
+
+        author_str = " and ".join(authors) if authors else "Unknown"
+
+        url = paper.get("url") or ""
+        ext_ids = paper.get("externalIds") or {}
+        arxiv_id = ext_ids.get("ArXiv", "")
+
+        note_line = ""
+        if arxiv_id:
+            note_line = f"  note = {{arXiv:{arxiv_id}}},"
+        elif url:
+            note_line = f"  url = {{{url}}},"
+
+        synthetic = (
+            f"@article{{{cite_key},\n"
+            f"  author = {{{author_str}}},\n"
+            f"  title = {{{title}}},\n"
+            f"  year = {{{year}}},\n"
+            f"  journal = {{{venue or 'Preprint'}}},\n"
+            + (note_line + "\n" if note_line else "")
+            + "}"
+        )
+        bib_by_index[idx] = synthetic
+
+    # Assemble in original order
+    for i in range(len(papers)):
+        if i in bib_by_index:
+            bib_entries.append(bib_by_index[i])
+
+    return "\n\n".join(bib_entries)
+
+
 def format_papers_for_prompt(papers: List[dict]) -> str:
     """
     Format a list of papers as a numbered reference context block for AI prompts.
