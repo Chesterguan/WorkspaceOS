@@ -485,90 +485,169 @@ async def generate_paper(
     version_records: List[Dict] = []
     current_content = initial_draft
 
-    # 4. Five review + revision passes
+    # 4. ADAPTIVE review pipeline
+    #    Strategy: run each review pass. If score < 8, re-review+revise that same
+    #    aspect up to MAX_RETRIES times before moving on. After all 5 passes, if
+    #    any score is still < 8, do a final comprehensive re-review cycle.
+    #    Goal: every section scores 8+ out of 10.
+    MAX_RETRIES_PER_PASS = 2  # retry low-scoring passes up to 2 extra times
+    MAX_TOTAL_ROUNDS = 12     # hard cap to prevent infinite loops
+    TARGET_SCORE = 8
+    version_num = 1
+    total_rounds = 0
+    pass_scores: Dict[str, int] = {}  # track best score per review aspect
+
     for pass_idx, review_pass in enumerate(REVIEW_PASSES, start=1):
         review_name = review_pass["name"]
         reviewer_system = review_pass["system"]
+        retries = 0
 
-        logger.info(
-            "paper_service: starting review pass %d/%d — %s (post %s)",
-            pass_idx,
-            total_passes,
-            review_name,
-            post_id,
-        )
+        while retries <= MAX_RETRIES_PER_PASS and total_rounds < MAX_TOTAL_ROUNDS:
+            total_rounds += 1
+            version_num += 1
+            attempt_label = f"{review_name}" if retries == 0 else f"{review_name} (retry {retries})"
 
-        # 4a. Reviewer critiques — uses reviewer_ai (OpenAI when available) so
-        #     a different model reviews the writer's (Gemini) output.
-        review_user_prompt = (
-            f"Review the following academic paper for: {review_name}\n\n"
-            f"## Paper\n{current_content}"
+            logger.info(
+                "paper_service: review round %d — %s (post %s)",
+                total_rounds, attempt_label, post_id,
+            )
+
+            # 4a. Reviewer critiques
+            review_user_prompt = (
+                f"Review the following academic paper for: {review_name}\n\n"
+                f"Score strictly 1-10. Only score 8+ if the section is genuinely publication-ready.\n\n"
+                f"## Paper\n{current_content}"
+            )
+            try:
+                critique = await reviewer_ai.complete(
+                    system=reviewer_system,
+                    user=review_user_prompt,
+                )
+            except Exception:
+                logger.exception("paper_service: reviewer failed for %s", attempt_label)
+                critique = f"[Review failed for: {attempt_label}]"
+
+            score = _extract_score(critique)
+            pass_scores[review_name] = max(pass_scores.get(review_name, 0), score)
+            logger.info("paper_service: %s — score %d/10", attempt_label, score)
+
+            # 4b. Writer revises
+            revision_prompt = _build_revision_prompt(
+                paper_content=current_content,
+                review_critique=critique,
+                review_name=review_name,
+                context_block=context_block,
+            )
+            try:
+                revised_content = await cloud_ai.complete(
+                    system=_REVISION_SYSTEM,
+                    user=revision_prompt,
+                )
+            except Exception:
+                logger.exception("paper_service: revision failed for %s", attempt_label)
+                revised_content = current_content
+
+            # 4c. Diff + snapshot
+            diff_stats = compute_diff_stats(current_content, revised_content)
+            change_note = f"{attempt_label} (score: {score}/10)"
+            await update_blog_post(
+                post_id=post_id,
+                data=BlogPostUpdate(
+                    content=revised_content,
+                    change_note=change_note,
+                    tags=_build_progress_tags(
+                        f"round_{total_rounds}_complete", total_rounds, MAX_TOTAL_ROUNDS
+                    ),
+                ),
+                db=db,
+            )
+
+            changes_made = (
+                f"{diff_stats['lines_added']} lines added, "
+                f"{diff_stats['lines_removed']} removed "
+                f"({diff_stats['similarity_pct']}% similar)"
+            )
+            version_records.append({
+                "version": version_num,
+                "review_name": attempt_label,
+                "score": score,
+                "review_notes": critique,
+                "changes_made": changes_made,
+                "diff_stats": diff_stats,
+            })
+
+            current_content = revised_content
+
+            # If score meets target, move to next review aspect
+            if score >= TARGET_SCORE:
+                logger.info("paper_service: %s passed (score %d >= %d)", review_name, score, TARGET_SCORE)
+                break
+
+            retries += 1
+            if retries > MAX_RETRIES_PER_PASS:
+                logger.warning(
+                    "paper_service: %s did not reach target after %d retries (best: %d)",
+                    review_name, MAX_RETRIES_PER_PASS, pass_scores[review_name],
+                )
+
+    # 4e. Final comprehensive check — if any aspect scored below target,
+    #     do one final holistic review+revision
+    low_scores = {k: v for k, v in pass_scores.items() if v < TARGET_SCORE}
+    if low_scores and total_rounds < MAX_TOTAL_ROUNDS:
+        total_rounds += 1
+        version_num += 1
+        weak_areas = ", ".join(f"{k} ({v}/10)" for k, v in low_scores.items())
+        logger.info("paper_service: final polish — weak areas: %s", weak_areas)
+
+        final_review_prompt = (
+            f"This paper has been through multiple review rounds but these areas "
+            f"still scored below 8/10: {weak_areas}.\n\n"
+            f"Do a final comprehensive review focusing on these weak areas. "
+            f"Score each area 1-10.\n\n## Paper\n{current_content}"
         )
         try:
-            critique = await reviewer_ai.complete(
-                system=reviewer_system,
-                user=review_user_prompt,
+            final_critique = await reviewer_ai.complete(
+                system="You are a senior academic reviewer doing a final quality gate. "
+                       "The paper must score 8+ in every area to pass. Be specific about remaining issues.",
+                user=final_review_prompt,
             )
-        except Exception:
-            logger.exception(
-                "paper_service: reviewer call failed for pass %d (%s)", pass_idx, review_name
-            )
-            critique = f"[Review failed for pass: {review_name}]"
-
-        score = _extract_score(critique)
-        logger.info(
-            "paper_service: pass %d (%s) — score %d/10", pass_idx, review_name, score
-        )
-
-        # 4b. Writer revises
-        revision_prompt = _build_revision_prompt(
-            paper_content=current_content,
-            review_critique=critique,
-            review_name=review_name,
-            context_block=context_block,
-        )
-        try:
-            revised_content = await cloud_ai.complete(
+            final_revision = await cloud_ai.complete(
                 system=_REVISION_SYSTEM,
-                user=revision_prompt,
+                user=_build_revision_prompt(current_content, final_critique, "Final Polish", context_block),
             )
+            diff_stats = compute_diff_stats(current_content, final_revision)
+            final_score = _extract_score(final_critique)
+
+            await update_blog_post(
+                post_id=post_id,
+                data=BlogPostUpdate(
+                    content=final_revision,
+                    change_note=f"Final Polish (score: {final_score}/10)",
+                    tags=_build_progress_tags("final_polish", total_rounds, MAX_TOTAL_ROUNDS),
+                ),
+                db=db,
+            )
+
+            changes_made = (
+                f"{diff_stats['lines_added']} lines added, "
+                f"{diff_stats['lines_removed']} removed "
+                f"({diff_stats['similarity_pct']}% similar)"
+            )
+            version_records.append({
+                "version": version_num,
+                "review_name": "Final Polish",
+                "score": final_score,
+                "review_notes": final_critique,
+                "changes_made": changes_made,
+                "diff_stats": diff_stats,
+            })
+            current_content = final_revision
         except Exception:
-            logger.exception(
-                "paper_service: revision call failed for pass %d (%s)", pass_idx, review_name
-            )
-            # If revision fails, keep current content so the pipeline continues
-            revised_content = current_content
+            logger.exception("paper_service: final polish failed")
 
-        # 4c. Compute diff stats before snapshotting
-        diff_stats = compute_diff_stats(current_content, revised_content)
-
-        # 4d. Snapshot revised version
-        change_note = f"{review_name} (score: {score}/10)"
-        await update_blog_post(
-            post_id=post_id,
-            data=BlogPostUpdate(
-                content=revised_content,
-                change_note=change_note,
-                tags=_build_progress_tags(f"pass_{pass_idx}_complete", pass_idx + 1, total_passes),
-            ),
-            db=db,
-        )
-
-        changes_made = (
-            f"{diff_stats['lines_added']} lines added, "
-            f"{diff_stats['lines_removed']} removed "
-            f"({diff_stats['similarity_pct']}% similar)"
-        )
-        version_records.append({
-            "version": pass_idx + 1,  # version 1 is the initial draft
-            "review_name": review_name,
-            "score": score,
-            "review_notes": critique,
-            "changes_made": changes_made,
-            "diff_stats": diff_stats,
-        })
-
-        current_content = revised_content
+    # Log final scores
+    logger.info("paper_service: pipeline complete — scores: %s | total rounds: %d",
+                pass_scores, total_rounds)
 
     # 5. Generate BibTeX
     logger.info("paper_service: generating BibTeX for %d papers", len(papers))
@@ -816,80 +895,115 @@ async def generate_portfolio_paper(
     version_records: List[Dict] = []
     current_content = initial_draft
 
-    # 4. Five review + revision passes (identical to generate_paper).
-    #    reviewer_ai (OpenAI) critiques; cloud_ai (Gemini) revises.
+    # 4. ADAPTIVE review pipeline (same as generate_paper)
+    #    Each aspect retried until score >= 8, then final polish if needed.
+    MAX_RETRIES_PER_PASS = 2
+    MAX_TOTAL_ROUNDS = 12
+    TARGET_SCORE = 8
+    version_num = 1
+    total_rounds = 0
+    pass_scores: Dict[str, int] = {}
+
     for pass_idx, review_pass in enumerate(REVIEW_PASSES, start=1):
         review_name = review_pass["name"]
         reviewer_system = review_pass["system"]
+        retries = 0
 
-        logger.info(
-            "paper_service: portfolio paper review pass %d/%d — %s (post %s)",
-            pass_idx,
-            total_passes,
-            review_name,
-            post_id,
-        )
+        while retries <= MAX_RETRIES_PER_PASS and total_rounds < MAX_TOTAL_ROUNDS:
+            total_rounds += 1
+            version_num += 1
+            attempt_label = f"{review_name}" if retries == 0 else f"{review_name} (retry {retries})"
 
-        review_user_prompt = (
-            f"Review the following academic paper for: {review_name}\n\n"
-            f"## Paper\n{current_content}"
-        )
-        try:
-            critique = await reviewer_ai.complete(
-                system=reviewer_system,
-                user=review_user_prompt,
+            logger.info("paper_service: portfolio round %d — %s (post %s)", total_rounds, attempt_label, post_id)
+
+            review_user_prompt = (
+                f"Review the following academic paper for: {review_name}\n\n"
+                f"Score strictly 1-10. Only score 8+ if the section is genuinely publication-ready.\n\n"
+                f"## Paper\n{current_content}"
             )
-        except Exception:
-            logger.exception(
-                "paper_service: reviewer call failed for portfolio pass %d (%s)",
-                pass_idx,
-                review_name,
+            try:
+                critique = await reviewer_ai.complete(system=reviewer_system, user=review_user_prompt)
+            except Exception:
+                logger.exception("paper_service: portfolio reviewer failed for %s", attempt_label)
+                critique = f"[Review failed for: {attempt_label}]"
+
+            score = _extract_score(critique)
+            pass_scores[review_name] = max(pass_scores.get(review_name, 0), score)
+
+            revision_prompt = _build_revision_prompt(current_content, critique, review_name, context_block)
+            try:
+                revised_content = await cloud_ai.complete(system=_REVISION_SYSTEM, user=revision_prompt)
+            except Exception:
+                logger.exception("paper_service: portfolio revision failed for %s", attempt_label)
+                revised_content = current_content
+
+            diff_stats = compute_diff_stats(current_content, revised_content)
+            change_note = f"{attempt_label} (score: {score}/10)"
+            await update_blog_post(
+                post_id=post_id,
+                data=BlogPostUpdate(
+                    content=revised_content,
+                    change_note=change_note,
+                    tags=_build_progress_tags(f"round_{total_rounds}_complete", total_rounds, MAX_TOTAL_ROUNDS),
+                ),
+                db=db,
             )
-            critique = f"[Review failed for pass: {review_name}]"
 
-        score = _extract_score(critique)
+            changes_made = (
+                f"{diff_stats['lines_added']} lines added, "
+                f"{diff_stats['lines_removed']} removed "
+                f"({diff_stats['similarity_pct']}% similar)"
+            )
+            version_records.append({
+                "version": version_num,
+                "review_name": attempt_label,
+                "score": score,
+                "review_notes": critique,
+                "changes_made": changes_made,
+                "diff_stats": diff_stats,
+            })
+            current_content = revised_content
 
-        revision_prompt = _build_revision_prompt(
-            paper_content=current_content,
-            review_critique=critique,
-            review_name=review_name,
-            context_block=context_block,
-        )
+            if score >= TARGET_SCORE:
+                break
+            retries += 1
+
+    # Final polish for weak areas
+    low_scores = {k: v for k, v in pass_scores.items() if v < TARGET_SCORE}
+    if low_scores and total_rounds < MAX_TOTAL_ROUNDS:
+        total_rounds += 1
+        version_num += 1
+        weak_areas = ", ".join(f"{k} ({v}/10)" for k, v in low_scores.items())
+        logger.info("paper_service: portfolio final polish — weak: %s", weak_areas)
         try:
-            revised_content = await cloud_ai.complete(
+            final_critique = await reviewer_ai.complete(
+                system="You are a senior academic reviewer doing a final quality gate. Score 8+ only if publication-ready.",
+                user=f"Weak areas: {weak_areas}.\n\n## Paper\n{current_content}",
+            )
+            final_revision = await cloud_ai.complete(
                 system=_REVISION_SYSTEM,
-                user=revision_prompt,
+                user=_build_revision_prompt(current_content, final_critique, "Final Polish", context_block),
             )
+            diff_stats = compute_diff_stats(current_content, final_revision)
+            final_score = _extract_score(final_critique)
+            await update_blog_post(
+                post_id=post_id,
+                data=BlogPostUpdate(content=final_revision, change_note=f"Final Polish (score: {final_score}/10)"),
+                db=db,
+            )
+            version_records.append({
+                "version": version_num,
+                "review_name": "Final Polish",
+                "score": final_score,
+                "review_notes": final_critique,
+                "changes_made": f"{diff_stats['lines_added']} added, {diff_stats['lines_removed']} removed",
+                "diff_stats": diff_stats,
+            })
+            current_content = final_revision
         except Exception:
-            logger.exception(
-                "paper_service: revision call failed for portfolio pass %d (%s)",
-                pass_idx,
-                review_name,
-            )
-            revised_content = current_content
+            logger.exception("paper_service: portfolio final polish failed")
 
-        diff_stats = compute_diff_stats(current_content, revised_content)
-
-        change_note = f"{review_name} (score: {score}/10)"
-        await update_blog_post(
-            post_id=post_id,
-            data=BlogPostUpdate(
-                content=revised_content,
-                change_note=change_note,
-                tags=_build_progress_tags(f"pass_{pass_idx}_complete", pass_idx + 1, total_passes),
-            ),
-            db=db,
-        )
-
-        version_records.append({
-            "version": pass_idx + 1,
-            "review_name": review_name,
-            "score": score,
-            "review_notes": critique,
-            "diff_stats": diff_stats,
-        })
-
-        current_content = revised_content
+    logger.info("paper_service: portfolio pipeline complete — scores: %s | rounds: %d", pass_scores, total_rounds)
 
     # 5. Generate BibTeX
     logger.info("paper_service: generating BibTeX for portfolio paper (%d papers)", len(papers))
