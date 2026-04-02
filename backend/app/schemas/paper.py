@@ -86,3 +86,85 @@ class GenerateDiagramRequest(BaseModel):
 class GenerateDiagramResponse(BaseModel):
     source: str  # the diagram source code (Mermaid / PlantUML / etc.)
     svg: str     # rendered SVG as a UTF-8 string
+
+
+# ---------------------------------------------------------------------------
+# Title suggestion schemas
+# ---------------------------------------------------------------------------
+
+class SuggestTitlesRequest(BaseModel):
+    paper_type: str = Field(
+        default="conference",
+        description="One of: conference, journal, technical_report, white_paper",
+    )
+    target_venue: Optional[str] = Field(
+        default=None,
+        description="e.g. 'AAAI 2026', 'Nature Digital Medicine'",
+    )
+
+
+class TitleSuggestion(BaseModel):
+    title: str
+    style: str        # descriptive | question | method-result | provocative | systematic
+    rationale: str    # one-sentence explanation of why this title works
+
+
+class SuggestTitlesResponse(BaseModel):
+    titles: List[TitleSuggestion]
+
+
+# ---------------------------------------------------------------------------
+# Visual content generation schemas
+# ---------------------------------------------------------------------------
+
+class GenerateTableRequest(BaseModel):
+    description: str = Field(
+        ...,
+        description="What should the table compare / show?",
+    )
+    items: Optional[List[str]] = Field(
+        default=None,
+        description="Row items to compare (AI fills if omitted)",
+    )
+    criteria: Optional[List[str]] = Field(
+        default=None,
+        description="Column criteria/dimensions (AI fills if omitted)",
+    )
+
+
+class GenerateTableResponse(BaseModel):
+    markdown: str   # pipe-delimited markdown table
+    latex: str      # LaTeX tabular equivalent
+
+
+class GenerateChartRequest(BaseModel):
+    chart_type: str = Field(
+        ...,
+        description="One of: bar, line, pie, radar",
+    )
+    description: str = Field(
+        ...,
+        description="What data should the chart visualise?",
+    )
+
+
+class GenerateChartResponse(BaseModel):
+    data: Dict           # structured data dict (labels + values)
+    mermaid_source: str  # Mermaid pie/xychart source
+    svg: str             # base64-encoded rendered SVG
+
+
+class GenerateFigureRequest(BaseModel):
+    figure_type: str = Field(
+        ...,
+        description="One of: architecture, flow, sequence, class",
+    )
+    description: str = Field(
+        ...,
+        description="Natural-language description of the diagram",
+    )
+
+
+class GenerateFigureResponse(BaseModel):
+    mermaid_source: str  # generated Mermaid source
+    svg: str             # base64-encoded rendered SVG

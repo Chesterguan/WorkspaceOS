@@ -26,15 +26,32 @@ from app.models.project import Project
 from app.schemas.paper import (
     ExportLatexRequest,
     ExportLatexResponse,
+    GenerateChartRequest,
+    GenerateChartResponse,
     GenerateDiagramRequest,
     GenerateDiagramResponse,
+    GenerateFigureRequest,
+    GenerateFigureResponse,
+    GenerateTableRequest,
+    GenerateTableResponse,
     PaperGenerateRequest,
     PaperGenerateResponse,
     PaperVersionSummary,
     PortfolioPaperGenerateRequest,
+    SuggestTitlesRequest,
+    SuggestTitlesResponse,
+    TitleSuggestion,
 )
 from app.services import paper_service
-from app.services.diagram_service import generate_architecture_diagram, render_diagram
+from app.services.diagram_service import (
+    generate_architecture_diagram,
+    generate_comparison_table,
+    generate_data_chart,
+    generate_flow_diagram,
+    generate_latex_table,
+    generate_system_architecture,
+    render_diagram,
+)
 
 router = APIRouter(prefix="/projects/{project_id}/paper", tags=["paper"])
 portfolio_paper_router = APIRouter(prefix="/portfolio/paper", tags=["paper"])
@@ -240,6 +257,211 @@ async def generate_diagram(
         )
 
     return GenerateDiagramResponse(source=source, svg=svg_str)
+
+
+# ---------------------------------------------------------------------------
+# Title suggestion
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/suggest-titles",
+    response_model=SuggestTitlesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate 5 compelling paper title suggestions",
+)
+async def suggest_titles(
+    project_id: uuid.UUID,
+    body: SuggestTitlesRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> SuggestTitlesResponse:
+    """
+    Analyse top-cited related papers from Semantic Scholar, identify title patterns,
+    and generate five title suggestions in different academic styles:
+    descriptive, question, method-result, provocative, and systematic.
+
+    Useful before running the full paper pipeline when the user wants to pick a
+    title rather than letting the AI invent one.
+    """
+    await _require_project(project_id, db)
+
+    if body.paper_type not in _VALID_PAPER_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Invalid paper_type '{body.paper_type}'. "
+                f"Must be one of: {sorted(_VALID_PAPER_TYPES)}"
+            ),
+        )
+
+    titles = await paper_service.generate_paper_titles(
+        project_id=project_id,
+        paper_type=body.paper_type,
+        target_venue=body.target_venue,
+        db=db,
+    )
+
+    return SuggestTitlesResponse(
+        titles=[TitleSuggestion(**t) for t in titles]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Visual content generation — table
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/generate-table",
+    response_model=GenerateTableResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate a comparison table (markdown + LaTeX)",
+)
+async def generate_table(
+    project_id: uuid.UUID,
+    body: GenerateTableRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> GenerateTableResponse:
+    """
+    Ask the cloud AI to produce a filled comparison table for this project.
+
+    Provide a description of what to compare, and optionally pre-specify the
+    row items and column criteria. The AI fills every cell. Returns both a
+    pipe-delimited markdown table and its LaTeX tabular equivalent.
+    """
+    await _require_project(project_id, db)
+
+    # Build a minimal project context for the AI to anchor its answers
+    context_block, _ = await paper_service.get_paper_context(project_id, db)
+
+    markdown = await generate_comparison_table(
+        items=body.items or [],
+        criteria=body.criteria or [],
+        project_context=f"{context_block}\n\nTable request: {body.description}",
+    )
+
+    latex = generate_latex_table(markdown)
+
+    return GenerateTableResponse(markdown=markdown, latex=latex)
+
+
+# ---------------------------------------------------------------------------
+# Visual content generation — chart
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/generate-chart",
+    response_model=GenerateChartResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate a chart (data + Mermaid source + SVG)",
+)
+async def generate_chart(
+    project_id: uuid.UUID,
+    body: GenerateChartRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> GenerateChartResponse:
+    """
+    Generate chart data and a Mermaid visualisation for this project.
+
+    chart_type must be one of: bar, line, pie, radar.
+    The cloud AI infers plausible data values from the project context and the
+    description you supply. The chart is rendered via Kroki.io and the SVG is
+    returned base64-encoded.
+    """
+    await _require_project(project_id, db)
+
+    valid_chart_types = frozenset(["bar", "line", "pie", "radar"])
+    if body.chart_type.lower() not in valid_chart_types:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Invalid chart_type '{body.chart_type}'. "
+                f"Must be one of: {sorted(valid_chart_types)}"
+            ),
+        )
+
+    context_block, _ = await paper_service.get_paper_context(project_id, db)
+
+    result = await generate_data_chart(
+        chart_type=body.chart_type.lower(),
+        data_description=body.description,
+        project_context=context_block,
+    )
+
+    return GenerateChartResponse(
+        data=result["data"],
+        mermaid_source=result["mermaid_source"],
+        svg=result["svg"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Visual content generation — figure (architecture / flow / sequence / class)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/generate-figure",
+    response_model=GenerateFigureResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate a Mermaid figure (architecture / flow / sequence / class)",
+)
+async def generate_figure(
+    project_id: uuid.UUID,
+    body: GenerateFigureRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> GenerateFigureResponse:
+    """
+    Generate a diagram figure using AI + Kroki.io rendering.
+
+    figure_type must be one of: architecture, flow, sequence, class.
+
+    - architecture: uses the local Ollama model against the project file tree for
+      on-device privacy; generates a flowchart TD component diagram.
+    - flow / sequence / class: uses the cloud AI (Gemini) to produce the appropriate
+      Mermaid diagram type from the description.
+
+    The rendered SVG is returned base64-encoded.
+    """
+    await _require_project(project_id, db)
+
+    valid_figure_types = frozenset(["architecture", "flow", "sequence", "class"])
+    if body.figure_type.lower() not in valid_figure_types:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Invalid figure_type '{body.figure_type}'. "
+                f"Must be one of: {sorted(valid_figure_types)}"
+            ),
+        )
+
+    figure_type = body.figure_type.lower()
+
+    if figure_type == "architecture":
+        # Use the local model — keeps code analysis on-device
+        # Build a lightweight project context + file tree
+        from app.services.workspace_scanner import get_latest_snapshot
+
+        context_block, _ = await paper_service._build_paper_context(project_id, db)
+        snapshot = await get_latest_snapshot(project_id, db)
+        file_tree = snapshot.summary if snapshot else body.description
+
+        result = await generate_system_architecture(
+            project_context=context_block,
+            file_tree=file_tree,
+        )
+    else:
+        # flow / sequence / class — cloud AI
+        result = await generate_flow_diagram(
+            process_description=body.description,
+            figure_type=figure_type,
+        )
+
+    return GenerateFigureResponse(
+        mermaid_source=result["mermaid_source"],
+        svg=result["svg"],
+    )
 
 
 # ---------------------------------------------------------------------------

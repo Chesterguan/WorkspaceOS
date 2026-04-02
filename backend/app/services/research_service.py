@@ -130,6 +130,15 @@ RESEARCH_STARTERS = [
             "How should I frame this for a health informatics audience?",
         ],
     },
+    {
+        "category": "Visuals",
+        "prompts": [
+            "Generate a comparison table for this project vs alternatives",
+            "Create an architecture diagram from the codebase",
+            "Suggest 5 paper titles for this project",
+            "Help me design evaluation metrics and results table",
+        ],
+    },
 ]
 
 

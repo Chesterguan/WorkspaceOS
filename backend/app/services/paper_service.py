@@ -1136,3 +1136,154 @@ def _convert_inline(text: str) -> str:
     # `code`
     text = re.sub(r"`(.+?)`", lambda m: f"\\texttt{{{m.group(1)}}}", text)
     return text
+
+
+# ---------------------------------------------------------------------------
+# Title suggestion
+# ---------------------------------------------------------------------------
+
+async def generate_paper_titles(
+    project_id: uuid.UUID,
+    paper_type: str,
+    target_venue: Optional[str],
+    db: AsyncSession,
+    count: int = 5,
+) -> List[Dict]:
+    """
+    Generate compelling paper title suggestions by:
+    1. Loading project context (narrative, repo, workspace)
+    2. Searching Semantic Scholar for top-cited papers in the field
+    3. Analyzing title patterns from successful papers
+    4. Generating titles in five distinct academic styles
+
+    Returns a list of dicts with keys: title, style, rationale.
+    Styles: descriptive | question | method-result | provocative | systematic
+    """
+    ai = get_cloud_client()
+
+    # -- Load project context (narrative only — fast path, no full repo needed) --
+    narrative_ctx: dict = {}
+    narrative_summary = ""
+    try:
+        narrative = await get_or_create(project_id, db)
+        narrative_ctx = build_context_block(narrative)
+        parts: List[str] = []
+        if narrative_ctx.get("one_liner"):
+            parts.append(f"One-liner: {narrative_ctx['one_liner']}")
+        if narrative_ctx.get("origin_story"):
+            parts.append(f"Origin story: {narrative_ctx['origin_story']}")
+        if narrative_ctx.get("target_audience"):
+            parts.append(f"Target audience: {narrative_ctx['target_audience']}")
+        if narrative_ctx.get("preferred_angles"):
+            parts.append(f"Research angles: {', '.join(narrative_ctx['preferred_angles'])}")
+        narrative_summary = "\n".join(parts)
+    except Exception:
+        logger.exception("generate_paper_titles: failed to load narrative for project %s", project_id)
+
+    # -- Fetch top-cited related papers to learn title patterns --
+    related_papers: List[dict] = []
+    try:
+        keywords: List[str] = []
+        if narrative_ctx.get("one_liner"):
+            keywords.append(narrative_ctx["one_liner"])
+        for angle in (narrative_ctx.get("preferred_angles") or [])[:2]:
+            if angle:
+                keywords.append(str(angle))
+        if keywords:
+            # Sort by citation count to get the most prominent papers
+            raw = await find_related_work(keywords, limit=15)
+            related_papers = sorted(
+                raw,
+                key=lambda p: p.get("citationCount") or 0,
+                reverse=True,
+            )[:10]
+    except Exception:
+        logger.exception("generate_paper_titles: Semantic Scholar search failed")
+
+    # Build a compact list of example titles from high-citation papers
+    example_titles = "\n".join(
+        f"- {p['title']} ({p.get('citationCount', 0)} citations)"
+        for p in related_papers
+        if p.get("title")
+    )
+
+    venue_str = target_venue or "a suitable peer-reviewed venue"
+    type_hint = _PAPER_TYPE_HINTS.get(paper_type, _PAPER_TYPE_HINTS["conference"])
+
+    system = (
+        "You are an expert academic title writer who understands what makes conference and "
+        "journal paper titles compelling, memorable, and citation-worthy. "
+        "You analyse patterns from real successful papers and apply them to new work."
+    )
+
+    user = (
+        f"## Project Information\n{narrative_summary}\n\n"
+        f"## Paper Type\n{type_hint}\n\n"
+        f"## Target Venue\n{venue_str}\n\n"
+        + (
+            f"## Top-cited Related Papers (title patterns to learn from)\n{example_titles}\n\n"
+            if example_titles else ""
+        )
+        + "## Task\n"
+        "Analyse the title patterns from the related papers above (colon usage, question format, "
+        "method naming, acronyms, result highlighting). Then generate EXACTLY 5 paper titles for "
+        "this project, one in each of these academic styles:\n\n"
+        "1. **descriptive** — States method/system name and domain clearly. "
+        'Example: "HAVEN: A Value Exchange Protocol for Patient-Controlled Health Data"\n'
+        "2. **question** — Poses the core research question. "
+        'Example: "Can Patients Control Their Health Data? A Protocol Approach"\n'
+        "3. **method-result** — Names the technique and what it achieves. "
+        'Example: "Patient-Controlled Health Data Governance Through Programmable Consent"\n'
+        "4. **provocative** — Bold, attention-grabbing claim. "
+        'Example: "Health Data Belongs to Patients: A Protocol for Making It Real"\n'
+        "5. **systematic** — Signals a rigorous, survey-style contribution. "
+        'Example: "A Systematic Framework for Patient-Centered Health Data Exchange"\n\n'
+        "For each title output EXACTLY this JSON object on its own line (no markdown fences):\n"
+        '{"style": "<style>", "title": "<title>", "rationale": "<one sentence why this works>"}\n\n'
+        "Output ONLY 5 JSON objects, one per line. No extra text."
+    )
+
+    try:
+        raw = await ai.complete(system=system, user=user)
+    except Exception:
+        logger.exception("generate_paper_titles: AI call failed")
+        return []
+
+    # Parse JSON objects from the response (one per line)
+    import json as _json
+
+    results: List[Dict] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Strip accidental markdown fences
+        if line.startswith("```"):
+            continue
+        try:
+            obj = _json.loads(line)
+            if all(k in obj for k in ("style", "title", "rationale")):
+                results.append({
+                    "title": str(obj["title"]).strip(),
+                    "style": str(obj["style"]).strip().lower(),
+                    "rationale": str(obj["rationale"]).strip(),
+                })
+        except (_json.JSONDecodeError, TypeError, KeyError):
+            logger.debug("generate_paper_titles: skipping non-JSON line: %s", line[:80])
+
+    if not results:
+        logger.warning(
+            "generate_paper_titles: could not parse any JSON from AI response. "
+            "Raw (first 300 chars): %s",
+            raw[:300],
+        )
+
+    return results[:count]
+
+
+async def get_paper_context(
+    project_id: uuid.UUID,
+    db: AsyncSession,
+) -> Tuple[str, List[dict]]:
+    """Public wrapper for the internal context builder used by the router endpoints."""
+    return await _build_paper_context(project_id, db)
