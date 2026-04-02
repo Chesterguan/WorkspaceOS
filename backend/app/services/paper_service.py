@@ -33,7 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.blog import BlogPost, BlogPostVersion
 from app.models.project import Project
 from app.schemas.blog import BlogPostCreate, BlogPostUpdate
-from app.services.ai_client import get_cloud_client, get_local_client
+from app.config import settings
+from app.services.ai_client import OpenAIClient, get_cloud_client, get_local_client
 from app.services.blog_service import create_blog_post, get_version_chain, update_blog_post
 from app.services.narrative_service import build_context_block, get_or_create
 from app.services.repo_context import get_generation_context
@@ -46,6 +47,18 @@ from app.services.workspace_scanner import get_latest_snapshot
 from app.utils.diff_utils import compute_diff_stats
 
 logger = logging.getLogger(__name__)
+
+
+def _get_paper_reviewer():
+    """Get reviewer client — OpenAI if available, else cloud client (Gemini).
+
+    Using a different model for review than for drafting/revision avoids the
+    failure mode where a model cannot objectively critique its own output.
+    """
+    if settings.openai_api_key:
+        return OpenAIClient()
+    return get_cloud_client()
+
 
 # ---------------------------------------------------------------------------
 # Review pass definitions
@@ -430,7 +443,8 @@ async def generate_paper(
             review_summary: str,
         }
     """
-    cloud_ai = get_cloud_client()
+    cloud_ai = get_cloud_client()        # writer / revision
+    reviewer_ai = _get_paper_reviewer()  # reviewer — OpenAI when available
     total_passes = len(REVIEW_PASSES)
 
     # 1. Build context
@@ -484,13 +498,14 @@ async def generate_paper(
             post_id,
         )
 
-        # 4a. Reviewer critiques
+        # 4a. Reviewer critiques — uses reviewer_ai (OpenAI when available) so
+        #     a different model reviews the writer's (Gemini) output.
         review_user_prompt = (
             f"Review the following academic paper for: {review_name}\n\n"
             f"## Paper\n{current_content}"
         )
         try:
-            critique = await cloud_ai.complete(
+            critique = await reviewer_ai.complete(
                 system=reviewer_system,
                 user=review_user_prompt,
             )
@@ -539,11 +554,17 @@ async def generate_paper(
             db=db,
         )
 
+        changes_made = (
+            f"{diff_stats['lines_added']} lines added, "
+            f"{diff_stats['lines_removed']} removed "
+            f"({diff_stats['similarity_pct']}% similar)"
+        )
         version_records.append({
             "version": pass_idx + 1,  # version 1 is the initial draft
             "review_name": review_name,
             "score": score,
             "review_notes": critique,
+            "changes_made": changes_made,
             "diff_stats": diff_stats,
         })
 
@@ -749,7 +770,8 @@ async def generate_portfolio_paper(
 
     Returns the same structure as generate_paper().
     """
-    cloud_ai = get_cloud_client()
+    cloud_ai = get_cloud_client()        # writer / revision
+    reviewer_ai = _get_paper_reviewer()  # reviewer — OpenAI when available
     total_passes = len(REVIEW_PASSES)
     first_project_id = project_ids[0]
 
@@ -794,7 +816,8 @@ async def generate_portfolio_paper(
     version_records: List[Dict] = []
     current_content = initial_draft
 
-    # 4. Five review + revision passes (identical to generate_paper)
+    # 4. Five review + revision passes (identical to generate_paper).
+    #    reviewer_ai (OpenAI) critiques; cloud_ai (Gemini) revises.
     for pass_idx, review_pass in enumerate(REVIEW_PASSES, start=1):
         review_name = review_pass["name"]
         reviewer_system = review_pass["system"]
@@ -812,7 +835,7 @@ async def generate_portfolio_paper(
             f"## Paper\n{current_content}"
         )
         try:
-            critique = await cloud_ai.complete(
+            critique = await reviewer_ai.complete(
                 system=reviewer_system,
                 user=review_user_prompt,
             )

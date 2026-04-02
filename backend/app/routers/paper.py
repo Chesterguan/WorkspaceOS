@@ -443,7 +443,7 @@ async def generate_figure(
         # Build a lightweight project context + file tree
         from app.services.workspace_scanner import get_latest_snapshot
 
-        context_block, _ = await paper_service._build_paper_context(project_id, db)
+        context_block, _ = await paper_service.get_paper_context(project_id, db)
         snapshot = await get_latest_snapshot(project_id, db)
         file_tree = snapshot.summary if snapshot else body.description
 

@@ -29,6 +29,7 @@ class PaperVersionSummary(BaseModel):
     review_name: str
     score: int  # 1-10 from the reviewer
     review_notes: str
+    changes_made: str = ""  # human-readable summary of the diff
     diff_stats: Dict  # {lines_added, lines_removed, lines_changed, similarity_pct}
 
 

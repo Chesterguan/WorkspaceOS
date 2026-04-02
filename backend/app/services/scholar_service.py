@@ -386,6 +386,7 @@ async def search_openalex(query: str, limit: int = 10) -> List[dict]:
                 if arxiv_id:
                     ext_ids["ArXiv"] = arxiv_id.replace("https://arxiv.org/abs/", "")
 
+                source = (work.get("primary_location") or {}).get("source") or {}
                 results.append({
                     "paperId": work.get("id", ""),
                     "title": work.get("title") or "Untitled",
@@ -395,8 +396,7 @@ async def search_openalex(query: str, limit: int = 10) -> List[dict]:
                     "citationCount": work.get("cited_by_count") or 0,
                     "url": work.get("id") or "",  # OpenAlex canonical URL
                     "externalIds": ext_ids,
-                    "venue": (work.get("primary_location") or {}).get("source", {}) and
-                             (work.get("primary_location") or {}).get("source", {}).get("display_name", ""),
+                    "venue": source.get("display_name", ""),
                 })
             _search_cache[cache_key] = (now, results)
             return results
