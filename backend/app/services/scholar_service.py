@@ -505,14 +505,23 @@ async def generate_bibtex_for_papers(papers: List[dict]) -> str:
     Generate BibTeX entries for a list of papers.
 
     For papers that have a DOI in externalIds, fetches real BibTeX via CrossRef.
-    For papers without a DOI, synthesises a minimal @article entry from available metadata.
+    For papers without a DOI (or when CrossRef fails), synthesises a minimal @misc
+    entry from available metadata so the function always returns something for
+    non-empty input.
     Returns a single concatenated .bib string ready to write to a file.
     """
     import asyncio
     import re as _re
 
+    logger.info(
+        "generate_bibtex_for_papers: processing %d papers (%d with DOI, %d without)",
+        len(papers),
+        sum(1 for p in papers if _get_doi(p)),
+        sum(1 for p in papers if not _get_doi(p)),
+    )
+
     bib_entries: List[str] = []
-    # Process up to 5 DOI-based lookups concurrently to avoid overwhelming CrossRef
+    # Process DOI-based lookups concurrently to avoid overwhelming CrossRef
     doi_papers = [(i, p) for i, p in enumerate(papers) if _get_doi(p)]
     no_doi_papers = [(i, p) for i, p in enumerate(papers) if not _get_doi(p)]
 
@@ -528,15 +537,26 @@ async def generate_bibtex_for_papers(papers: List[dict]) -> str:
     bib_by_index: dict = {}
     for result in doi_results:
         if isinstance(result, Exception):
+            logger.warning("generate_bibtex_for_papers: DOI lookup raised exception: %s", result)
             continue
         idx, bib, paper = result
         if bib:
             bib_by_index[idx] = bib
+            logger.debug(
+                "generate_bibtex_for_papers: CrossRef entry fetched for paper index %d", idx
+            )
         else:
-            # Fallback to synthetic entry even though DOI exists (CrossRef may have failed)
+            # CrossRef returned nothing — fall back to synthetic entry
+            logger.debug(
+                "generate_bibtex_for_papers: CrossRef returned empty for paper index %d "
+                "(DOI: %s), falling back to synthetic entry",
+                idx,
+                _get_doi(paper),
+            )
             no_doi_papers.append((idx, paper))
 
-    # Generate synthetic entries for papers without DOI or failed CrossRef lookups
+    # Generate synthetic entries for papers without DOI or failed CrossRef lookups.
+    # Use @misc so the entry is valid for any source type (preprint, conference, journal).
     for idx, paper in no_doi_papers:
         authors = _get_author_names(paper)
         year = paper.get("year") or "n.d."
@@ -544,7 +564,7 @@ async def generate_bibtex_for_papers(papers: List[dict]) -> str:
         venue = paper.get("venue") or ""
 
         # Build a cite key: FirstAuthorLastName + Year + first significant title word
-        first_author_last = ""
+        first_author_last = "Unknown"
         if authors:
             parts = authors[0].split()
             first_author_last = _re.sub(r"[^A-Za-z]", "", parts[-1]) if parts else "Unknown"
@@ -554,30 +574,47 @@ async def generate_bibtex_for_papers(papers: List[dict]) -> str:
             if len(clean) > 3:
                 title_word = clean[:10]
                 break
-        cite_key = f"{first_author_last}{year}{title_word}"
+        cite_key = f"{first_author_last}{year}{title_word}" if title_word else f"{first_author_last}{year}"
 
         author_str = " and ".join(authors) if authors else "Unknown"
 
         url = paper.get("url") or ""
         ext_ids = paper.get("externalIds") or {}
         arxiv_id = ext_ids.get("ArXiv", "")
+        doi = _get_doi(paper) or ""
 
-        note_line = ""
+        # Build optional extra fields
+        extra_lines = ""
+        if doi:
+            extra_lines += f"  doi = {{{doi}}},\n"
         if arxiv_id:
-            note_line = f"  note = {{arXiv:{arxiv_id}}},"
+            extra_lines += f"  note = {{arXiv:{arxiv_id}}},\n"
         elif url:
-            note_line = f"  url = {{{url}}},"
+            extra_lines += f"  url = {{{url}}},\n"
+        if venue:
+            extra_lines += f"  howpublished = {{{venue}}},\n"
 
         synthetic = (
-            f"@article{{{cite_key},\n"
+            f"@misc{{{cite_key},\n"
             f"  author = {{{author_str}}},\n"
-            f"  title = {{{title}}},\n"
+            f"  title = {{{{{title}}}}},\n"
             f"  year = {{{year}}},\n"
-            f"  journal = {{{venue or 'Preprint'}}},\n"
-            + (note_line + "\n" if note_line else "")
+            + extra_lines
             + "}"
         )
+        logger.debug(
+            "generate_bibtex_for_papers: synthetic @misc entry created for paper index %d "
+            "(title: %.60s)",
+            idx,
+            title,
+        )
         bib_by_index[idx] = synthetic
+
+    logger.info(
+        "generate_bibtex_for_papers: assembled %d BibTeX entries out of %d papers",
+        len(bib_by_index),
+        len(papers),
+    )
 
     # Assemble in original order
     for i in range(len(papers)):

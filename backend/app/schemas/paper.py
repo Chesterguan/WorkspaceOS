@@ -39,6 +39,7 @@ class PaperGenerateResponse(BaseModel):
     bibtex: str  # combined .bib content for all cited papers
     versions: List[PaperVersionSummary]
     review_summary: str  # human-readable summary of all review passes
+    latex: Optional[str] = None  # LaTeX source generated inline after the pipeline
 
 
 class ExportLatexRequest(BaseModel):

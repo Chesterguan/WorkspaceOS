@@ -557,6 +557,14 @@ async def generate_paper(
         logger.exception("paper_service: BibTeX generation failed")
         bibtex = ""
 
+    # 5b. Generate LaTeX inline so the response includes it without a separate call
+    try:
+        latex_content, _ = await export_to_latex(current_content, bibtex)
+        logger.info("paper_service: inline LaTeX export succeeded")
+    except Exception:
+        logger.exception("paper_service: inline LaTeX export failed")
+        latex_content = None
+
     # 6. Mark complete
     final_tags = ["paper", "progress:100", "step:complete"]
     await update_blog_post(
@@ -590,6 +598,7 @@ async def generate_paper(
         "title": title,
         "final_content": current_content,
         "bibtex": bibtex,
+        "latex": latex_content,
         "versions": version_records,
         "review_summary": review_summary,
     }
@@ -867,6 +876,14 @@ async def generate_portfolio_paper(
         logger.exception("paper_service: BibTeX generation failed for portfolio paper")
         bibtex = ""
 
+    # 5b. Generate LaTeX inline so the response includes it without a separate call
+    try:
+        latex_content, _ = await export_to_latex(current_content, bibtex)
+        logger.info("paper_service: inline LaTeX export succeeded for portfolio paper")
+    except Exception:
+        logger.exception("paper_service: inline LaTeX export failed for portfolio paper")
+        latex_content = None
+
     # 6. Mark complete
     final_tags = ["paper", "portfolio", "progress:100", "step:complete"]
     await update_blog_post(
@@ -900,6 +917,7 @@ async def generate_portfolio_paper(
         "title": title,
         "final_content": current_content,
         "bibtex": bibtex,
+        "latex": latex_content,
         "versions": version_records,
         "review_summary": review_summary,
     }
