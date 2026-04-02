@@ -44,5 +44,7 @@ Production readiness: auth, env validation, dashboard analytics
 - **Timeline UI page** (vertical timeline with event type icons, month grouping)
 - **Background extraction race condition fix** (explicit commit before spawning background tasks)
 - All 11 projects synced with real GitHub data (57+ memory entries)
-- Migration 0005 deployed (tsvector, GIN index, trigger, context_description)
-- 27 git commits
+- Migrations 0005 + 0006 deployed (tsvector, GIN index, trigger, context_description fix)
+- Home page refresh: global memory search, 6 stat cards, activity sidebar
+- Rebranded from "AI PR Secretary" to "ProjectScribe"
+- 29 git commits

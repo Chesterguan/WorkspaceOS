@@ -210,7 +210,13 @@ async def rerank_results(
     reranked = await loop.run_in_executor(None, reranker.rerank, request)
 
     entry_map = {str(e.id): e for e in entries}
-    return [entry_map[r["id"]] for r in reranked[:top_k] if r["id"] in entry_map]
+    result = []
+    for r in reranked[:top_k]:
+        # FlashRank returns dicts in some versions, objects in others
+        rid = r["id"] if isinstance(r, dict) else getattr(r, "id", None)
+        if rid and rid in entry_map:
+            result.append(entry_map[rid])
+    return result
 
 
 # ---------------------------------------------------------------------------

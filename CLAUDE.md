@@ -13,11 +13,13 @@ ProjectScribe — AI co-founder platform for developer projects. Syncs GitHub ac
 - Deployment: Docker Compose with 3 services on `projectscribe` network + backend_data volume
 
 ## Key Modules
-- **Services** (19): ai_client, ai_generation, agentic_generation, github_sync, github_client, memory_service, narrative_service, draft_service, blog_service, chat_service, workspace_scanner, publish_service, linkedin_service, repo_context, extraction_service, consolidation_service, feedback_service, research_service, paper_service, scholar_service, diagram_service
+- **Services** (21): ai_client, ai_generation, agentic_generation, github_sync, github_client, memory_service, narrative_service, draft_service, blog_service, chat_service, workspace_scanner, publish_service, linkedin_service, repo_context, extraction_service, consolidation_service, feedback_service, research_service, paper_service, scholar_service, diagram_service
 - **Routers** (16): projects, narratives, sync, drafts, ai, memory, github, posting, blog, agentic, workspace, chat, publish, linkedin, research, paper
 - **AI Pipeline**: Gemini generates → Ollama privacy-scans → OpenAI reviews → up to 4 rounds
 - **Paper Pipeline**: Adaptive review — 5 aspects × retry until 8+/10 → final polish (max 12 rounds)
 - **Memory**: Hybrid RAG — pgvector cosine + BM25 tsvector → RRF fusion → FlashRank reranking, contextual retrieval on write, cross-project search
+- **Auto-Sync**: Daily asyncio scheduler syncs all projects (24h interval, 300s timeout per project)
+- **Timeline**: GET /projects/{id}/sync/timeline — commits + releases + AI insights grouped by month
 - **Publishing**: GitHub Releases (API), LinkedIn (OAuth 2.0), Twitter/Medium/Xiaohongshu (manual)
 - **Research**: Semantic Scholar + OpenAlex + arXiv + Unpaywall + CrossRef BibTeX + Kroki.io diagrams
 
@@ -74,9 +76,8 @@ Stop if:
 
 ## Current Priorities
 1. Production readiness (proper auth, env management)
-2. Auto-sync on schedule
-3. Dashboard analytics
-4. More platform integrations
+2. Dashboard analytics (charts, activity trends)
+3. More platform integrations
 
 ## Completed
 - Core MVP: projects, narratives, sync, drafts, memory, blog, posting
@@ -92,8 +93,12 @@ Stop if:
 - Agent harness system with custom commands (/next-task, /review-task, /plan-task, /status)
 - UI/UX: loading skeletons, error states, sidebar groups, page animations, dashboard quick actions
 - Hybrid RAG memory: pgvector + BM25 tsvector + RRF fusion + FlashRank reranking + contextual retrieval + cross-project search
+- Daily auto-sync scheduler (asyncio lifespan, 24h, 300s timeout per project)
+- Project timeline view (commits + releases + AI insights by month)
+- Home page: global memory search, 6 stat cards, activity feed sidebar
 - Benchmark framework for memory retrieval quality (precision@5, MRR, latency)
-- Git repo: 27 commits
+- Rebranded from "AI PR Secretary" to "ProjectScribe"
+- 6 Alembic migrations, 21 frontend pages, 29 git commits
 
 ## Known Constraints
 - Docker runs on OrbStack (macOS), DNS via 0.250.250.200

@@ -1,9 +1,8 @@
 import uuid
 from collections import defaultdict
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -159,8 +158,9 @@ async def get_project_timeline(
             source_ref=m.source_ref,
         ))
 
-    # Sort all events by date descending
+    # Sort all events by date descending, cap at requested limit
     events.sort(key=lambda e: e.date, reverse=True)
+    events = events[:limit]
 
     # Group by month
     months_dict: Dict[str, List[TimelineEvent]] = defaultdict(list)

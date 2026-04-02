@@ -14,7 +14,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ProjectScribe",
+  title: {
+    default: "ProjectScribe",
+    template: "%s | ProjectScribe",
+  },
   description: "AI co-founder for project management, content, and research",
 };
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useProject } from "@/lib/hooks/useProjects";
 import { ProjectSidebar } from "@/components/ProjectSidebar";
 import { ProjectHeader } from "@/components/ProjectHeader";
@@ -14,7 +15,18 @@ interface ProjectLayoutProps {
 
 export default function ProjectLayout({ children, params }: ProjectLayoutProps) {
   const { projectId } = use(params);
+  const pathname = usePathname();
   const { data: project, error, isLoading, mutate } = useProject(projectId);
+
+  // Dynamic page title: "HAVEN | Timeline | ProjectScribe"
+  useEffect(() => {
+    if (!project) return;
+    const segments = pathname.split("/").filter(Boolean);
+    // segments: ["projects", projectId, "timeline"] → page = "timeline"
+    const page = segments[2] ?? "overview";
+    const pageLabel = page.charAt(0).toUpperCase() + page.slice(1);
+    document.title = `${project.name} | ${pageLabel} | ProjectScribe`;
+  }, [project, pathname]);
 
   if (isLoading) {
     return (

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pr-secretary"
+name = "projectscribe"
 version = "0.1.0"
-description = "AI PR Secretary - backend API"
+description = "ProjectScribe — AI co-founder platform for developer projects"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115.0",

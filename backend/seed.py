@@ -88,8 +88,8 @@ async def seed() -> None:
             name="ProjectScribe",
             slug="project-scribe",
             description=(
-                "An AI-powered PR secretary that watches your GitHub activity and "
-                "drafts platform-specific content so you spend zero time on self-promotion."
+                "AI co-founder platform — syncs GitHub activity, generates content, "
+                "writes papers, manages memory with hybrid RAG, and provides strategic advice."
             ),
             github_repo="acme/project-scribe",
         )

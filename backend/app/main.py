@@ -1,12 +1,10 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
 
 from app.routers import ai, drafts, memory, narratives, projects, sync
 from app.routers import agentic, blog, chat, github, linkedin, posting, publish, workspace
@@ -32,10 +30,13 @@ async def _daily_sync_loop() -> None:
     """
     from app.database import AsyncSessionLocal
     from app.models.project import Project
-    from app.services.github_sync import run_sync
+    from app.services.github_sync import run_sync, _last_sync_time
+    from sqlalchemy import select
 
     await asyncio.sleep(SYNC_INITIAL_DELAY_SECONDS)
     logger.info("Auto-sync scheduler started (interval=%ds)", SYNC_INTERVAL_SECONDS)
+
+    min_gap_hours = 23  # skip project if synced within this many hours
 
     while True:
         try:
@@ -47,8 +48,19 @@ async def _daily_sync_loop() -> None:
                 all_projects = list(result.scalars().all())
 
             synced = 0
+            skipped = 0
             for proj in all_projects:
                 try:
+                    # Skip if synced recently (prevents duplicate syncs after restart)
+                    async with AsyncSessionLocal() as db:
+                        from datetime import datetime, timezone
+                        last = await _last_sync_time(proj.id, db)
+                        if last:
+                            hours_ago = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+                            if hours_ago < min_gap_hours:
+                                skipped += 1
+                                continue
+
                     async with AsyncSessionLocal() as db:
                         sync_run = await asyncio.wait_for(
                             run_sync(proj.id, db), timeout=300
@@ -67,7 +79,10 @@ async def _daily_sync_loop() -> None:
                 # Small delay between projects to be kind to GitHub API
                 await asyncio.sleep(2)
 
-            logger.info("Auto-sync: completed %d/%d projects", synced, len(all_projects))
+            logger.info(
+                "Auto-sync: completed %d/%d projects (%d skipped, synced recently)",
+                synced, len(all_projects), skipped,
+            )
         except Exception:
             logger.exception("Auto-sync: loop iteration failed")
 

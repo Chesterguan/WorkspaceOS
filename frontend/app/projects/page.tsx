@@ -20,7 +20,6 @@ import {
   Settings,
   FlaskConical,
   FileText,
-  Send,
   GitBranch,
   RefreshCw,
   Brain,
@@ -42,6 +41,11 @@ export default function ProjectsPage() {
 
   const myProjects = (projectList ?? []).filter((p) => p.status !== "demo");
   const demoProjects = (projectList ?? []).filter((p) => p.status === "demo");
+  // Build project name lookup for cross-project search results
+  const projectNameMap = new Map<string, string>();
+  for (const p of projectList ?? []) {
+    projectNameMap.set(p.id, p.name);
+  }
   const totalDrafts = summaryData?.total_drafts ?? 0;
   const totalSyncs = summaryData?.total_syncs ?? 0;
   const recentActivity = summaryData?.recent_activity ?? [];
@@ -218,6 +222,11 @@ export default function ProjectsPage() {
                     <CardContent className="p-3">
                       <div className="flex items-center gap-2 mb-1">
                         <Badge variant="outline" className="text-[10px]">{entry.entry_type}</Badge>
+                        {projectNameMap.get(entry.project_id) && (
+                          <span className="text-[10px] font-medium text-primary/70">
+                            {projectNameMap.get(entry.project_id)}
+                          </span>
+                        )}
                         <span className="text-[11px] text-muted-foreground">
                           {formatDistanceToNow(entry.created_at)}
                         </span>

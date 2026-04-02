@@ -20,11 +20,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { ReviewTimeline } from "@/components/research/ReviewTimeline";
 import { PaperDiffView } from "@/components/research/PaperDiffView";
@@ -48,7 +43,6 @@ import {
   Table2,
   BarChart3,
   ImagePlus,
-  ChevronDown,
   Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -177,7 +171,6 @@ export default function PaperPage({ params }: PaperPageProps) {
   // ── Title suggestion state ───────────────────────────────────────────────────
   const [isSuggestingTitles, setIsSuggestingTitles] = useState(false);
   const [titleSuggestions, setTitleSuggestions] = useState<TitleSuggestion[]>([]);
-  const [titlePopoverOpen, setTitlePopoverOpen] = useState(false);
 
   // ── Visual toolbar dialog state ──────────────────────────────────────────────
   type VisualDialog = "table" | "chart" | "figure" | null;
@@ -211,6 +204,16 @@ export default function PaperPage({ params }: PaperPageProps) {
   const [showDiff, setShowDiff] = useState(false);
 
   const elapsedLabel = useElapsedTimer(isGenerating);
+
+  // Auto-suggest titles on page load
+  const hasSuggestedRef = useRef(false);
+  useEffect(() => {
+    if (!hasSuggestedRef.current && projectId) {
+      hasSuggestedRef.current = true;
+      handleSuggestTitles();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   // ── Derive displayed content ─────────────────────────────────────────────────
   // If a specific version is selected and we have the versions list, show that
@@ -265,7 +268,6 @@ export default function PaperPage({ params }: PaperPageProps) {
         target_venue: targetVenue.trim() || undefined,
       });
       setTitleSuggestions(res.titles);
-      setTitlePopoverOpen(true);
     } catch {
       toast.error("Failed to generate title suggestions");
     } finally {
@@ -275,7 +277,6 @@ export default function PaperPage({ params }: PaperPageProps) {
 
   function handleSelectSuggestedTitle(suggestion: TitleSuggestion) {
     setTitle(suggestion.title);
-    setTitlePopoverOpen(false);
     toast.success(`Title applied: ${suggestion.style} style`);
   }
 
@@ -576,85 +577,85 @@ export default function PaperPage({ params }: PaperPageProps) {
                   </p>
                 </div>
 
-                {/* Title */}
-                <div className="space-y-1.5">
+                {/* Title — auto-suggested on load, pick one or type your own */}
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Paper Title <span className="text-destructive">*</span>
                     </label>
-                    {/* Suggest Titles popover */}
-                    <Popover
-                      open={titlePopoverOpen}
-                      onOpenChange={(o) => setTitlePopoverOpen(o)}
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 h-6 px-2 text-[11px] rounded font-medium text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 transition-colors disabled:opacity-50"
+                      onClick={handleSuggestTitles}
+                      disabled={isSuggestingTitles}
                     >
-                      <PopoverTrigger
-                        className="inline-flex items-center gap-1 h-6 px-2 text-[11px] rounded font-medium text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 transition-colors disabled:opacity-50"
-                        onClick={handleSuggestTitles}
-                        disabled={isSuggestingTitles}
-                      >
-                        {isSuggestingTitles ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Sparkles className="w-3 h-3" />
-                        )}
-                        Suggest Titles
-                        <ChevronDown className="w-3 h-3" />
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-[520px] p-0 bg-card border-border"
-                        align="end"
-                        sideOffset={6}
-                      >
-                        {titleSuggestions.length === 0 ? (
-                          <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Generating suggestions…
-                          </div>
-                        ) : (
-                          <div className="divide-y divide-border">
-                            <div className="px-4 py-2.5 flex items-center gap-2">
-                              <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-                              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                5 Title Suggestions
-                              </span>
-                            </div>
-                            {titleSuggestions.map((suggestion, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => handleSelectSuggestedTitle(suggestion)}
-                                className="w-full text-left px-4 py-3 hover:bg-violet-500/5 transition-colors group"
-                              >
-                                <div className="flex items-start gap-2">
-                                  <div className="flex-1 space-y-0.5">
-                                    <p className="text-sm font-medium leading-snug text-foreground group-hover:text-violet-300 transition-colors">
-                                      {suggestion.title}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {suggestion.rationale}
-                                    </p>
-                                  </div>
-                                  <span className="shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-violet-500/15 text-violet-400 border border-violet-500/25">
-                                    {suggestion.style}
-                                  </span>
-                                </div>
-                              </button>
-                            ))}
-                            {title && (
-                              <div className="px-4 py-2 bg-secondary/20 flex items-center gap-2 text-xs text-muted-foreground">
-                                <Check className="w-3 h-3 text-green-400" />
-                                Current: {title}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </PopoverContent>
-                    </Popover>
+                      {isSuggestingTitles ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
+                      Regenerate
+                    </button>
                   </div>
+
+                  {/* Inline title suggestions */}
+                  {isSuggestingTitles && titleSuggestions.length === 0 && (
+                    <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
+                        Generating title suggestions for {project.name}...
+                      </div>
+                    </div>
+                  )}
+
+                  {titleSuggestions.length > 0 && (
+                    <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 divide-y divide-violet-500/10">
+                      <div className="px-3 py-2 flex items-center gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                          Pick a title or type your own below
+                        </span>
+                      </div>
+                      {titleSuggestions.map((suggestion, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleSelectSuggestedTitle(suggestion)}
+                          className={cn(
+                            "w-full text-left px-3 py-2.5 hover:bg-violet-500/10 transition-colors group",
+                            title === suggestion.title && "bg-violet-500/10",
+                          )}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1 space-y-0.5">
+                              <p className={cn(
+                                "text-sm font-medium leading-snug transition-colors",
+                                title === suggestion.title
+                                  ? "text-violet-300"
+                                  : "text-foreground group-hover:text-violet-300",
+                              )}>
+                                {title === suggestion.title && (
+                                  <Check className="w-3.5 h-3.5 inline mr-1.5 text-green-400" />
+                                )}
+                                {suggestion.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {suggestion.rationale}
+                              </p>
+                            </div>
+                            <span className="shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-violet-500/15 text-violet-400 border border-violet-500/25">
+                              {suggestion.style}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <Input
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="e.g. Efficient Retrieval-Augmented Generation via Adaptive Index Compression"
+                    placeholder={titleSuggestions.length > 0 ? "Or type a custom title..." : "Generating suggestions..."}
                     className="bg-secondary/30 focus-visible:ring-violet-500/50 focus-visible:border-violet-500/40"
                   />
                 </div>
