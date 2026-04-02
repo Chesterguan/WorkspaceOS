@@ -1,6 +1,6 @@
-# AI PR Secretary
+# ProjectScribe
 
-Multi-project content management tool for developers. Sync GitHub activity, maintain project narratives, generate platform-adapted content drafts (LinkedIn, X/Twitter, Xiaohongshu, Medium, GitHub releases), and build long-term memory of each project's public story.
+AI co-founder platform for developer projects. Syncs GitHub activity, generates platform-adapted content (LinkedIn, X/Twitter, Xiaohongshu, Medium, GitHub releases), writes academic papers, manages project memory with hybrid RAG, and provides strategic advice via YC-trained chat.
 
 ## Architecture
 

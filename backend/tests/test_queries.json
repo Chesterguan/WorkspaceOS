@@ -1,0 +1,22 @@
+[
+  {"query": "patient data consent governance", "project": "HAVEN", "expected_keywords": ["consent", "patient", "FHIR", "health"]},
+  {"query": "data registry schema definition", "project": "PSDL", "expected_keywords": ["schema", "registry", "portable", "definition"]},
+  {"query": "how to authenticate users", "project": null, "expected_keywords": ["auth", "login", "token", "JWT"]},
+  {"query": "recent release changes", "project": null, "expected_keywords": ["release", "changelog", "version"]},
+  {"query": "API endpoint design patterns", "project": null, "expected_keywords": ["endpoint", "API", "REST", "router"]},
+  {"query": "database migration strategy", "project": null, "expected_keywords": ["migration", "alembic", "schema", "database"]},
+  {"query": "embedding vector search", "project": null, "expected_keywords": ["embedding", "vector", "cosine", "similarity"]},
+  {"query": "GitHub sync pull requests", "project": null, "expected_keywords": ["GitHub", "sync", "pull request", "commit"]},
+  {"query": "content draft generation", "project": null, "expected_keywords": ["draft", "generate", "content", "AI"]},
+  {"query": "privacy sensitive data handling", "project": null, "expected_keywords": ["privacy", "local", "Ollama", "sensitive"]},
+  {"query": "blog post publishing workflow", "project": null, "expected_keywords": ["blog", "publish", "post", "workflow"]},
+  {"query": "LinkedIn OAuth integration", "project": null, "expected_keywords": ["LinkedIn", "OAuth", "token", "API"]},
+  {"query": "project narrative summary", "project": null, "expected_keywords": ["narrative", "summary", "project", "story"]},
+  {"query": "memory consolidation insights", "project": null, "expected_keywords": ["memory", "consolidat", "insight", "theme"]},
+  {"query": "Docker deployment configuration", "project": null, "expected_keywords": ["Docker", "deploy", "container", "compose"]},
+  {"query": "frontend React components", "project": null, "expected_keywords": ["frontend", "React", "component", "UI"]},
+  {"query": "error handling and logging", "project": null, "expected_keywords": ["error", "log", "exception", "handler"]},
+  {"query": "academic paper writing", "project": null, "expected_keywords": ["paper", "academic", "research", "citation"]},
+  {"query": "workspace scanner file discovery", "project": null, "expected_keywords": ["workspace", "scanner", "file", "directory"]},
+  {"query": "performance optimization caching", "project": null, "expected_keywords": ["performance", "cache", "optimization", "speed"]}
+]

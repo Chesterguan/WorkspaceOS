@@ -4,25 +4,22 @@
 ready
 
 ## Task
-Execute memory upgrade plan: docs/superpowers/plans/2026-04-02-memory-upgrade.md
+Production readiness improvements
 
-Start with Task 1 (benchmark framework + baseline), then Tasks 2-7 sequentially.
+1. Add proper authentication (JWT or session-based)
+2. Environment variable management (secrets validation on startup)
+3. Dashboard analytics (charts, activity trends)
+4. Make auto-sync time configurable via env var (SYNC_HOUR=3 default)
 
 ## Scope
-- Files: [backend/app/services/memory_service.py, backend/app/models/memory.py, backend/app/routers/memory.py, backend/tests/*, frontend/lib/api.ts, frontend/app/projects/[projectId]/memory/page.tsx]
-- Tests: [backend/tests/benchmark_memory.py]
+- Files: [backend/app/dependencies.py, backend/app/config.py, backend/app/main.py, frontend/app/dashboard/*]
+- Tests: [backend/tests/]
 
 ## Acceptance Criteria
-- [ ] Baseline benchmark recorded (precision@5, latency)
-- [ ] Hybrid search (pgvector + BM25 + RRF) implemented
-- [ ] FlashRank reranking added
-- [ ] Contextual retrieval pre-processing on write
-- [ ] Cross-project search endpoint + UI
-- [ ] Post-upgrade benchmark shows measurable improvement
-- [ ] Comparison report generated
+- [ ] Auth system beyond static API key
+- [ ] Startup validation for required env vars
+- [ ] Dashboard shows activity trends
+- [ ] Sync interval/hour configurable
 
 ## Priority
 high
-
-## Plan File
-docs/superpowers/plans/2026-04-02-memory-upgrade.md

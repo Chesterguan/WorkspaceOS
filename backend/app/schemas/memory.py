@@ -26,3 +26,8 @@ class MemoryEntryResponse(BaseModel):
 class MemorySearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     limit: int = Field(default=10, ge=1, le=50)
+
+
+class CrossProjectSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    limit: int = Field(default=10, ge=1, le=50)

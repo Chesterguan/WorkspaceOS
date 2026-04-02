@@ -30,7 +30,7 @@ def _get_http_client() -> httpx.AsyncClient:
         # Semantic Scholar can be slow on first request; generous timeout
         _http_client = httpx.AsyncClient(
             timeout=20.0,
-            headers={"User-Agent": "ProjectScribe/1.0 (AI PR Secretary; mailto:ziyuan9512@gmail.com)"},
+            headers={"User-Agent": "ProjectScribe/1.0 (mailto:ziyuan9512@gmail.com)"},
         )
     return _http_client
 

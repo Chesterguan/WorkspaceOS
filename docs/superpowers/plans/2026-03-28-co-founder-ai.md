@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Transform AI PR Secretary from a content drafting tool into an AI co-founder that deeply understands the user's projects by reading local files, and can discuss strategy, positioning, and roadmap like a business advisor.
+**Goal:** Transform ProjectScribe from a content drafting tool into an AI co-founder that deeply understands the user's projects by reading local files, and can discuss strategy, positioning, and roadmap like a business advisor.
 
 **Architecture:** Two new subsystems: (1) A local workspace scanner that runs as a sidecar container, mounts the user's project directories, and pushes code context to the backend via API. Uses only the local Ollama model to analyze code — no private source code ever leaves the machine. (2) A per-project chat system where the AI has full context (repo data, memory, narrative, local workspace state, conversation history) and acts as a co-founder/advisor.
 

@@ -1,30 +1,22 @@
 # Agent State
 
 ## Current Status
-session-end — memory upgrade plan queued for next session
+idle — auto-sync + timeline + extraction fix deployed
 
 ## Last Completed Task
-All docs + project memory updated. Memory upgrade plan written.
+Daily auto-sync scheduler, project timeline API + UI, background extraction race condition fix, all repos synced
 
 ## Last Updated
 2026-04-02
 
 ## Session Count
-3
+4
 
 ## Tasks Completed This Session
-35+
+17
 
 ## Next Session Priority
-Execute memory upgrade plan: docs/superpowers/plans/2026-04-02-memory-upgrade.md
-- Task 1: Benchmark framework + baseline
-- Task 2: BM25 full-text search (tsvector)
-- Task 3: Hybrid search with RRF fusion
-- Task 4: FlashRank reranking
-- Task 5: Contextual retrieval pre-processing
-- Task 6: Cross-project search
-- Task 7: Post-upgrade benchmark + comparison
-- Task 8: Commit + document
+Production readiness: auth, env validation, dashboard analytics
 
 ## Completed Features
 - Core MVP (projects, narratives, sync, drafts, memory, blog, posting)
@@ -43,5 +35,14 @@ Execute memory upgrade plan: docs/superpowers/plans/2026-04-02-memory-upgrade.md
 - Global settings page for platform connections
 - Agent harness system with 4 custom commands
 - UI/UX: dashboard quick actions, loading skeletons, sidebar groups, page animations
-- 768-dim embeddings, cosine similarity working
-- 27 git commits, all audit checks pass
+- Hybrid RAG memory: pgvector + BM25 tsvector + RRF fusion + FlashRank reranking
+- Contextual retrieval: AI-generated context descriptions on write
+- Cross-project memory search: /memory/search-all endpoint + UI toggle
+- Benchmark framework: precision@5, MRR, latency measurement
+- **Daily auto-sync scheduler** (asyncio lifespan, 24h interval, sequential project sync)
+- **Project Timeline** (GET /sync/timeline — commits + releases + AI insights grouped by month)
+- **Timeline UI page** (vertical timeline with event type icons, month grouping)
+- **Background extraction race condition fix** (explicit commit before spawning background tasks)
+- All 11 projects synced with real GitHub data (57+ memory entries)
+- Migration 0005 deployed (tsvector, GIN index, trigger, context_description)
+- 27 git commits

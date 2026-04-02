@@ -7,10 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db, verify_api_key
 from app.models.memory import MemoryEntry
 from app.models.project import Project
-from app.schemas.memory import MemoryEntryCreate, MemoryEntryResponse, MemorySearchRequest
+from app.schemas.memory import (
+    CrossProjectSearchRequest,
+    MemoryEntryCreate,
+    MemoryEntryResponse,
+    MemorySearchRequest,
+)
 from app.services import memory_service
 
 router = APIRouter(prefix="/projects/{project_id}/memory", tags=["memory"])
+global_router = APIRouter(prefix="/memory", tags=["memory"])
 
 
 async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
@@ -56,11 +62,32 @@ async def search_memory(
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
 ) -> list[MemoryEntry]:
-    """Semantic search over memory entries using pgvector cosine similarity."""
+    """Hybrid search over memory entries (pgvector + BM25 + RRF + reranking)."""
     await _require_project(project_id, db)
     return await memory_service.search_memory(
         project_id=project_id,
         query=body.query,
         limit=body.limit,
         db=db,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cross-project search (mounted separately at /memory)
+# ---------------------------------------------------------------------------
+@global_router.post("/search-all", response_model=list[MemoryEntryResponse])
+async def search_all_memory(
+    body: CrossProjectSearchRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> list[MemoryEntry]:
+    """Search memory across ALL projects using hybrid search."""
+    # Use a dummy project_id — cross_project=True ignores it
+    dummy_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
+    return await memory_service.search_memory(
+        project_id=dummy_id,
+        query=body.query,
+        limit=body.limit,
+        db=db,
+        cross_project=True,
     )

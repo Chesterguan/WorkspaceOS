@@ -1,5 +1,12 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import AsyncGenerator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 
 from app.routers import ai, drafts, memory, narratives, projects, sync
 from app.routers import agentic, blog, chat, github, linkedin, posting, publish, workspace
@@ -8,10 +15,83 @@ from app.routers.paper import portfolio_paper_router
 from app.routers.chat import starters_router as chat_starters_router
 from app.routers.research import starters_router as research_starters_router
 
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Daily auto-sync: syncs all projects once per day at off-peak hours
+# ---------------------------------------------------------------------------
+SYNC_INTERVAL_SECONDS = 24 * 60 * 60  # 24 hours
+SYNC_INITIAL_DELAY_SECONDS = 60  # wait 60s after startup before first check
+
+
+async def _daily_sync_loop() -> None:
+    """Background loop that syncs all projects once per day.
+
+    Runs each project sequentially with a small gap between them to avoid
+    hammering the GitHub API. Errors on one project don't stop the others.
+    """
+    from app.database import AsyncSessionLocal
+    from app.models.project import Project
+    from app.services.github_sync import run_sync
+
+    await asyncio.sleep(SYNC_INITIAL_DELAY_SECONDS)
+    logger.info("Auto-sync scheduler started (interval=%ds)", SYNC_INTERVAL_SECONDS)
+
+    while True:
+        try:
+            logger.info("Auto-sync: starting daily sync for all projects")
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(Project).where(Project.github_repo.isnot(None))
+                )
+                all_projects = list(result.scalars().all())
+
+            synced = 0
+            for proj in all_projects:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        sync_run = await asyncio.wait_for(
+                            run_sync(proj.id, db), timeout=300
+                        )
+                        logger.info(
+                            "Auto-sync: %s -> %s (commits=%s)",
+                            proj.name,
+                            sync_run.status,
+                            sync_run.commits_fetched,
+                        )
+                        synced += 1
+                except asyncio.TimeoutError:
+                    logger.error("Auto-sync: timeout (300s) for project %s", proj.name)
+                except Exception:
+                    logger.exception("Auto-sync: failed for project %s", proj.name)
+                # Small delay between projects to be kind to GitHub API
+                await asyncio.sleep(2)
+
+            logger.info("Auto-sync: completed %d/%d projects", synced, len(all_projects))
+        except Exception:
+            logger.exception("Auto-sync: loop iteration failed")
+
+        await asyncio.sleep(SYNC_INTERVAL_SECONDS)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Startup/shutdown lifecycle for background tasks."""
+    sync_task = asyncio.create_task(_daily_sync_loop())
+    logger.info("Background auto-sync task scheduled")
+    yield
+    sync_task.cancel()
+    try:
+        await sync_task
+    except asyncio.CancelledError:
+        pass
+
+
 app = FastAPI(
-    title="AI PR Secretary",
-    description="Backend API for generating AI-powered PR content from GitHub activity.",
+    title="ProjectScribe",
+    description="Backend API for ProjectScribe — AI co-founder for project management, content, and research.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Allow all origins in development. Tighten this in production by replacing
@@ -32,6 +112,7 @@ app.include_router(sync.router, prefix=API_PREFIX)
 app.include_router(drafts.router, prefix=API_PREFIX)
 app.include_router(ai.router, prefix=API_PREFIX)
 app.include_router(memory.router, prefix=API_PREFIX)
+app.include_router(memory.global_router, prefix=API_PREFIX)
 app.include_router(github.router, prefix=API_PREFIX)
 app.include_router(posting.router, prefix=API_PREFIX)
 app.include_router(blog.router, prefix=API_PREFIX)

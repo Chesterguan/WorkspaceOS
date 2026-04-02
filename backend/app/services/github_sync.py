@@ -238,9 +238,12 @@ async def run_sync(project_id: uuid.UUID, db: AsyncSession) -> SyncRun:
 
     await db.flush()
 
+    # Commit NOW so background tasks (which open their own sessions) can see the data.
+    # Without this, the request-scoped commit in get_db happens after response is sent,
+    # causing a race where background tasks can't find the SyncRun.
+    await db.commit()
+
     # Fire-and-forget theme extraction after a successful sync.
-    # We intentionally do not await this — the caller gets the SyncRun
-    # immediately and extraction proceeds in the background.
     if sync_run.status == "completed":
         _schedule_extraction(sync_run.id)
         _schedule_evolution_summary(sync_run.id)
