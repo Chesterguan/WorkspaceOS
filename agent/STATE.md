@@ -1,10 +1,10 @@
 # Agent State
 
 ## Current Status
-idle — session complete
+session-end — memory upgrade plan queued for next session
 
 ## Last Completed Task
-Adaptive paper review pipeline (retry until 8+/10) + title/table/chart/figure generation
+All docs + project memory updated. Memory upgrade plan written.
 
 ## Last Updated
 2026-04-02
@@ -13,7 +13,18 @@ Adaptive paper review pipeline (retry until 8+/10) + title/table/chart/figure ge
 3
 
 ## Tasks Completed This Session
-30+
+35+
+
+## Next Session Priority
+Execute memory upgrade plan: docs/superpowers/plans/2026-04-02-memory-upgrade.md
+- Task 1: Benchmark framework + baseline
+- Task 2: BM25 full-text search (tsvector)
+- Task 3: Hybrid search with RRF fusion
+- Task 4: FlashRank reranking
+- Task 5: Contextual retrieval pre-processing
+- Task 6: Cross-project search
+- Task 7: Post-upgrade benchmark + comparison
+- Task 8: Commit + document
 
 ## Completed Features
 - Core MVP (projects, narratives, sync, drafts, memory, blog, posting)
@@ -23,7 +34,7 @@ Adaptive paper review pipeline (retry until 8+/10) + title/table/chart/figure ge
 - Co-Founder AI chat (YC-trained advisor with 8 frameworks + GStack office hours)
 - Research Assistant (ARIS-powered, Semantic Scholar + OpenAlex + arXiv + Unpaywall)
 - Paper Pipeline (adaptive 5-aspect review, retry until 8+/10, max 12 rounds)
-- Paper tools: title suggestions (5 styles), comparison tables, charts, architecture diagrams
+- Paper tools: title suggestions (5 styles), comparison tables, charts, diagrams
 - LaTeX export (pandoc + fallback) + BibTeX generation (CrossRef + synthetic)
 - Diagram rendering via Kroki.io (Mermaid/PlantUML/D2 → SVG)
 - Local workspace scanner with media asset discovery
@@ -33,4 +44,4 @@ Adaptive paper review pipeline (retry until 8+/10) + title/table/chart/figure ge
 - Agent harness system with 4 custom commands
 - UI/UX: dashboard quick actions, loading skeletons, sidebar groups, page animations
 - 768-dim embeddings, cosine similarity working
-- 25 git commits, all audit checks pass
+- 27 git commits, all audit checks pass

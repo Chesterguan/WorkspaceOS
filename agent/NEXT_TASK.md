@@ -1,17 +1,28 @@
 # Next Task
 
 ## Status
-waiting — user will specify next feature
+ready
 
 ## Task
-No task assigned.
+Execute memory upgrade plan: docs/superpowers/plans/2026-04-02-memory-upgrade.md
+
+Start with Task 1 (benchmark framework + baseline), then Tasks 2-7 sequentially.
 
 ## Scope
-- Files: []
-- Tests: []
+- Files: [backend/app/services/memory_service.py, backend/app/models/memory.py, backend/app/routers/memory.py, backend/tests/*, frontend/lib/api.ts, frontend/app/projects/[projectId]/memory/page.tsx]
+- Tests: [backend/tests/benchmark_memory.py]
 
 ## Acceptance Criteria
-- [ ] No criteria set
+- [ ] Baseline benchmark recorded (precision@5, latency)
+- [ ] Hybrid search (pgvector + BM25 + RRF) implemented
+- [ ] FlashRank reranking added
+- [ ] Contextual retrieval pre-processing on write
+- [ ] Cross-project search endpoint + UI
+- [ ] Post-upgrade benchmark shows measurable improvement
+- [ ] Comparison report generated
 
 ## Priority
-normal
+high
+
+## Plan File
+docs/superpowers/plans/2026-04-02-memory-upgrade.md
