@@ -3,21 +3,23 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-AI PR Secretary — a multi-project content management platform that syncs GitHub activity, generates platform-adapted content drafts, and acts as an AI co-founder for developer projects.
+AI PR Secretary — a multi-project content management platform that syncs GitHub activity, generates platform-adapted content drafts, writes academic papers, and acts as an AI co-founder and research assistant for developer projects.
 
 ## Architecture
 - Frontend: Next.js 16 (App Router) + Tailwind + shadcn/ui → port 3989
 - Backend: Python FastAPI (async) → port 8989
-- Database: PostgreSQL 15 + pgvector → Docker internal
+- Database: PostgreSQL 15 + pgvector (768-dim) → Docker internal
 - AI: Hybrid — Ollama (local/privacy), Gemini Flash (generation), OpenAI GPT-4o (review)
-- Deployment: Docker Compose with 3 services on `pr-secretary` network
+- Deployment: Docker Compose with 3 services on `pr-secretary` network + backend_data volume
 
 ## Key Modules
-- **Services**: ai_client, ai_generation, agentic_generation, github_sync, github_client, memory_service, narrative_service, draft_service, blog_service, chat_service, workspace_scanner, publish_service, linkedin_service, repo_context, extraction_service, consolidation_service, feedback_service
-- **AI Pipeline**: Gemini generates → Ollama privacy-scans → OpenAI reviews → 4 rounds max
+- **Services** (19): ai_client, ai_generation, agentic_generation, github_sync, github_client, memory_service, narrative_service, draft_service, blog_service, chat_service, workspace_scanner, publish_service, linkedin_service, repo_context, extraction_service, consolidation_service, feedback_service, research_service, paper_service, scholar_service, diagram_service
+- **Routers** (16): projects, narratives, sync, drafts, ai, memory, github, posting, blog, agentic, workspace, chat, publish, linkedin, research, paper
+- **AI Pipeline**: Gemini generates → Ollama privacy-scans → OpenAI reviews → up to 4 rounds
+- **Paper Pipeline**: Adaptive review — 5 aspects × retry until 8+/10 → final polish (max 12 rounds)
 - **Memory**: pgvector 768-dim embeddings via Ollama nomic-embed-text, cosine similarity search
-- **Publishing**: GitHub Releases (API), LinkedIn (OAuth 2.0), Twitter/Medium/Xiaohongshu (manual copy)
-- **Routers**: projects, narratives, sync, drafts, ai, memory, github, posting, blog, agentic, workspace, chat, publish, linkedin (14 total)
+- **Publishing**: GitHub Releases (API), LinkedIn (OAuth 2.0), Twitter/Medium/Xiaohongshu (manual)
+- **Research**: Semantic Scholar + OpenAlex + arXiv + Unpaywall + CrossRef BibTeX + Kroki.io diagrams
 
 ## Commands
 ```bash
@@ -44,6 +46,7 @@ docker compose up --build -d backend  # rebuild single service
 - Prefer minimal diffs — do not refactor surrounding code
 - Do not rename public APIs unless task explicitly requires it
 - All AI operations: local model for privacy-sensitive data, cloud for generation
+- Paper reviews: OpenAI reviews, Gemini writes (separate models for genuine critique)
 - Frontend: use shadcn/ui components, lucide-react icons, SWR hooks
 - Follow existing patterns in adjacent files before writing new code
 - Run tests before finishing any task
@@ -78,17 +81,18 @@ Stop if:
 ## Completed
 - Core MVP: projects, narratives, sync, drafts, memory, blog, posting
 - Agentic AI: 3-model pipeline (Gemini/OpenAI/Ollama) with privacy scan
-- Deep repo context: file tree, configs, PRs, issues, commits from GitHub API (cached 10min)
-- Co-Founder AI chat with full project context
+- Deep repo context: file tree, configs, PRs, issues, commits (cached 10min)
+- Co-Founder AI chat: YC-trained strategic advisor with 8 frameworks + GStack office hours
+- Research Assistant: ARIS-powered academic writing with Semantic Scholar citations
+- Paper Pipeline: adaptive 5-aspect review (retry until 8+/10, max 12 rounds), title suggestions, table/chart/figure generation
 - Local workspace scanner with media asset discovery
 - Publishing: GitHub Releases (API), LinkedIn (OAuth 2.0), Twitter/Medium/Xiaohongshu (manual)
-- Portfolio posts: combined drafts across multiple projects
+- Portfolio: combined posts + papers across multiple projects with full publishing
 - Global settings page for platform connections
-- Agent harness system with custom commands
-- UI/UX polish: loading skeletons, error states, sidebar groups, page animations
-- All 50+ API endpoints tested and passing
-- Embeddings fixed: 768-dim native vectors (no zero-padding)
-- Git repo: 16 commits
+- Agent harness system with custom commands (/next-task, /review-task, /plan-task, /status)
+- UI/UX: loading skeletons, error states, sidebar groups, page animations, dashboard quick actions
+- Embeddings: 768-dim native vectors, cosine similarity working
+- Git repo: 25 commits
 
 ## Known Constraints
 - Docker runs on OrbStack (macOS), DNS via 0.250.250.200
@@ -97,8 +101,10 @@ Stop if:
 - Medium API closed Jan 2025 — manual only
 - Xiaohongshu has no public API — manual only
 - Twitter/X API requires paid Basic tier ($100/mo) — manual only
-- LinkedIn token persisted in DB (survives restarts), API version 202603
+- LinkedIn token persisted in DB, API version 202603
 - GitHub token needs `repo` write scope for release publishing
 - Repo context cached 10min to avoid GitHub API rate limits
+- Semantic Scholar rate-limited (429) — retry with backoff + OpenAlex fallback
+- Paper pipeline can take 3-10 minutes depending on rounds needed
 
-Last updated: 2026-04-01
+Last updated: 2026-04-02
