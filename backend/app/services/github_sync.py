@@ -258,18 +258,43 @@ async def _store_readme_memory(
     db: AsyncSession,
 ) -> None:
     """
-    Persist README content as a memory entry so AI generation can read it.
-    Embedding is attempted but failure is non-fatal (handled inside add_entry).
+    Persist README content as a memory entry. Upserts: if a readme_content
+    entry already exists for this project, update it instead of creating a
+    duplicate. This prevents accumulating identical entries on every sync.
     """
+    from app.models.memory import MemoryEntry
     from app.services.memory_service import add_entry
+
     try:
-        await add_entry(
-            project_id=project_id,
-            entry_type="readme_content",
-            content=readme_content,
-            source_ref="sync:" + str(sync_run_id),
-            db=db,
+        # Check for existing README entry
+        result = await db.execute(
+            select(MemoryEntry).where(
+                MemoryEntry.project_id == project_id,
+                MemoryEntry.entry_type == "readme_content",
+            ).order_by(MemoryEntry.created_at.desc()).limit(1)
         )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Update in place — content change triggers tsvector update via DB trigger
+            existing.content = readme_content
+            existing.source_ref = "sync:" + str(sync_run_id)
+            # Re-embed with new content
+            try:
+                from app.services.ai_client import get_local_client
+                ai = get_local_client()
+                existing.embedding = await ai.embed(readme_content)
+            except Exception:
+                pass  # Keep old embedding if re-embed fails
+            await db.flush()
+        else:
+            await add_entry(
+                project_id=project_id,
+                entry_type="readme_content",
+                content=readme_content,
+                source_ref="sync:" + str(sync_run_id),
+                db=db,
+            )
     except Exception:
         logger.exception(
             "Failed to store README memory entry for project=%s sync_run=%s",

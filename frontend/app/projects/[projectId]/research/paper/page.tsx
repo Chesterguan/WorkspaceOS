@@ -448,7 +448,7 @@ export default function PaperPage({ params }: PaperPageProps) {
           <span className="text-sm font-semibold">Paper Writer</span>
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/25 text-violet-500 dark:text-violet-400">
             <FlaskConical className="w-3 h-3" />
-            <span className="text-[10px] font-semibold tracking-wide uppercase">5-Round Review</span>
+            <span className="text-[10px] font-semibold tracking-wide uppercase">Adaptive Review</span>
           </div>
         </div>
 
@@ -572,8 +572,8 @@ export default function PaperPage({ params }: PaperPageProps) {
                 <div className="space-y-1">
                   <h2 className="text-lg font-bold">New Academic Paper</h2>
                   <p className="text-sm text-muted-foreground">
-                    Generate a full paper through a 5-round automated review pipeline. Each round
-                    refines structure, clarity, novelty, and technical rigour.
+                    Generate a full paper with adaptive review — 5 aspects scored independently,
+                    each retried until 8+/10. Typically 5-12 rounds depending on quality.
                   </p>
                 </div>
 
@@ -716,7 +716,7 @@ export default function PaperPage({ params }: PaperPageProps) {
                   disabled={!title.trim()}
                 >
                   <Sparkles className="w-4 h-4" />
-                  Generate Paper (5-round review)
+                  Generate Paper (adaptive review)
                 </Button>
 
                 {/* Error */}

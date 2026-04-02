@@ -13,7 +13,7 @@ ProjectScribe — AI co-founder platform for developer projects. Syncs GitHub ac
 - Deployment: Docker Compose with 3 services on `projectscribe` network + backend_data volume
 
 ## Key Modules
-- **Services** (21): ai_client, ai_generation, agentic_generation, github_sync, github_client, memory_service, narrative_service, draft_service, blog_service, chat_service, workspace_scanner, publish_service, linkedin_service, repo_context, extraction_service, consolidation_service, feedback_service, research_service, paper_service, scholar_service, diagram_service
+- **Services** (21 in backend/app/services/): ai_client, ai_generation, agentic_generation, github_sync, github_client, memory_service, narrative_service, draft_service, blog_service, chat_service, workspace_scanner, publish_service, linkedin_service, repo_context, extraction_service, consolidation_service, feedback_service, research_service, paper_service, scholar_service, diagram_service
 - **Routers** (16): projects, narratives, sync, drafts, ai, memory, github, posting, blog, agentic, workspace, chat, publish, linkedin, research, paper
 - **AI Pipeline**: Gemini generates → Ollama privacy-scans → OpenAI reviews → up to 4 rounds
 - **Paper Pipeline**: Adaptive review — 5 aspects × retry until 8+/10 → final polish (max 12 rounds)

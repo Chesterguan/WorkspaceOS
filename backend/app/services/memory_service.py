@@ -279,3 +279,45 @@ async def get_recent_entries(
         .limit(limit)
     )
     return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Backfill: generate embeddings for entries missing them
+# ---------------------------------------------------------------------------
+async def backfill_embeddings(
+    db: AsyncSession,
+    project_id: Optional[uuid.UUID] = None,
+    batch_size: int = 50,
+) -> int:
+    """Generate embeddings for memory entries that have embedding=None.
+
+    Returns the number of entries updated.
+    """
+    stmt = (
+        select(MemoryEntry)
+        .where(MemoryEntry.embedding == None)  # noqa: E711
+        .limit(batch_size)
+    )
+    if project_id:
+        stmt = stmt.where(MemoryEntry.project_id == project_id)
+
+    result = await db.execute(stmt)
+    entries = list(result.scalars().all())
+
+    if not entries:
+        return 0
+
+    ai = get_local_client()
+    updated = 0
+    for entry in entries:
+        try:
+            embed_text = entry.content
+            if entry.context_description:
+                embed_text = f"{entry.context_description}\n\n{entry.content}"
+            entry.embedding = await ai.embed(embed_text)
+            updated += 1
+        except Exception:
+            logger.debug("Backfill embed failed for entry %s", entry.id)
+
+    await db.flush()
+    return updated

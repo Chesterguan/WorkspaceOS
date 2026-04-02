@@ -142,6 +142,24 @@ export default function PortfolioPaperPage() {
   const [targetVenue, setTargetVenue] = useState("");
   const [additionalInstructions, setAdditionalInstructions] = useState("");
 
+  // Auto-generate a default title when projects are selected
+  const prevSelectedCountRef = useRef(0);
+  useEffect(() => {
+    const count = selectedIds.size;
+    // Only auto-fill when selection grows (not when user clears title)
+    if (count > 0 && count !== prevSelectedCountRef.current) {
+      const names = (projectList ?? [])
+        .filter((p) => selectedIds.has(p.id))
+        .map((p) => p.name);
+      if (names.length === 1) {
+        setTitle(`Technical Report: ${names[0]}`);
+      } else if (names.length > 1) {
+        setTitle(`A Comparative Study of ${names.join(" and ")}`);
+      }
+    }
+    prevSelectedCountRef.current = count;
+  }, [selectedIds, projectList]);
+
   // ── Generation state ────────────────────────────────────────────────────────
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<PaperGenerateResponse | null>(null);
@@ -320,7 +338,7 @@ export default function PortfolioPaperPage() {
           <span className="text-sm font-semibold">Portfolio Paper</span>
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/25 text-violet-500 dark:text-violet-400">
             <FlaskConical className="w-3 h-3" />
-            <span className="text-[10px] font-semibold tracking-wide uppercase">5-Round Review</span>
+            <span className="text-[10px] font-semibold tracking-wide uppercase">Adaptive Review</span>
           </div>
         </div>
 
@@ -445,7 +463,7 @@ export default function PortfolioPaperPage() {
                   <h2 className="text-lg font-bold">New Portfolio Paper</h2>
                   <p className="text-sm text-muted-foreground">
                     Generate a multi-project academic paper — survey, technical report, or
-                    comparison paper — through the 5-round automated review pipeline.
+                    comparison paper — with adaptive review (each aspect retried until 8+/10).
                   </p>
                 </div>
 
@@ -620,7 +638,7 @@ export default function PortfolioPaperPage() {
                   disabled={!canGenerate}
                 >
                   <Sparkles className="w-4 h-4" />
-                  Generate Paper (5-round review)
+                  Generate Paper (adaptive review)
                 </Button>
 
                 {/* Error */}

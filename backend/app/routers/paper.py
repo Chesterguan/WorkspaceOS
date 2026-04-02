@@ -483,7 +483,7 @@ async def generate_portfolio_paper(
     Run the complete multi-pass paper writing pipeline across multiple projects.
 
     Context is assembled from every project in `project_ids` (2–5), then the same
-    5-round review pipeline used for single-project papers is executed. The resulting
+    adaptive review pipeline used for single-project papers is executed. The resulting
     BlogPost is stored under the first project in the list.
 
     Useful for survey papers, portfolio technical reports, and multi-system comparison

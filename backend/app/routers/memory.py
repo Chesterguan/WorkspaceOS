@@ -91,3 +91,13 @@ async def search_all_memory(
         db=db,
         cross_project=True,
     )
+
+
+@global_router.post("/backfill-embeddings")
+async def backfill_embeddings(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> dict:
+    """Generate embeddings for all memory entries missing them."""
+    updated = await memory_service.backfill_embeddings(db)
+    return {"updated": updated, "message": f"Backfilled {updated} entries"}

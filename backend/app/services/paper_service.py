@@ -841,7 +841,7 @@ async def generate_portfolio_paper(
     Generate a paper covering multiple projects (e.g. a survey paper,
     portfolio technical report, or multi-system comparison paper).
 
-    Same 5-round review pipeline as single-project papers, but context is
+    Same adaptive review pipeline as single-project papers, but context is
     assembled from ALL specified projects, following the pattern used by
     generate_portfolio_draft() in ai_generation.py.
 
