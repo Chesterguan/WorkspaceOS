@@ -142,6 +142,7 @@ async def generate_paper(
         title=result["title"],
         final_content=result["final_content"],
         bibtex=result["bibtex"],
+        latex=result.get("latex"),
         versions=[PaperVersionSummary(**v) for v in result["versions"]],
         review_summary=result["review_summary"],
     )
@@ -518,6 +519,7 @@ async def generate_portfolio_paper(
         title=result["title"],
         final_content=result["final_content"],
         bibtex=result["bibtex"],
+        latex=result.get("latex"),
         versions=[PaperVersionSummary(**v) for v in result["versions"]],
         review_summary=result["review_summary"],
     )

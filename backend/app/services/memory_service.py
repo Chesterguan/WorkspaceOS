@@ -293,15 +293,22 @@ async def backfill_embeddings(
 
     Returns the number of entries updated.
     """
-    stmt = (
-        select(MemoryEntry)
-        .where(MemoryEntry.embedding == None)  # noqa: E711
-        .limit(batch_size)
-    )
-    if project_id:
-        stmt = stmt.where(MemoryEntry.project_id == project_id)
+    # pgvector Vector column: SQLAlchemy `== None` doesn't generate correct SQL.
+    # Use raw SQL to get IDs, then load as ORM objects.
+    from sqlalchemy import text as sa_text
+    # Use connection directly to bypass ORM session caching
+    conn = await db.connection()
+    id_rows = await conn.execute(sa_text(
+        f"SELECT id FROM memory_entries WHERE embedding IS NULL LIMIT {int(batch_size)}"
+    ))
+    null_ids = [row[0] for row in id_rows.fetchall()]
+    logger.info("backfill_embeddings: found %d entries with NULL embedding", len(null_ids))
+    if not null_ids:
+        return 0
 
-    result = await db.execute(stmt)
+    result = await db.execute(
+        select(MemoryEntry).where(MemoryEntry.id.in_(null_ids))
+    )
     entries = list(result.scalars().all())
 
     if not entries:
@@ -311,9 +318,9 @@ async def backfill_embeddings(
     updated = 0
     for entry in entries:
         try:
-            embed_text = entry.content
+            embed_text = entry.content[:8000]  # truncate for embedding model limit
             if entry.context_description:
-                embed_text = f"{entry.context_description}\n\n{entry.content}"
+                embed_text = f"{entry.context_description}\n\n{embed_text}"
             entry.embedding = await ai.embed(embed_text)
             updated += 1
         except Exception:

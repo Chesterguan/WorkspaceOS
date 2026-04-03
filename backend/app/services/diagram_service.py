@@ -327,8 +327,8 @@ async def generate_data_chart(
         mermaid_src = "\n".join(lines)
 
     elif chart_type in ("bar", "line"):
-        x_axis = " ".join(f'"{lbl}"' for lbl in labels)
-        val_list = " ".join(str(v) for v in values)
+        x_axis = ", ".join(f'"{lbl}"' for lbl in labels)
+        val_list = ", ".join(str(v) for v in values)
         chart_keyword = "bar" if chart_type == "bar" else "line"
         mermaid_src = (
             "xychart-beta\n"
