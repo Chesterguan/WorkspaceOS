@@ -94,7 +94,15 @@ async def search_papers(
         except Exception:
             logger.exception("Semantic Scholar search failed for query: %s", query)
             break
-    return []
+
+    # Semantic Scholar returned nothing after retries — fall back to OpenAlex
+    logger.info(
+        "Semantic Scholar search empty for query '%s', falling back to OpenAlex", query
+    )
+    papers = await search_openalex(query, limit=limit)
+    if papers:
+        _search_cache[cache_key] = (time.time(), papers)
+    return papers
 
 
 async def get_paper(paper_id: str) -> Optional[dict]:

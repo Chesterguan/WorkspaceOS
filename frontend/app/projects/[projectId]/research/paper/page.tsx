@@ -46,6 +46,11 @@ import {
   Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { paperMarkdownToHtml } from "@/lib/markdown";
+import { PAPER_TYPE_LABELS } from "@/lib/paper-utils";
+import { useElapsedTimer } from "@/lib/hooks/useElapsedTimer";
+import { usePassSimulation } from "@/lib/hooks/usePassSimulation";
+import { usePaperExport } from "@/lib/hooks/usePaperExport";
 import type {
   PaperGenerateRequest,
   PaperGenerateResponse,
@@ -65,95 +70,6 @@ interface PaperPageProps {
 // ─── Content tab types ────────────────────────────────────────────────────────
 
 type ContentTab = "paper" | "bibtex" | "latex";
-
-const PAPER_TYPE_LABELS: Record<PaperGenerateRequest["paper_type"], string> = {
-  conference: "Conference Paper",
-  journal: "Journal Article",
-  technical_report: "Technical Report",
-  white_paper: "White Paper",
-};
-
-// ─── Lightweight markdown renderer (no external deps) ─────────────────────────
-// Follows the same convention as researchMarkdownToHtml in ResearchChatWindow.
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function paperMarkdownToHtml(text: string): string {
-  return escapeHtml(text)
-    // Headings (h1-h4)
-    .replace(/^#### (.+)$/gm, '<h4 class="text-sm font-semibold mt-5 mb-1 text-foreground">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-6 mb-2 text-foreground">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-7 mb-2 text-foreground">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-8 mb-3 text-foreground">$1</h1>')
-    // Code blocks
-    .replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre class="bg-secondary/40 border border-border rounded p-3 my-3 overflow-x-auto text-xs font-mono"><code>$1</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code class="bg-secondary/60 px-1 py-0.5 rounded text-xs font-mono">$1</code>')
-    // Bold
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    // Italic
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    // Citation markers [1], [2,3] → violet badges
-    .replace(
-      /\[(\d[\d,\s–\-]*)\]/g,
-      '<sup class="inline-flex items-baseline"><span class="inline-block px-1 py-0.5 rounded text-[10px] font-semibold bg-violet-500/15 text-violet-400 border border-violet-500/30 leading-none mx-0.5">[$1]</span></sup>',
-    )
-    // Unordered lists — simple top-level only
-    .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc text-sm leading-relaxed">$1</li>')
-    // Paragraphs — blank-line separated blocks
-    .replace(/\n{2,}/g, "</p><p>")
-    // Line breaks within paragraphs
-    .replace(/\n/g, "<br />");
-}
-
-// ─── Elapsed timer hook ───────────────────────────────────────────────────────
-
-function useElapsedTimer(running: boolean) {
-  const [elapsed, setElapsed] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (running) {
-      setElapsed(0);
-      intervalRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [running]);
-
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const ss = String(elapsed % 60).padStart(2, "0");
-  return `${mm}:${ss}`;
-}
-
-// ─── Copy helper ──────────────────────────────────────────────────────────────
-
-function copyToClipboard(text: string, label: string) {
-  navigator.clipboard
-    .writeText(text)
-    .then(() => toast.success(`${label} copied to clipboard`))
-    .catch(() => toast.error("Failed to copy"));
-}
-
-// ─── Download helper ──────────────────────────────────────────────────────────
-
-function downloadFile(content: string, filename: string, mimeType = "text/plain") {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -192,9 +108,7 @@ export default function PaperPage({ params }: PaperPageProps) {
   const [result, setResult] = useState<PaperGenerateResponse | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
-  // Simulated active-pass index during generation (0-based)
-  const [activePassIndex, setActivePassIndex] = useState<number | null>(null);
-  const passTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { activePassIndex, start: startPassSimulation, stop: stopPassSimulation } = usePassSimulation();
 
   // ── View state ──────────────────────────────────────────────────────────────
   const [contentTab, setContentTab] = useState<ContentTab>("paper");
@@ -237,26 +151,6 @@ export default function PaperPage({ params }: PaperPageProps) {
     const prev = result.versions.find((v) => v.version === selectedVersion - 1);
     return prev ? `[Version ${prev.version} — ${prev.changes_made}]\n\n${result.final_content}` : result.final_content;
   }, [result, selectedVersion]);
-
-  // ── Simulate pass progression during generation ───────────────────────────
-  // We advance the indicator every ~12 s so the user can see activity.
-  function startPassSimulation() {
-    let idx = 0;
-    setActivePassIndex(0);
-    passTimerRef.current = setInterval(() => {
-      idx++;
-      if (idx < 5) {
-        setActivePassIndex(idx);
-      } else {
-        if (passTimerRef.current) clearInterval(passTimerRef.current);
-      }
-    }, 12_000);
-  }
-
-  function stopPassSimulation() {
-    if (passTimerRef.current) clearInterval(passTimerRef.current);
-    setActivePassIndex(null);
-  }
 
   // ── Suggest titles handler ────────────────────────────────────────────────────
   async function handleSuggestTitles() {
@@ -397,32 +291,13 @@ export default function PaperPage({ params }: PaperPageProps) {
   }
 
   // ── Export handlers ──────────────────────────────────────────────────────
-  function handleCopyMarkdown() {
-    if (!result) return;
-    copyToClipboard(result.final_content, "Markdown");
-  }
-
-  function handleCopyLatex() {
-    if (!result?.latex) return;
-    copyToClipboard(result.latex, "LaTeX");
-  }
-
-  function handleCopyBibtex() {
-    if (!result) return;
-    copyToClipboard(result.bibtex, "BibTeX");
-  }
-
-  function handleDownloadTex() {
-    if (!result?.latex) return;
-    const safeName = title.toLowerCase().replace(/\s+/g, "_").replace(/[^\w]/g, "").slice(0, 40) || "paper";
-    downloadFile(result.latex, `${safeName}.tex`, "application/x-latex");
-  }
-
-  function handleDownloadBib() {
-    if (!result) return;
-    const safeName = title.toLowerCase().replace(/\s+/g, "_").replace(/[^\w]/g, "").slice(0, 40) || "paper";
-    downloadFile(result.bibtex, `${safeName}.bib`, "text/plain");
-  }
+  const {
+    handleCopyMarkdown,
+    handleCopyLatex,
+    handleCopyBibtex,
+    handleDownloadTex,
+    handleDownloadBib,
+  } = usePaperExport(result, title);
 
   // ── Cleanup on unmount ──────────────────────────────────────────────────────
   useEffect(() => {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useProjects } from "@/lib/hooks/useProjects";
-import { portfolio, posting } from "@/lib/api";
+import { portfolio, posting, paper as paperApi } from "@/lib/api";
 import { PublishButton } from "@/components/publish/PublishButton";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { ReviewTimeline } from "@/components/research/ReviewTimeline";
 import { PaperDiffView } from "@/components/research/PaperDiffView";
 import {
@@ -38,95 +45,28 @@ import {
   GitBranch,
   LayoutGrid,
   X,
+  Table2,
+  BarChart3,
+  ImagePlus,
 } from "lucide-react";
+import { paperMarkdownToHtml } from "@/lib/markdown";
+import { PAPER_TYPE_LABELS } from "@/lib/paper-utils";
+import { useElapsedTimer } from "@/lib/hooks/useElapsedTimer";
+import { usePassSimulation } from "@/lib/hooks/usePassSimulation";
+import { usePaperExport } from "@/lib/hooks/usePaperExport";
 import type {
   PaperGenerateResponse,
   PaperVersionInfo,
   PortfolioPaperGenerateRequest,
+  GenerateTableResponse,
+  GenerateChartResponse,
+  GenerateFigureResponse,
 } from "@/lib/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type PaperType = PortfolioPaperGenerateRequest["paper_type"];
 type ContentTab = "paper" | "bibtex" | "latex";
-
-const PAPER_TYPE_LABELS: Record<PaperType, string> = {
-  conference: "Conference Paper",
-  journal: "Journal Article",
-  technical_report: "Technical Report",
-  white_paper: "White Paper",
-};
-
-// ─── Lightweight markdown renderer ────────────────────────────────────────────
-// Identical to the one in the single-project paper page so rendering is consistent.
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function paperMarkdownToHtml(text: string): string {
-  return escapeHtml(text)
-    .replace(/^#### (.+)$/gm, '<h4 class="text-sm font-semibold mt-5 mb-1 text-foreground">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-6 mb-2 text-foreground">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-7 mb-2 text-foreground">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-8 mb-3 text-foreground">$1</h1>')
-    .replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre class="bg-secondary/40 border border-border rounded p-3 my-3 overflow-x-auto text-xs font-mono"><code>$1</code></pre>')
-    .replace(/`([^`]+)`/g, '<code class="bg-secondary/60 px-1 py-0.5 rounded text-xs font-mono">$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(
-      /\[(\d[\d,\s–\-]*)\]/g,
-      '<sup class="inline-flex items-baseline"><span class="inline-block px-1 py-0.5 rounded text-[10px] font-semibold bg-violet-500/15 text-violet-400 border border-violet-500/30 leading-none mx-0.5">[$1]</span></sup>',
-    )
-    .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc text-sm leading-relaxed">$1</li>')
-    .replace(/\n{2,}/g, "</p><p>")
-    .replace(/\n/g, "<br />");
-}
-
-// ─── Elapsed timer hook ────────────────────────────────────────────────────────
-
-function useElapsedTimer(running: boolean): string {
-  const [elapsed, setElapsed] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (running) {
-      setElapsed(0);
-      intervalRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [running]);
-
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const ss = String(elapsed % 60).padStart(2, "0");
-  return `${mm}:${ss}`;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function copyToClipboard(text: string, label: string) {
-  navigator.clipboard
-    .writeText(text)
-    .then(() => toast.success(`${label} copied to clipboard`))
-    .catch(() => toast.error("Failed to copy"));
-}
-
-function downloadFile(content: string, filename: string, mimeType = "text/plain") {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -160,14 +100,26 @@ export default function PortfolioPaperPage() {
     prevSelectedCountRef.current = count;
   }, [selectedIds, projectList]);
 
+  // ── Visual toolbar dialog state ──────────────────────────────────────────────
+  type VisualDialog = "table" | "chart" | "figure" | null;
+  const [activeVisualDialog, setActiveVisualDialog] = useState<VisualDialog>(null);
+  const [visualDescription, setVisualDescription] = useState("");
+  const [tableItems, setTableItems] = useState("");
+  const [tableCriteria, setTableCriteria] = useState("");
+  const [chartType, setChartType] = useState<"bar" | "line" | "pie" | "radar">("bar");
+  const [figureType, setFigureType] = useState<"architecture" | "flow" | "sequence" | "class">("flow");
+  const [isGeneratingVisual, setIsGeneratingVisual] = useState(false);
+  const [visualResult, setVisualResult] = useState<
+    GenerateTableResponse | GenerateChartResponse | GenerateFigureResponse | null
+  >(null);
+  const [insertedVisuals, setInsertedVisuals] = useState<string[]>([]);
+
   // ── Generation state ────────────────────────────────────────────────────────
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<PaperGenerateResponse | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
-  // Simulated active-pass index during generation
-  const [activePassIndex, setActivePassIndex] = useState<number | null>(null);
-  const passTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { activePassIndex, start: startPassSimulation, stop: stopPassSimulation } = usePassSimulation();
 
   // ── View state ──────────────────────────────────────────────────────────────
   const [contentTab, setContentTab] = useState<ContentTab>("paper");
@@ -214,23 +166,77 @@ export default function PortfolioPaperPage() {
     return prev ? `[Version ${prev.version} — ${prev.changes_made}]\n\n${result.final_content}` : result.final_content;
   }, [result, selectedVersion]);
 
-  // ── Simulate pass progression ──────────────────────────────────────────────
-  function startPassSimulation() {
-    let idx = 0;
-    setActivePassIndex(0);
-    passTimerRef.current = setInterval(() => {
-      idx++;
-      if (idx < 5) {
-        setActivePassIndex(idx);
-      } else {
-        if (passTimerRef.current) clearInterval(passTimerRef.current);
-      }
-    }, 12_000);
+  // ── Visual content handlers ───────────────────────────────────────────────────
+  function openVisualDialog(type: "table" | "chart" | "figure") {
+    setActiveVisualDialog(type);
+    setVisualDescription("");
+    setTableItems("");
+    setTableCriteria("");
+    setVisualResult(null);
   }
 
-  function stopPassSimulation() {
-    if (passTimerRef.current) clearInterval(passTimerRef.current);
-    setActivePassIndex(null);
+  function closeVisualDialog() {
+    setActiveVisualDialog(null);
+    setVisualResult(null);
+    setIsGeneratingVisual(false);
+  }
+
+  async function handleGenerateVisual() {
+    if (!visualDescription.trim() && activeVisualDialog !== "figure") {
+      toast.error("Please describe what you need");
+      return;
+    }
+    // Use the first selected project's ID for visual API calls
+    const firstProjectId = Array.from(selectedIds)[0];
+    if (!firstProjectId) {
+      toast.error("Select at least one project first");
+      return;
+    }
+    setIsGeneratingVisual(true);
+    setVisualResult(null);
+    try {
+      if (activeVisualDialog === "table") {
+        const res = await paperApi.generateTable(firstProjectId, {
+          description: visualDescription.trim(),
+          items: tableItems.trim() ? tableItems.split(",").map((s) => s.trim()) : undefined,
+          criteria: tableCriteria.trim() ? tableCriteria.split(",").map((s) => s.trim()) : undefined,
+        });
+        setVisualResult(res);
+      } else if (activeVisualDialog === "chart") {
+        const res = await paperApi.generateChart(firstProjectId, {
+          chart_type: chartType,
+          description: visualDescription.trim(),
+        });
+        setVisualResult(res);
+      } else if (activeVisualDialog === "figure") {
+        const res = await paperApi.generateFigure(firstProjectId, {
+          figure_type: figureType,
+          description: visualDescription.trim() || `${figureType} diagram for this project`,
+        });
+        setVisualResult(res);
+      }
+    } catch {
+      toast.error("Visual generation failed");
+    } finally {
+      setIsGeneratingVisual(false);
+    }
+  }
+
+  function handleInsertVisual() {
+    if (!visualResult) return;
+    let content = "";
+    if ("markdown" in visualResult) {
+      content = `\n\n${(visualResult as GenerateTableResponse).markdown}\n\n`;
+    } else if ("mermaid_source" in visualResult && "data" in visualResult) {
+      const chart = visualResult as GenerateChartResponse;
+      content = `\n\n\`\`\`mermaid\n${chart.mermaid_source}\n\`\`\`\n\n`;
+    } else if ("mermaid_source" in visualResult) {
+      const fig = visualResult as GenerateFigureResponse;
+      content = `\n\n\`\`\`mermaid\n${fig.mermaid_source}\n\`\`\`\n\n`;
+    }
+    setInsertedVisuals((prev) => [...prev, content]);
+    toast.success("Visual inserted into paper");
+    closeVisualDialog();
   }
 
   // ── Generate handler ──────────────────────────────────────────────────────
@@ -287,32 +293,13 @@ export default function PortfolioPaperPage() {
   }
 
   // ── Export handlers ───────────────────────────────────────────────────────
-  function handleCopyMarkdown() {
-    if (!result) return;
-    copyToClipboard(result.final_content, "Markdown");
-  }
-
-  function handleCopyLatex() {
-    if (!result?.latex) return;
-    copyToClipboard(result.latex, "LaTeX");
-  }
-
-  function handleCopyBibtex() {
-    if (!result) return;
-    copyToClipboard(result.bibtex, "BibTeX");
-  }
-
-  function handleDownloadTex() {
-    if (!result?.latex) return;
-    const safeName = title.toLowerCase().replace(/\s+/g, "_").replace(/[^\w]/g, "").slice(0, 40) || "portfolio_paper";
-    downloadFile(result.latex, `${safeName}.tex`, "application/x-latex");
-  }
-
-  function handleDownloadBib() {
-    if (!result) return;
-    const safeName = title.toLowerCase().replace(/\s+/g, "_").replace(/[^\w]/g, "").slice(0, 40) || "portfolio_paper";
-    downloadFile(result.bibtex, `${safeName}.bib`, "text/plain");
-  }
+  const {
+    handleCopyMarkdown,
+    handleCopyLatex,
+    handleCopyBibtex,
+    handleDownloadTex,
+    handleDownloadBib,
+  } = usePaperExport(result, title);
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -704,9 +691,50 @@ export default function PortfolioPaperPage() {
                     <div
                       className="prose-paper text-sm leading-8 text-foreground/90"
                       dangerouslySetInnerHTML={{
-                        __html: `<p>${paperMarkdownToHtml(currentVersionContent())}</p>`,
+                        __html: `<p>${paperMarkdownToHtml(
+                          currentVersionContent() +
+                            (insertedVisuals.length > 0
+                              ? "\n\n---\n\n**Inserted Visuals**\n" + insertedVisuals.join("\n")
+                              : ""),
+                        )}</p>`,
                       }}
                     />
+
+                    {/* ── Visual content toolbar ── */}
+                    <div className="mt-8 pt-6 border-t border-border">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3">
+                        Insert Visual Content
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs gap-1.5 border-border hover:border-violet-500/40 hover:bg-violet-500/5 hover:text-violet-300"
+                          onClick={() => openVisualDialog("table")}
+                        >
+                          <Table2 className="w-3.5 h-3.5" />
+                          Add Table
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs gap-1.5 border-border hover:border-violet-500/40 hover:bg-violet-500/5 hover:text-violet-300"
+                          onClick={() => openVisualDialog("chart")}
+                        >
+                          <BarChart3 className="w-3.5 h-3.5" />
+                          Add Chart
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs gap-1.5 border-border hover:border-violet-500/40 hover:bg-violet-500/5 hover:text-violet-300"
+                          onClick={() => openVisualDialog("figure")}
+                        >
+                          <ImagePlus className="w-3.5 h-3.5" />
+                          Add Figure
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -983,6 +1011,302 @@ export default function PortfolioPaperPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Visual content dialogs ─────────────────────────────────────────── */}
+
+      {/* Table dialog */}
+      <Dialog
+        open={activeVisualDialog === "table"}
+        onOpenChange={(o) => { if (!o) closeVisualDialog(); }}
+      >
+        <DialogContent className="sm:max-w-[580px] bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Table2 className="w-4 h-4 text-violet-400" />
+              Generate Comparison Table
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                What should this table compare?
+              </label>
+              <Textarea
+                value={visualDescription}
+                onChange={(e) => setVisualDescription(e.target.value)}
+                placeholder="e.g. Compare the selected projects on performance, scalability, and ease of use"
+                rows={3}
+                className="resize-none bg-secondary/30 focus-visible:ring-violet-500/50 text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Row items <span className="text-muted-foreground/50">(comma-separated, optional)</span>
+                </label>
+                <Input
+                  value={tableItems}
+                  onChange={(e) => setTableItems(e.target.value)}
+                  placeholder="e.g. ProjectA, ProjectB, ProjectC"
+                  className="bg-secondary/30 text-xs h-8 focus-visible:ring-violet-500/50"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Column criteria <span className="text-muted-foreground/50">(comma-separated, optional)</span>
+                </label>
+                <Input
+                  value={tableCriteria}
+                  onChange={(e) => setTableCriteria(e.target.value)}
+                  placeholder="e.g. Performance, Scalability, Cost"
+                  className="bg-secondary/30 text-xs h-8 focus-visible:ring-violet-500/50"
+                />
+              </div>
+            </div>
+
+            {/* Preview */}
+            {visualResult && "markdown" in visualResult && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Preview</p>
+                <pre className="bg-secondary/30 border border-border rounded p-3 text-xs font-mono overflow-x-auto whitespace-pre">
+                  {(visualResult as GenerateTableResponse).markdown}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" size="sm" onClick={closeVisualDialog} className="h-8 text-xs">
+              Cancel
+            </Button>
+            {visualResult && "markdown" in visualResult ? (
+              <Button
+                size="sm"
+                className="h-8 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleInsertVisual}
+              >
+                <Check className="w-3.5 h-3.5" />
+                Insert into Paper
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="h-8 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleGenerateVisual}
+                disabled={isGeneratingVisual || !visualDescription.trim()}
+              >
+                {isGeneratingVisual ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                Generate Table
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Chart dialog */}
+      <Dialog
+        open={activeVisualDialog === "chart"}
+        onOpenChange={(o) => { if (!o) closeVisualDialog(); }}
+      >
+        <DialogContent className="sm:max-w-[580px] bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="w-4 h-4 text-violet-400" />
+              Generate Chart
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Chart Type</label>
+                <Select
+                  value={chartType}
+                  onValueChange={(v) => setChartType(v as typeof chartType)}
+                >
+                  <SelectTrigger className="bg-secondary/30 h-8 text-xs focus:ring-violet-500/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bar">Bar Chart</SelectItem>
+                    <SelectItem value="line">Line Chart</SelectItem>
+                    <SelectItem value="pie">Pie Chart</SelectItem>
+                    <SelectItem value="radar">Radar Chart</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                What data should this chart show?
+              </label>
+              <Textarea
+                value={visualDescription}
+                onChange={(e) => setVisualDescription(e.target.value)}
+                placeholder="e.g. Compare key metrics across the selected projects"
+                rows={3}
+                className="resize-none bg-secondary/30 focus-visible:ring-violet-500/50 text-sm"
+              />
+            </div>
+
+            {/* SVG preview */}
+            {visualResult && "svg" in visualResult && (visualResult as GenerateChartResponse).svg && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Preview</p>
+                <div className="bg-secondary/30 border border-border rounded p-2 overflow-hidden">
+                  <img
+                    src={`data:image/svg+xml;base64,${(visualResult as GenerateChartResponse).svg}`}
+                    alt="Generated chart"
+                    className="w-full max-h-48 object-contain"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" size="sm" onClick={closeVisualDialog} className="h-8 text-xs">
+              Cancel
+            </Button>
+            {visualResult && "data" in visualResult ? (
+              <Button
+                size="sm"
+                className="h-8 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleInsertVisual}
+              >
+                <Check className="w-3.5 h-3.5" />
+                Insert into Paper
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="h-8 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleGenerateVisual}
+                disabled={isGeneratingVisual || !visualDescription.trim()}
+              >
+                {isGeneratingVisual ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                Generate Chart
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Figure dialog */}
+      <Dialog
+        open={activeVisualDialog === "figure"}
+        onOpenChange={(o) => { if (!o) closeVisualDialog(); }}
+      >
+        <DialogContent className="sm:max-w-[580px] bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <ImagePlus className="w-4 h-4 text-violet-400" />
+              Generate Figure
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Figure Type</label>
+                <Select
+                  value={figureType}
+                  onValueChange={(v) => setFigureType(v as typeof figureType)}
+                >
+                  <SelectTrigger className="bg-secondary/30 h-8 text-xs focus:ring-violet-500/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="architecture">System Architecture</SelectItem>
+                    <SelectItem value="flow">Flow Diagram</SelectItem>
+                    <SelectItem value="sequence">Sequence Diagram</SelectItem>
+                    <SelectItem value="class">Class Diagram</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Description <span className="text-muted-foreground/50">(optional for architecture)</span>
+              </label>
+              <Textarea
+                value={visualDescription}
+                onChange={(e) => setVisualDescription(e.target.value)}
+                placeholder={
+                  figureType === "architecture"
+                    ? "Leave empty to auto-generate from the first project's file tree, or describe the components to highlight"
+                    : figureType === "sequence"
+                    ? "e.g. User request → service A processes → service B responds → result returned"
+                    : "e.g. Data ingestion → processing → output pipeline"
+                }
+                rows={3}
+                className="resize-none bg-secondary/30 focus-visible:ring-violet-500/50 text-sm"
+              />
+            </div>
+
+            {figureType === "architecture" && (
+              <p className="text-xs text-muted-foreground bg-secondary/30 rounded px-3 py-2 border border-border">
+                Architecture diagrams use the local AI model and the first selected project's workspace snapshot.
+              </p>
+            )}
+
+            {/* SVG preview */}
+            {visualResult && "mermaid_source" in visualResult && !("data" in visualResult) && (visualResult as GenerateFigureResponse).svg && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Preview</p>
+                <div className="bg-secondary/30 border border-border rounded p-2 overflow-hidden">
+                  <img
+                    src={`data:image/svg+xml;base64,${(visualResult as GenerateFigureResponse).svg}`}
+                    alt="Generated figure"
+                    className="w-full max-h-64 object-contain"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" size="sm" onClick={closeVisualDialog} className="h-8 text-xs">
+              Cancel
+            </Button>
+            {visualResult && "mermaid_source" in visualResult && !("data" in visualResult) ? (
+              <Button
+                size="sm"
+                className="h-8 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleInsertVisual}
+              >
+                <Check className="w-3.5 h-3.5" />
+                Insert into Paper
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="h-8 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleGenerateVisual}
+                disabled={isGeneratingVisual}
+              >
+                {isGeneratingVisual ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                Generate Figure
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

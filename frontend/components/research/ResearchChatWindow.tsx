@@ -21,6 +21,7 @@ import {
   FileText,
 } from "lucide-react";
 import { cn, formatDistanceToNow } from "@/lib/utils";
+import { researchMarkdownToHtml } from "@/lib/markdown";
 import type { ChatMessage as ChatMessageType } from "@/lib/types";
 
 interface ResearchChatWindowProps {
@@ -409,36 +410,6 @@ interface ResearchChatMessageProps {
   message: ChatMessageType;
 }
 
-// Escape HTML entities to prevent XSS before further processing
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-// Convert markdown to HTML — matches the lightweight renderer in ChatMessage
-// but also highlights inline citation markers like [1], [2], [1,2], etc.
-function researchMarkdownToHtml(text: string): string {
-  let html = escapeHtml(text)
-    // Code blocks
-    .replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre class="chat-code-block"><code>$1</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code class="chat-inline-code">$1</code>')
-    // Bold
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    // Italic
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    // Citation markers like [1], [2,3], [1–3] — styled as violet badges
-    .replace(
-      /\[(\d[\d,\s–\-]*)\]/g,
-      '<sup class="inline-flex items-baseline"><span class="inline-block px-1 py-0.5 rounded text-[10px] font-semibold bg-violet-500/15 text-violet-400 border border-violet-500/30 leading-none mx-0.5">[$1]</span></sup>',
-    )
-    // Line breaks
-    .replace(/\n/g, "<br />");
-
-  return html;
-}
 
 function ResearchChatMessage({ message }: ResearchChatMessageProps) {
   const isUser = message.role === "user";
