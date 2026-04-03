@@ -84,33 +84,33 @@ Stop if:
 - Agentic AI: 3-model pipeline (Gemini/OpenAI/Ollama) with privacy scan
 - Deep repo context: file tree, configs, PRs, issues, commits (cached 10min)
 - Co-Founder AI chat: YC-trained strategic advisor with 8 frameworks + GStack office hours
-- Research Assistant: ARIS-powered academic writing with Semantic Scholar citations
-- Paper Pipeline: adaptive 5-aspect review (retry until 8+/10, max 12 rounds), title suggestions, table/chart/figure generation
+- Research Assistant: ARIS-powered academic writing with Semantic Scholar + OpenAlex fallback
+- Paper Pipeline: adaptive 5-aspect review (retry until 8+/10, max 12 rounds), auto-title suggestions, table/chart/figure generation on both single + portfolio pages
+- BibTeX generation (CrossRef + Semantic Scholar + OpenAlex), LaTeX export (pandoc + Python fallback)
 - Local workspace scanner with media asset discovery
 - Publishing: GitHub Releases (API), LinkedIn (OAuth 2.0), Twitter/Medium/Xiaohongshu (manual)
-- Portfolio: combined posts + papers across multiple projects with full publishing
+- Portfolio: combined posts + papers across multiple projects with full publishing + visual tools
 - Global settings page for platform connections
 - Agent harness system with custom commands (/next-task, /review-task, /plan-task, /status)
 - UI/UX: loading skeletons, error states, sidebar groups, page animations, dashboard quick actions
-- Hybrid RAG memory: pgvector + BM25 tsvector + RRF fusion + FlashRank reranking + contextual retrieval + cross-project search
-- Daily auto-sync scheduler (asyncio lifespan, 24h, 300s timeout per project)
+- Hybrid RAG memory: pgvector + BM25 tsvector + RRF fusion + FlashRank reranking + contextual retrieval + cross-project search + embedding backfill
+- Daily auto-sync scheduler (asyncio lifespan, 24h, 23h gap check, 300s timeout per project)
 - Project timeline view (commits + releases + AI insights by month)
-- Home page: global memory search, 6 stat cards, activity feed sidebar
-- Benchmark framework for memory retrieval quality (precision@5, MRR, latency)
-- Rebranded from "AI PR Secretary" to "ProjectScribe"
-- 6 Alembic migrations, 21 frontend pages, 29 git commits
+- Home page: global memory search, 6 stat cards, activity feed sidebar, dynamic page titles
+- README upsert on sync (prevents duplicate entries)
+- Shared frontend modules (markdown, paper-utils, hooks) — no code duplication
+- 7 Alembic migrations, 21 frontend pages, 33 git commits
 
 ## Known Constraints
 - Docker runs on OrbStack (macOS), DNS via 0.250.250.200
+- DB name is `pr_secretary` (legacy — don't rename, it's in the Docker volume)
+- Don't override DATABASE_URL in docker-compose `environment:` — use `env_file:` only
 - Projects mounted read-only at /projects/ in backend container
 - Demo projects (ProjectScribe, FastCache) have no local directories
-- Medium API closed Jan 2025 — manual only
-- Xiaohongshu has no public API — manual only
-- Twitter/X API requires paid Basic tier ($100/mo) — manual only
-- LinkedIn token persisted in DB, API version 202603
-- GitHub token needs `repo` write scope for release publishing
-- Repo context cached 10min to avoid GitHub API rate limits
-- Semantic Scholar rate-limited (429) — retry with backoff + OpenAlex fallback
+- pgvector NULL columns can't be detected via SQLAlchemy ORM queries — use raw psql
+- Semantic Scholar rate-limited (429) — OpenAlex fallback handles this automatically
 - Paper pipeline can take 3-10 minutes depending on rounds needed
+- Paper diff view shows same content for all versions (needs per-version body storage)
+- No unit test suite exists yet (CLAUDE.md says "run tests" but pytest has nothing to run)
 
-Last updated: 2026-04-02
+Last updated: 2026-04-03
