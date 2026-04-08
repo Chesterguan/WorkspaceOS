@@ -24,8 +24,23 @@ class AIClient(ABC):
     """Base class defining the interface every AI provider must implement."""
 
     @abstractmethod
-    async def complete(self, system: str, user: str) -> str:
+    async def _do_complete(self, system: str, user: str) -> str:
         ...
+
+    async def complete(self, system: str, user: str) -> str:
+        """Call the AI and log usage (fire-and-forget)."""
+        result = await self._do_complete(system, user)
+        try:
+            import asyncio
+            from app.services.usage_service import log_usage_standalone
+            provider = type(self).__name__.lower().replace("client", "")
+            model = getattr(self, "_model", None) or getattr(self, "chat_model", None) or provider
+            asyncio.create_task(
+                log_usage_standalone(provider, str(model), "complete", system + user, result)
+            )
+        except Exception:
+            pass  # usage logging must never break AI calls
+        return result
 
     @abstractmethod
     async def embed(self, text: str) -> List[float]:
@@ -37,7 +52,7 @@ class OpenAIClient(AIClient):
         import openai
         self._client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
-    async def complete(self, system: str, user: str) -> str:
+    async def _do_complete(self, system: str, user: str) -> str:
         response = await self._client.chat.completions.create(
             model=settings.openai_chat_model,
             messages=[
@@ -62,7 +77,7 @@ class AnthropicClient(AIClient):
         import anthropic
         self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-    async def complete(self, system: str, user: str) -> str:
+    async def _do_complete(self, system: str, user: str) -> str:
         response = await self._client.messages.create(
             model=settings.anthropic_chat_model,
             max_tokens=4096,
@@ -87,7 +102,7 @@ class GeminiClient(AIClient):
         self._model = settings.gemini_chat_model
         self._base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 
-    async def complete(self, system: str, user: str) -> str:
+    async def _do_complete(self, system: str, user: str) -> str:
         payload = {
             "model": self._model,
             "messages": [
@@ -143,7 +158,7 @@ class OllamaClient(AIClient):
         self.chat_model = settings.ollama_chat_model
         self.embed_model = settings.ollama_embed_model
 
-    async def complete(self, system: str, user: str) -> str:
+    async def _do_complete(self, system: str, user: str) -> str:
         payload = {
             "model": self.chat_model,
             "messages": [

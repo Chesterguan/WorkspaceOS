@@ -33,6 +33,14 @@ async def _get_or_create_user(db: AsyncSession, email: str, display_name: str) -
         user = User(email=email, display_name=display_name)
         db.add(user)
         await db.flush()
+
+    # Set a default password for the demo user if none exists
+    if not user.password_hash:
+        from app.services.auth_service import hash_password
+
+        user.password_hash = hash_password("demo123")
+        await db.flush()
+
     return user
 
 

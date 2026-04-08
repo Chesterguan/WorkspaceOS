@@ -328,3 +328,148 @@ async def backfill_embeddings(
 
     await db.flush()
     return updated
+
+
+# ---------------------------------------------------------------------------
+# Wiki: auto-maintained project summary page
+# ---------------------------------------------------------------------------
+
+_WIKI_SYSTEM = """You are maintaining a living wiki page for a software project. \
+Given the project's recent activity, narrative, and accumulated knowledge, generate \
+a comprehensive project summary in markdown.
+
+Sections to include:
+## Project Overview — what it does, why, target users
+## Tech Stack — languages, frameworks, databases, APIs
+## Architecture — key components, data flow
+## Key Decisions — important design choices with rationale
+## Current Status — what's being worked on now
+## Milestones — major releases or turning points
+
+Rules:
+- Be factual — only include information supported by the context
+- Be concise — each section should be 2-5 sentences
+- Use specific details (library names, version numbers, commit patterns)
+- If information for a section is unavailable, write "No data available yet"
+- Output ONLY the markdown content, no preamble or explanation"""
+
+
+async def upsert_wiki_summary(
+    project_id: uuid.UUID,
+    db: AsyncSession,
+) -> MemoryEntry:
+    """Generate or update the project's wiki summary page."""
+    from app.services.ai_client import get_cloud_client
+    from app.services.narrative_service import build_context_block, get_or_create
+
+    # 1. Gather context
+    context_result = await db.execute(
+        select(MemoryEntry)
+        .where(
+            MemoryEntry.project_id == project_id,
+            MemoryEntry.entry_type != "wiki_summary",
+        )
+        .order_by(MemoryEntry.created_at.desc())
+        .limit(30)
+    )
+    recent_entries = list(context_result.scalars().all())
+
+    context_parts: List[str] = []
+
+    try:
+        narrative = await get_or_create(project_id, db)
+        ctx = build_context_block(narrative)
+        narrative_lines: List[str] = []
+        if ctx.get("one_liner"):
+            narrative_lines.append(f"One-liner: {ctx['one_liner']}")
+        if ctx.get("target_audience"):
+            narrative_lines.append(f"Target audience: {ctx['target_audience']}")
+        if ctx.get("origin_story"):
+            narrative_lines.append(f"Origin story: {ctx['origin_story']}")
+        if narrative_lines:
+            context_parts.append("## Narrative\n" + "\n".join(narrative_lines))
+    except Exception:
+        logger.debug("Wiki: could not load narrative for project %s", project_id)
+
+    if recent_entries:
+        entry_lines: List[str] = []
+        for entry in recent_entries:
+            preview = entry.content[:300].replace("\n", " ")
+            entry_lines.append(f"- [{entry.entry_type}] {preview}")
+        context_parts.append("## Recent Memory Entries\n" + "\n".join(entry_lines))
+
+    if not context_parts:
+        existing = await db.execute(
+            select(MemoryEntry).where(
+                MemoryEntry.project_id == project_id,
+                MemoryEntry.entry_type == "wiki_summary",
+            )
+        )
+        entry = existing.scalar_one_or_none()
+        if entry:
+            return entry
+        return await add_entry(
+            project_id=project_id,
+            entry_type="wiki_summary",
+            content="## Project Overview\nNo data available yet.",
+            source_ref="auto_sync",
+            db=db,
+        )
+
+    # 2. Call AI
+    ai = get_cloud_client()
+    user_prompt = (
+        "## Project Context\n\n"
+        + "\n\n".join(context_parts)
+        + "\n\n---\nGenerate the wiki summary now."
+    )
+
+    try:
+        wiki_content = await ai.complete(system=_WIKI_SYSTEM, user=user_prompt)
+    except Exception:
+        logger.exception("Wiki: AI generation failed for project %s", project_id)
+        wiki_content = "## Project Overview\nWiki generation failed. Will retry on next sync."
+
+    # 3. Upsert
+    existing_result = await db.execute(
+        select(MemoryEntry).where(
+            MemoryEntry.project_id == project_id,
+            MemoryEntry.entry_type == "wiki_summary",
+        )
+    )
+    existing_entry = existing_result.scalar_one_or_none()
+
+    metadata = {
+        "page_type": "project_summary",
+        "auto_generated": True,
+        "updated_by": "sync",
+    }
+
+    if existing_entry:
+        existing_entry.content = wiki_content
+        existing_entry.metadata_ = metadata
+        try:
+            ai_local = get_local_client()
+            context_desc = await _generate_context_description(wiki_content, "wiki_summary")
+            embed_text = f"{context_desc}\n\n{wiki_content}" if context_desc else wiki_content
+            existing_entry.embedding = await ai_local.embed(embed_text)
+            existing_entry.context_description = context_desc or None
+        except Exception:
+            logger.debug("Wiki: embedding update failed, keeping old embedding")
+        await db.flush()
+        await db.refresh(existing_entry)
+        logger.info("Wiki: updated summary for project %s", project_id)
+        return existing_entry
+    else:
+        entry = await add_entry(
+            project_id=project_id,
+            entry_type="wiki_summary",
+            content=wiki_content,
+            source_ref="auto_sync",
+            db=db,
+        )
+        entry.metadata_ = metadata
+        await db.flush()
+        await db.refresh(entry)
+        logger.info("Wiki: created summary for project %s", project_id)
+        return entry

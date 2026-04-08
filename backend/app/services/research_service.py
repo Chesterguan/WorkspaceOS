@@ -7,6 +7,7 @@ from Semantic Scholar to produce citation-backed research writing.
 Messages are stored in the shared chat_messages table and tagged with
 metadata_ = {"role_type": "research"} to separate them from co-founder chat.
 """
+import asyncio
 import logging
 import re
 import uuid
@@ -20,6 +21,11 @@ from app.models.chat import ChatMessage
 from app.models.project import Project
 from app.services.ai_client import get_cloud_client
 from app.services.narrative_service import build_context_block, get_or_create
+from app.services.paper_reviewers import (
+    REVIEWER_REGISTRY,
+    get_reviewer,
+    route_to_research_reviewers,
+)
 from app.services.repo_context import get_generation_context
 from app.services.scholar_service import (
     find_related_work,
@@ -330,14 +336,17 @@ async def send_research_message(
     include_workspace: bool,
     include_repo: bool,
     db: AsyncSession,
-) -> ChatMessage:
+    reviewer_id: Optional[str] = None,
+) -> Tuple[List[ChatMessage], List[str], str]:
     """
-    Process a research assistant message:
+    Process a research assistant message via the reviewer roundtable:
     1. Persist the user message (tagged as research)
     2. Build research context (narrative + repo + workspace + literature)
     3. Load research conversation history
-    4. Call cloud AI with RESEARCH_SYSTEM prompt
-    5. Persist and return the assistant reply (tagged as research)
+    4. Compose user prompt with context + history
+    5. Route to reviewers (or use specific reviewer_id)
+    6. Parallel dispatch via asyncio.gather
+    7. Return (messages_list, routed_reviewer_ids, roundtable_group)
     """
     # 1. Persist user message with research tag
     user_msg = ChatMessage(
@@ -384,9 +393,13 @@ async def send_research_message(
         history_lines: List[str] = []
         for msg in history:
             role_label = "Researcher" if msg.role == "user" else "Assistant"
+            reviewer_label = ""
+            if msg.metadata_ and msg.metadata_.get("reviewer_id"):
+                reviewer_name = msg.metadata_.get("reviewer_name", msg.metadata_["reviewer_id"])
+                reviewer_label = f" [{reviewer_name}]"
             # Truncate long history entries but keep more for research (academic content is dense)
             content = msg.content if len(msg.content) <= 1500 else msg.content[:1500] + "..."
-            history_lines.append(f"**{role_label}:** {content}")
+            history_lines.append(f"**{role_label}{reviewer_label}:** {content}")
         user_prompt_parts.append(
             "## Conversation History\n\n" + "\n\n".join(history_lines) + "\n\n---\n"
         )
@@ -394,33 +407,75 @@ async def send_research_message(
     user_prompt_parts.append(f"**Researcher:** {user_message}")
     user_prompt = "\n".join(user_prompt_parts)
 
-    # 5. Call cloud AI (Gemini — quality matters for academic writing)
+    # 5. Route to reviewers
+    if reviewer_id and reviewer_id in REVIEWER_REGISTRY:
+        routed_ids = [reviewer_id]
+    else:
+        routed_ids = await route_to_research_reviewers(user_message)
+
+    # 6. Parallel dispatch
+    roundtable_group = str(uuid.uuid4())[:8]
     ai = get_cloud_client()
-    try:
-        reply_text = await ai.complete(system=RESEARCH_SYSTEM, user=user_prompt)
-    except Exception:
-        logger.exception("Cloud AI call failed for research message: project %s", project_id)
-        reply_text = (
-            "I encountered an error while generating a response. "
-            "Please check the AI provider configuration and try again."
+
+    async def _call_reviewer(rid: str, index: int) -> ChatMessage:
+        reviewer = get_reviewer(rid)
+        if reviewer is None:
+            reviewer = get_reviewer("technical_rigor")
+
+        # Combine reviewer persona with research system context.
+        # Strip the JSON output suffix — reviewers act as conversational advisors here,
+        # not structured paper reviewers.
+        base_prompt = reviewer.system_prompt
+        # The _OUTPUT_SUFFIX starts with "\nOUTPUT FORMAT"
+        suffix_marker = "\nOUTPUT FORMAT"
+        if suffix_marker in base_prompt:
+            base_prompt = base_prompt[:base_prompt.index(suffix_marker)]
+
+        system = (
+            f"{base_prompt}\n\n"
+            f"ADDITIONAL CONTEXT: You are also acting as a research advisor in a chat conversation. "
+            f"When the researcher asks questions, provide detailed, citation-aware advice from your "
+            f"perspective as {reviewer.modeled_after}. Reference specific papers from the literature "
+            f"context when relevant. Use [N] citation notation matching the numbered papers in context.\n\n"
+            f"RESEARCH ASSISTANT GUIDELINES:\n{RESEARCH_SYSTEM}"
         )
 
-    # 6. Persist assistant reply with research tag
-    assistant_msg = ChatMessage(
-        project_id=project_id,
-        role="assistant",
-        content=reply_text,
-        metadata_={
-            "role_type": _RESEARCH_ROLE_TYPE,
-            "include_literature": include_literature,
-            "include_workspace": include_workspace,
-            "include_repo": include_repo,
-        },
-    )
-    db.add(assistant_msg)
+        try:
+            reply_text = await ai.complete(system=system, user=user_prompt)
+        except Exception:
+            logger.exception("Research reviewer %s failed", rid)
+            reply_text = "I encountered an error generating a response. Please try again."
+
+        msg = ChatMessage(
+            project_id=project_id,
+            role="assistant",
+            content=reply_text,
+            metadata_={
+                "role_type": _RESEARCH_ROLE_TYPE,
+                "reviewer_id": rid,
+                "reviewer_name": reviewer.name,
+                "modeled_after": reviewer.modeled_after,
+                "avatar": reviewer.avatar,
+                "color": reviewer.color,
+                "roundtable_group": roundtable_group,
+                "roundtable_index": index,
+                "routed_reviewers": routed_ids,
+                "include_literature": include_literature,
+                "include_workspace": include_workspace,
+                "include_repo": include_repo,
+            },
+        )
+        db.add(msg)
+        return msg
+
+    tasks = [_call_reviewer(rid, idx) for idx, rid in enumerate(routed_ids)]
+    reviewer_messages = await asyncio.gather(*tasks)
+
     await db.flush()
-    await db.refresh(assistant_msg)
-    return assistant_msg
+    for msg in reviewer_messages:
+        await db.refresh(msg)
+
+    return list(reviewer_messages), routed_ids, roundtable_group
 
 
 async def get_research_history(

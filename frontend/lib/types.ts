@@ -4,7 +4,9 @@ export type Platform =
   | 'twitter'
   | 'xiaohongshu'
   | 'medium_outline'
-  | 'github_release';
+  | 'github_release'
+  | 'devto'
+  | 'hashnode';
 
 // Draft lifecycle status
 export type DraftStatus = 'draft' | 'approved' | 'archived' | 'published';
@@ -146,7 +148,8 @@ export type MemoryEntryType =
   | 'commit_summary'
   | 'readme_content'
   | 'release_note'
-  | 'user_annotation';
+  | 'user_annotation'
+  | 'wiki_summary';
 
 export interface MemoryEntry {
   id: string;
@@ -352,18 +355,36 @@ export interface ChatMessage {
   content: string;
   metadata_?: Record<string, unknown> | null;
   created_at: string;
+  advisor_id?: string | null;
+  advisor_name?: string | null;
 }
 
 export interface ChatSendRequest {
   message: string;
+  advisor_id?: string | null;
   include_workspace?: boolean;
   include_memory?: boolean;
   include_repo?: boolean;
 }
 
+export interface ChatRoundtableResponse {
+  messages: ChatMessage[];
+  routed_advisors: string[];
+  roundtable_group: string;
+}
+
 export interface ChatHistoryResponse {
   messages: ChatMessage[];
   total: number;
+}
+
+export interface AdvisorInfo {
+  id: string;
+  name: string;
+  tagline: string;
+  expertise: string[];
+  color: string;
+  avatar: string;
 }
 
 // ─── Publishing ────────────────────────────────────────────────
@@ -430,6 +451,19 @@ export interface DashboardSummary {
   recent_activity: DashboardActivityItem[];
 }
 
+export interface WeeklyData {
+  week: string;
+  commits: number;
+  papers: number;
+  drafts: number;
+  memory: number;
+}
+
+export interface DashboardAnalyticsResponse {
+  weeks: WeeklyData[];
+  totals: Record<string, number>;
+}
+
 // ─── Research ──────────────────────────────────────────────────
 export interface PaperResult {
   paper_id: string;
@@ -451,9 +485,25 @@ export interface PaperSearchResponse {
 
 export interface ResearchMessageRequest {
   message: string;
+  reviewer_id?: string | null;
   include_literature?: boolean;
   include_workspace?: boolean;
   include_repo?: boolean;
+}
+
+export interface ResearchRoundtableResponse {
+  messages: ChatMessage[];
+  routed_reviewers: string[];
+  roundtable_group: string;
+}
+
+export interface ReviewerInfo {
+  id: string;
+  name: string;
+  modeled_after: string;
+  focus: string;
+  color: string;
+  avatar: string;
 }
 
 // ─── Paper Pipeline ────────────────────────────────────────────
@@ -472,6 +522,7 @@ export interface PaperVersionInfo {
   review_notes: string;
   changes_made: string;
   diff_stats: Record<string, number> | null;
+  content?: string | null; // full paper body at this version (for diff view)
 }
 
 export interface PaperGenerateResponse {
@@ -492,6 +543,84 @@ export interface PaperExportRequest {
 export interface PaperExportResponse {
   latex: string;
   bibtex: string;
+}
+
+export interface ExportPdfRequest {
+  blog_post_id: string;
+  template?: string;
+}
+
+export interface ExportPdfResponse {
+  pdf_base64: string;
+  filename: string;
+  page_count?: number | null;
+}
+
+// ─── V2 Pipeline Types ──────────────────────────────────────────
+
+export interface AgentLogEntry {
+  agent: string;
+  action: string;
+  section: string | null;
+  detail: string;
+  score: number | null;
+  timestamp: string;
+}
+
+export interface VenueGuidelines {
+  venue_name: string;
+  page_limit: number | null;
+  word_limit: number | null;
+  template: string | null;
+  anonymization: boolean;
+  deadline: string | null;
+  topics: string[];
+  source: string;
+  venue_url: string | null;
+}
+
+export interface PaperGenerateV2Response {
+  blog_post_id: string;
+  title: string;
+  final_content: string;
+  bibtex: string;
+  latex: string | null;
+  versions: PaperVersionInfo[];
+  review_summary: string;
+  agent_log: AgentLogEntry[];
+  venue_guidelines: VenueGuidelines | null;
+  roundtable_reviews?: ReviewerFeedback[] | null;
+}
+
+export interface PaperEditRequest {
+  instruction: string;
+  target_section?: string | null;
+  target_pages?: number | null;
+  target_venue?: string | null;
+}
+
+export interface PaperEditResponse {
+  blog_post_id: string;
+  updated_content: string;
+  previous_version: number;
+  new_version: number;
+  changes_summary: string;
+  agent_log: AgentLogEntry[];
+  sections_modified: string[];
+}
+
+export interface ReviewerFeedback {
+  reviewer_id: string;
+  reviewer_name: string;
+  modeled_after: string;
+  focus: string;
+  avatar?: string;
+  color?: string;
+  score: number;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  critical_issues: string[];
 }
 
 export interface PaperDiffLine {
@@ -589,6 +718,100 @@ export interface TimelineResponse {
   project_name: string;
   total_events: number;
   months: TimelineMonth[];
+}
+
+// ─── Settings ───────────────────────────────────────────────────
+
+export interface KeyStatus {
+  key: string;
+  masked_value: string;
+  updated_at: string | null;
+  source: string; // "db" | "env"
+}
+
+export interface KeysStatusResponse {
+  keys: KeyStatus[];
+}
+
+export interface SetKeysRequest {
+  keys: Record<string, string>;
+}
+
+// ─── Usage ──────────────────────────────────────────────────────
+
+export interface UsagePeriod {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  estimated_cost_usd: number;
+}
+
+export interface UsageStats {
+  today: UsagePeriod;
+  this_week: UsagePeriod;
+  this_month: UsagePeriod;
+  by_provider: Record<string, { calls: number; cost: number }>;
+}
+
+// ─── Auth ────────────────────────────────────────────────────────
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  display_name?: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user_id: string;
+  email: string;
+  display_name?: string | null;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  display_name?: string | null;
+  created_at: string;
+}
+
+// ─── Files ──────────────────────────────────────────────────────
+
+export interface FileUploadResponse {
+  id: string;
+  project_id: string;
+  entry_type: string;
+  content: string;
+  metadata_: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface ImportUrlRequest {
+  url: string;
+  tags?: string[];
+}
+
+export interface FileListItem {
+  id: string;
+  entry_type: string;
+  filename: string;
+  source: string;
+  mime_type: string;
+  tags: string[];
+  summary: string;
+  file_size: number;
+  created_at: string;
+}
+
+export interface FileListResponse {
+  files: FileListItem[];
+  total: number;
 }
 
 // ─── Workspace ─────────────────────────────────────────────────

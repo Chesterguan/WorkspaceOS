@@ -33,7 +33,9 @@ import type {
   BlogPostVersion,
   ChatMessage,
   ChatSendRequest,
+  ChatRoundtableResponse,
   ChatHistoryResponse,
+  AdvisorInfo,
   WorkspaceSnapshot,
   WorkspaceContext,
   PublishGitHubReleaseRequest,
@@ -41,12 +43,17 @@ import type {
   PortfolioGenerateRequest,
   PortfolioGenerateResponse,
   DashboardSummary,
+  DashboardAnalyticsResponse,
   ResearchMessageRequest,
+  ResearchRoundtableResponse,
+  ReviewerInfo,
   PaperSearchResponse,
   PaperGenerateRequest,
   PaperGenerateResponse,
   PaperExportRequest,
   PaperExportResponse,
+  ExportPdfRequest,
+  ExportPdfResponse,
   PortfolioPaperGenerateRequest,
   SuggestTitlesRequest,
   SuggestTitlesResponse,
@@ -57,6 +64,19 @@ import type {
   GenerateFigureRequest,
   GenerateFigureResponse,
   TimelineResponse,
+  PaperGenerateV2Response,
+  PaperEditRequest,
+  PaperEditResponse,
+  KeysStatusResponse,
+  SetKeysRequest,
+  UsageStats,
+  LoginRequest,
+  RegisterRequest,
+  TokenResponse,
+  AuthUser,
+  FileUploadResponse,
+  ImportUrlRequest,
+  FileListResponse,
 } from './types';
 
 const BASE_URL =
@@ -85,7 +105,11 @@ async function apiFetch<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (API_KEY) {
+  // Auth: prefer JWT token from localStorage, fall back to env API key
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  } else if (API_KEY) {
     headers['X-API-Key'] = API_KEY;
   }
 
@@ -478,8 +502,8 @@ export interface ChatStarterGroup {
 }
 
 export const chat = {
-  send(projectId: string, data: ChatSendRequest): Promise<ChatMessage> {
-    return apiFetch<ChatMessage>(`/projects/${projectId}/chat`, {
+  send(projectId: string, data: ChatSendRequest): Promise<ChatRoundtableResponse> {
+    return apiFetch<ChatRoundtableResponse>(`/projects/${projectId}/chat`, {
       method: 'POST', body: JSON.stringify(data),
     });
   },
@@ -492,13 +516,16 @@ export const chat = {
   starters(): Promise<ChatStarterGroup[]> {
     return apiFetch<ChatStarterGroup[]>('/chat/starters');
   },
+  advisors(): Promise<AdvisorInfo[]> {
+    return apiFetch<AdvisorInfo[]>('/chat/advisors');
+  },
 };
 
 // ─── Research ─────────────────────────────────────────────────────────────────
 
 export const research = {
-  send(projectId: string, data: ResearchMessageRequest): Promise<ChatMessage> {
-    return apiFetch<ChatMessage>(`/projects/${projectId}/research`, {
+  send(projectId: string, data: ResearchMessageRequest): Promise<ResearchRoundtableResponse> {
+    return apiFetch<ResearchRoundtableResponse>(`/projects/${projectId}/research`, {
       method: 'POST', body: JSON.stringify(data),
     });
   },
@@ -510,6 +537,9 @@ export const research = {
   },
   starters(): Promise<Array<{ category: string; prompts: string[] }>> {
     return apiFetch<Array<{ category: string; prompts: string[] }>>('/research/starters');
+  },
+  reviewers(): Promise<ReviewerInfo[]> {
+    return apiFetch<ReviewerInfo[]>('/research/reviewers');
   },
   searchPapers(projectId: string, query: string, limit = 10): Promise<PaperSearchResponse> {
     return apiFetch<PaperSearchResponse>(`/projects/${projectId}/research/search-papers`, {
@@ -582,6 +612,38 @@ export const publish = {
       { method: 'POST', body: JSON.stringify({}) },
     );
   },
+
+  devto(projectId: string, draftId: string): Promise<PublishResponse> {
+    return apiFetch<PublishResponse>(
+      `/projects/${projectId}/drafts/${draftId}/publish/devto`,
+      { method: 'POST', body: '{}' },
+    );
+  },
+
+  hashnode(projectId: string, draftId: string): Promise<PublishResponse> {
+    return apiFetch<PublishResponse>(
+      `/projects/${projectId}/drafts/${draftId}/publish/hashnode`,
+      { method: 'POST', body: '{}' },
+    );
+  },
+};
+
+// ─── Blog Post Publishing (papers, articles → Dev.to, Hashnode) ─────────────
+
+export const blogPublish = {
+  devto(projectId: string, blogPostId: string): Promise<PublishResponse> {
+    return apiFetch<PublishResponse>(
+      `/projects/${projectId}/blog/${blogPostId}/publish/devto`,
+      { method: 'POST' },
+    );
+  },
+
+  hashnode(projectId: string, blogPostId: string): Promise<PublishResponse> {
+    return apiFetch<PublishResponse>(
+      `/projects/${projectId}/blog/${blogPostId}/publish/hashnode`,
+      { method: 'POST' },
+    );
+  },
 };
 
 // ─── Portfolio ────────────────────────────────────────────────────────────────
@@ -600,6 +662,13 @@ export const portfolio = {
       body: JSON.stringify(data),
     });
   },
+
+  generatePaperV2(data: PortfolioPaperGenerateRequest): Promise<PaperGenerateV2Response> {
+    return apiFetch<PaperGenerateV2Response>('/portfolio/paper/generate-v2', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -607,6 +676,10 @@ export const portfolio = {
 export const dashboard = {
   summary(): Promise<DashboardSummary> {
     return apiFetch<DashboardSummary>('/dashboard/summary');
+  },
+
+  analytics(): Promise<DashboardAnalyticsResponse> {
+    return apiFetch<DashboardAnalyticsResponse>('/dashboard/analytics');
   },
 };
 
@@ -642,6 +715,118 @@ export const paper = {
     return apiFetch<GenerateFigureResponse>(`/projects/${projectId}/paper/generate-figure`, {
       method: 'POST', body: JSON.stringify(data),
     });
+  },
+  generateV2(projectId: string, data: PaperGenerateRequest): Promise<PaperGenerateV2Response> {
+    return apiFetch<PaperGenerateV2Response>(`/projects/${projectId}/paper/generate-v2`, {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  },
+  editPaper(projectId: string, blogPostId: string, data: PaperEditRequest): Promise<PaperEditResponse> {
+    return apiFetch<PaperEditResponse>(`/projects/${projectId}/paper/${blogPostId}/edit`, {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  },
+  exportPdf(projectId: string, data: ExportPdfRequest): Promise<ExportPdfResponse> {
+    return apiFetch<ExportPdfResponse>(`/projects/${projectId}/paper/export-pdf`, {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  },
+  resume(projectId: string, blogPostId: string): Promise<PaperGenerateV2Response> {
+    return apiFetch<PaperGenerateV2Response>(`/projects/${projectId}/paper/${blogPostId}/resume`, {
+      method: 'POST',
+    });
+  },
+};
+
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+export const appSettings = {
+  getKeys(): Promise<KeysStatusResponse> {
+    return apiFetch<KeysStatusResponse>('/settings/keys');
+  },
+  setKeys(data: SetKeysRequest): Promise<KeysStatusResponse> {
+    return apiFetch<KeysStatusResponse>('/settings/keys', {
+      method: 'PUT', body: JSON.stringify(data),
+    });
+  },
+  deleteKey(key: string): Promise<void> {
+    return apiFetch(`/settings/keys/${key}`, { method: 'DELETE' });
+  },
+  getUsage(): Promise<UsageStats> {
+    return apiFetch<UsageStats>('/settings/usage');
+  },
+  triggerBackup(): Promise<{ success: boolean; message?: string; error?: string }> {
+    return apiFetch('/settings/backup', { method: 'POST' });
+  },
+  listBackups(): Promise<{ backups: Array<{ filename: string; size_human: string; created_at: string }> }> {
+    return apiFetch('/settings/backups');
+  },
+};
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+export const auth = {
+  login(data: LoginRequest): Promise<TokenResponse> {
+    return apiFetch<TokenResponse>('/auth/login', {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  },
+  register(data: RegisterRequest): Promise<TokenResponse> {
+    return apiFetch<TokenResponse>('/auth/register', {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  },
+  me(): Promise<AuthUser> {
+    return apiFetch<AuthUser>('/auth/me');
+  },
+};
+
+// ─── Files ───────────────────────────────────────────────────────────────────
+
+export const files = {
+  upload(projectId: string, file: globalThis.File, tags?: string): Promise<FileUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (tags) formData.append('tags', tags);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    } else if (API_KEY) {
+      headers['X-API-Key'] = API_KEY;
+    }
+    return fetch(`${BASE_URL}/projects/${projectId}/files/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as Record<string, string>).detail || `Upload failed: ${res.status}`);
+      }
+      return res.json() as Promise<FileUploadResponse>;
+    });
+  },
+  importUrl(projectId: string, data: ImportUrlRequest): Promise<FileUploadResponse> {
+    return apiFetch<FileUploadResponse>(`/projects/${projectId}/files/import-url`, {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  },
+  list(projectId: string, tag?: string): Promise<FileListResponse> {
+    const params = tag ? `?tag=${encodeURIComponent(tag)}` : '';
+    return apiFetch<FileListResponse>(`/projects/${projectId}/files${params}`);
+  },
+  delete(projectId: string, memoryId: string): Promise<void> {
+    return apiFetch(`/projects/${projectId}/files/${memoryId}`, { method: 'DELETE' });
+  },
+};
+
+// ─── Wiki ────────────────────────────────────────────────────────────────────
+
+export const wiki = {
+  refresh(projectId: string): Promise<{ id: string; content: string; updated_at: string | null }> {
+    return apiFetch(`/projects/${projectId}/memory/wiki/refresh`, { method: 'POST' });
   },
 };
 

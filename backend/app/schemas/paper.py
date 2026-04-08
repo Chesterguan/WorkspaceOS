@@ -31,6 +31,7 @@ class PaperVersionSummary(BaseModel):
     review_notes: str
     changes_made: str = ""  # human-readable summary of the diff
     diff_stats: Dict  # {lines_added, lines_removed, lines_changed, similarity_pct}
+    content: Optional[str] = None  # full paper body at this version (for diff view)
 
 
 class PaperGenerateResponse(BaseModel):
@@ -54,6 +55,20 @@ class ExportLatexRequest(BaseModel):
 class ExportLatexResponse(BaseModel):
     latex: str
     bibtex: str
+
+
+class ExportPdfRequest(BaseModel):
+    blog_post_id: str
+    template: str = Field(
+        default="arxiv",
+        description="LaTeX template to use",
+    )
+
+
+class ExportPdfResponse(BaseModel):
+    pdf_base64: str  # base64-encoded PDF content
+    filename: str
+    page_count: Optional[int] = None
 
 
 class PortfolioPaperGenerateRequest(BaseModel):
@@ -169,3 +184,81 @@ class GenerateFigureRequest(BaseModel):
 class GenerateFigureResponse(BaseModel):
     mermaid_source: str  # generated Mermaid source
     svg: str             # base64-encoded rendered SVG
+
+
+# ---------------------------------------------------------------------------
+# V2 Pipeline schemas
+# ---------------------------------------------------------------------------
+
+class AgentLogEntry(BaseModel):
+    agent: str          # "gemini_planner" | "gemini_writer" | "openai_critic" | ...
+    action: str         # "plan" | "draft" | "review" | "revise" | "backtrack" | "coherence"
+    section: Optional[str] = None  # "3. Methodology" or null for full-paper actions
+    detail: str         # Human-readable summary
+    score: Optional[int] = None  # Critic score if applicable
+    timestamp: str      # ISO timestamp
+
+
+class VenueGuidelinesSchema(BaseModel):
+    venue_name: str
+    page_limit: Optional[int] = None
+    word_limit: Optional[int] = None
+    template: Optional[str] = None
+    anonymization: bool = False
+    deadline: Optional[str] = None
+    topics: List[str] = Field(default_factory=list)
+    source: str = "manual"
+    venue_url: Optional[str] = None
+
+
+class ReviewerFeedback(BaseModel):
+    reviewer_id: str
+    reviewer_name: str
+    modeled_after: str
+    focus: str
+    avatar: str = ""
+    color: str = ""
+    score: int
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    suggestions: List[str] = Field(default_factory=list)
+    critical_issues: List[str] = Field(default_factory=list)
+
+
+class PaperGenerateV2Response(BaseModel):
+    blog_post_id: str
+    title: str
+    final_content: str
+    bibtex: str
+    latex: Optional[str] = None
+    versions: List[PaperVersionSummary]
+    review_summary: str
+    agent_log: List[AgentLogEntry]
+    venue_guidelines: Optional[VenueGuidelinesSchema] = None
+    roundtable_reviews: Optional[List[ReviewerFeedback]] = None
+
+
+class PaperEditRequest(BaseModel):
+    instruction: str = Field(..., min_length=3, max_length=2000)
+    target_section: Optional[str] = Field(
+        default=None,
+        description="Section to edit (e.g. '3. Methodology'), or null for whole paper",
+    )
+    target_pages: Optional[int] = Field(
+        default=None,
+        description="Target page count for condense operations",
+    )
+    target_venue: Optional[str] = Field(
+        default=None,
+        description="Venue name — triggers venue resolution for constraints",
+    )
+
+
+class PaperEditResponse(BaseModel):
+    blog_post_id: str
+    updated_content: str
+    previous_version: int
+    new_version: int
+    changes_summary: str
+    agent_log: List[AgentLogEntry]
+    sections_modified: List[str]

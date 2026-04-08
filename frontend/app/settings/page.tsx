@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { linkedin as linkedinApi, github_status as githubStatusApi } from "@/lib/api";
+import { linkedin as linkedinApi, github_status as githubStatusApi, appSettings } from "@/lib/api";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -16,7 +16,14 @@ import {
   CheckCircle2,
   XCircle,
   Info,
+  Key,
+  Pencil,
+  Trash2,
+  BarChart3,
+  Shield,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { KeyStatus, UsageStats } from "@/lib/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -264,6 +271,340 @@ function ManualPlatformCard({ icon, name, reason, description }: ManualPlatformC
   );
 }
 
+// ─── API Keys Card ───────────────────────────────────────────────────────────
+
+const KEY_LABELS: Record<string, { label: string; placeholder: string }> = {
+  gemini_api_key: { label: "Google Gemini", placeholder: "AIza..." },
+  openai_api_key: { label: "OpenAI", placeholder: "sk-..." },
+  anthropic_api_key: { label: "Anthropic", placeholder: "sk-ant-..." },
+  github_token: { label: "GitHub Token", placeholder: "ghp_..." },
+  api_secret_key: { label: "API Secret Key", placeholder: "your-secret-key" },
+  linkedin_client_id: { label: "LinkedIn Client ID", placeholder: "client-id" },
+  linkedin_client_secret: { label: "LinkedIn Client Secret", placeholder: "client-secret" },
+  devto_api_key: { label: "Dev.to API Key", placeholder: "your-devto-api-key" },
+  hashnode_api_key: { label: "Hashnode API Key", placeholder: "your-hashnode-pat" },
+  hashnode_publication_id: { label: "Hashnode Publication ID", placeholder: "publication-id" },
+  google_drive_credentials: { label: "Google Drive", placeholder: "OAuth credentials JSON" },
+  notion_api_key: { label: "Notion API Key", placeholder: "secret_..." },
+};
+
+function ApiKeysCard() {
+  const [keys, setKeys] = useState<KeyStatus[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+
+  const fetchKeys = useCallback(async () => {
+    try {
+      const res = await appSettings.getKeys();
+      setKeys(res.keys);
+    } catch {
+      toast.error("Failed to load API key status");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchKeys();
+  }, [fetchKeys]);
+
+  async function handleSave(key: string) {
+    const value = editValues[key];
+    if (!value?.trim()) return;
+    setIsSaving(true);
+    try {
+      await appSettings.setKeys({ keys: { [key]: value.trim() } });
+      toast.success(`${KEY_LABELS[key]?.label || key} updated`);
+      setEditingKey(null);
+      setEditValues((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      await fetchKeys();
+    } catch {
+      toast.error("Failed to save key");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDelete(key: string) {
+    try {
+      await appSettings.deleteKey(key);
+      toast.success(`${KEY_LABELS[key]?.label || key} removed from DB (using .env fallback)`);
+      setEditingKey(null);
+      await fetchKeys();
+    } catch {
+      toast.error("Failed to remove key");
+    }
+  }
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-violet-500/15 flex items-center justify-center flex-shrink-0">
+              <Key className="w-5 h-5 text-violet-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">AI & API Keys</CardTitle>
+              <CardDescription className="text-xs mt-0.5">
+                Manage API keys for AI providers and integrations. Stored encrypted in the database.
+              </CardDescription>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading key status…
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {keys.map((k) => {
+              const meta = KEY_LABELS[k.key] || { label: k.key, placeholder: "" };
+              const isEditing = editingKey === k.key;
+
+              return (
+                <div key={k.key} className="flex items-center gap-3 py-2 border-b border-border/50 last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{meta.label}</span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px]",
+                          k.source === "db"
+                            ? "text-violet-400 border-violet-500/30"
+                            : k.masked_value !== "Not set"
+                              ? "text-muted-foreground border-border"
+                              : "text-red-400 border-red-500/30",
+                        )}
+                      >
+                        {k.source === "db" ? "DB" : k.masked_value !== "Not set" ? "ENV" : "Missing"}
+                      </Badge>
+                    </div>
+                    {isEditing ? (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <input
+                          type="password"
+                          value={editValues[k.key] || ""}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, [k.key]: e.target.value }))}
+                          placeholder={meta.placeholder}
+                          className="flex-1 h-8 px-2 text-xs bg-secondary/50 border border-border rounded focus:outline-none focus:ring-1 focus:ring-violet-500/50 font-mono"
+                          autoFocus
+                        />
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="h-7 text-xs"
+                          onClick={() => handleSave(k.key)}
+                          disabled={isSaving || !editValues[k.key]?.trim()}
+                        >
+                          {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setEditingKey(null);
+                            setEditValues((prev) => {
+                              const next = { ...prev };
+                              delete next[k.key];
+                              return next;
+                            });
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                        {k.masked_value}
+                      </p>
+                    )}
+                  </div>
+                  {!isEditing && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                        onClick={() => setEditingKey(k.key)}
+                        title="Edit"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      {k.source === "db" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDelete(k.key)}
+                          title="Remove from DB (use .env fallback)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Usage Card ──────────────────────────────────────────────────────────────
+
+function UsageCard() {
+  const [usage, setUsage] = useState<UsageStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    appSettings.getUsage()
+      .then(setUsage)
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  if (isLoading) {
+    return (
+      <Card className="bg-card border-border">
+        <CardContent className="p-6 flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading usage...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!usage) return null;
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+            <BarChart3 className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div>
+            <CardTitle className="text-base">AI Usage & Costs</CardTitle>
+            <CardDescription className="text-xs mt-0.5">
+              Estimated costs based on token usage. Actual costs may vary.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Today", data: usage.today },
+            { label: "This Week", data: usage.this_week },
+            { label: "This Month", data: usage.this_month },
+          ].map(({ label, data }) => (
+            <div key={label} className="rounded-lg border border-border p-3 text-center">
+              <p className="text-lg font-bold">${data.estimated_cost_usd.toFixed(2)}</p>
+              <p className="text-[11px] text-muted-foreground">{label}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{data.calls} calls</p>
+            </div>
+          ))}
+        </div>
+        {Object.keys(usage.by_provider).length > 0 && (
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            {Object.entries(usage.by_provider).map(([provider, stats]) => (
+              <span key={provider}>
+                {provider}: ${stats.cost.toFixed(2)} ({stats.calls} calls)
+              </span>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Backup Card ────────────────────────────────────────────────────────────
+
+function BackupCard() {
+  const [backups, setBackups] = useState<Array<{ filename: string; size_human: string; created_at: string }>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isBacking, setIsBacking] = useState(false);
+
+  const fetchBackups = useCallback(async () => {
+    try {
+      const res = await appSettings.listBackups();
+      setBackups(res.backups);
+    } catch {}
+    finally { setIsLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchBackups(); }, [fetchBackups]);
+
+  async function handleBackup() {
+    setIsBacking(true);
+    try {
+      const res = await appSettings.triggerBackup();
+      if (res.success) {
+        toast.success(res.message || "Backup complete");
+        await fetchBackups();
+      } else {
+        toast.error("Backup failed", { description: res.error });
+      }
+    } catch { toast.error("Backup failed"); }
+    finally { setIsBacking(false); }
+  }
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-blue-500/15 flex items-center justify-center flex-shrink-0">
+              <Shield className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Database Backups</CardTitle>
+              <CardDescription className="text-xs mt-0.5">
+                Automatic daily backups. Stored in the Docker volume.
+              </CardDescription>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleBackup} disabled={isBacking}>
+            {isBacking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
+            Backup Now
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading...</p>
+        ) : backups.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No backups yet. Click &quot;Backup Now&quot; to create one.</p>
+        ) : (
+          <div className="space-y-1">
+            {backups.slice(0, 5).map((b) => (
+              <div key={b.filename} className="flex items-center justify-between text-xs py-1">
+                <span className="font-mono text-muted-foreground">{b.filename}</span>
+                <span className="text-muted-foreground">{b.size_human}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -289,6 +630,20 @@ export default function SettingsPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-8 py-8 space-y-8">
+        {/* AI & API Keys section */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">AI & API Keys</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Keys are encrypted and stored in the database. DB values override .env defaults.
+            </p>
+          </div>
+          <Separator className="bg-border" />
+          <ApiKeysCard />
+          <UsageCard />
+          <BackupCard />
+        </section>
+
         {/* Platform Connections section */}
         <section className="space-y-4">
           <div>

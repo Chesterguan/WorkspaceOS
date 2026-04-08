@@ -20,6 +20,7 @@ const TYPE_COLORS: Record<MemoryEntryType, string> = {
   readme_content: "bg-teal-600/20 text-teal-400 border-teal-600/30",
   release_note: "bg-cyan-600/20 text-cyan-400 border-cyan-600/30",
   user_annotation: "bg-zinc-600/20 text-zinc-400 border-zinc-600/30",
+  wiki_summary: "bg-indigo-600/20 text-indigo-400 border-indigo-600/30",
 };
 
 // Row background tint for AI/sync-generated types to make them visually distinct
@@ -56,6 +57,7 @@ const TYPE_LABELS: Record<MemoryEntryType, string> = {
   readme_content: "README",
   release_note: "Release Note",
   user_annotation: "Annotation",
+  wiki_summary: "Wiki Summary",
 };
 
 interface MemoryLogListProps {

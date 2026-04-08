@@ -5,6 +5,7 @@ Manages conversation history, assembles rich context (narrative, repo, workspace
 memory, recent drafts/blogs), calls the cloud AI, and persists both the user
 message and the assistant reply.
 """
+import asyncio
 import logging
 import uuid
 from typing import List, Optional, Tuple
@@ -17,6 +18,7 @@ from app.models.chat import ChatMessage
 from app.models.draft import Draft
 from app.models.project import Project
 from app.services.ai_client import get_cloud_client
+from app.services.advisors import ADVISOR_REGISTRY, get_advisor, route_to_advisors
 from app.services.memory_service import search_memory
 from app.services.narrative_service import build_context_block, get_or_create
 from app.services.repo_context import get_generation_context
@@ -367,10 +369,12 @@ async def send_message(
     include_memory: bool,
     include_repo: bool,
     db: AsyncSession,
-) -> ChatMessage:
+    advisor_id: Optional[str] = None,
+) -> Tuple[List[ChatMessage], List[str], str]:
     """
-    Store the user message, build context, fetch history, call cloud AI,
-    store the assistant reply, and return it.
+    Store the user message, route to advisors, dispatch in parallel, store replies.
+
+    Returns: (advisor_messages, routed_advisor_ids, roundtable_group)
     """
     # 1. Persist user message
     user_msg = ChatMessage(
@@ -391,7 +395,7 @@ async def send_message(
         db=db,
     )
 
-    # 3. Build conversation history (last 20 messages before the one we just inserted)
+    # 3. Build conversation history (last 20 messages)
     history_result = await db.execute(
         select(ChatMessage)
         .where(
@@ -403,54 +407,79 @@ async def send_message(
     )
     history: List[ChatMessage] = list(reversed(history_result.scalars().all()))
 
-    # 4. Compose the user prompt that carries context + history + new message
+    # 4. Compose user prompt with context + history
     user_prompt_parts: List[str] = []
-
     if context_block.strip():
-        user_prompt_parts.append(
-            f"## Project Context\n\n{context_block}\n\n---\n"
-        )
-
+        user_prompt_parts.append(f"## Project Context\n\n{context_block}\n\n---\n")
     if history:
         history_lines: List[str] = []
         for msg in history:
             role_label = "User" if msg.role == "user" else "Assistant"
-            # Truncate very long history entries to keep token budget reasonable
             content = msg.content if len(msg.content) <= 1000 else msg.content[:1000] + "..."
-            history_lines.append(f"**{role_label}:** {content}")
+            advisor_label = ""
+            if msg.metadata_ and msg.metadata_.get("advisor_id"):
+                advisor_name = msg.metadata_.get("advisor_name", msg.metadata_["advisor_id"])
+                advisor_label = f" [{advisor_name}]"
+            history_lines.append(f"**{role_label}{advisor_label}:** {content}")
         user_prompt_parts.append(
             "## Conversation History\n\n" + "\n\n".join(history_lines) + "\n\n---\n"
         )
-
     user_prompt_parts.append(f"**User:** {user_message}")
     user_prompt = "\n".join(user_prompt_parts)
 
-    # 5. Call cloud AI
-    ai = get_cloud_client()
-    try:
-        reply_text = await ai.complete(system=CO_FOUNDER_SYSTEM, user=user_prompt)
-    except Exception:
-        logger.exception("Cloud AI call failed for project %s", project_id)
-        reply_text = (
-            "I encountered an error while generating a response. "
-            "Please check the AI provider configuration and try again."
-        )
+    # 5. Route to advisors
+    if advisor_id and advisor_id in ADVISOR_REGISTRY:
+        routed_ids = [advisor_id]
+    else:
+        routed_ids = await route_to_advisors(user_message)
 
-    # 6. Persist assistant reply
-    assistant_msg = ChatMessage(
-        project_id=project_id,
-        role="assistant",
-        content=reply_text,
-        metadata_={
-            "include_workspace": include_workspace,
-            "include_memory": include_memory,
-            "include_repo": include_repo,
-        },
-    )
-    db.add(assistant_msg)
+    # 6. Dispatch in parallel
+    roundtable_group = str(uuid.uuid4())[:8]
+    ai = get_cloud_client()
+
+    async def _call_advisor(aid: str, index: int) -> ChatMessage:
+        advisor = get_advisor(aid)
+        if advisor is None:
+            advisor = get_advisor("yc_partner")
+
+        # YC partner uses the original detailed system prompt
+        if aid == "yc_partner":
+            system = CO_FOUNDER_SYSTEM
+        else:
+            system = advisor.system_prompt
+
+        try:
+            reply_text = await ai.complete(system=system, user=user_prompt)
+        except Exception:
+            logger.exception("Advisor %s call failed", aid)
+            reply_text = "I encountered an error generating a response. Please try again."
+
+        msg = ChatMessage(
+            project_id=project_id,
+            role="assistant",
+            content=reply_text,
+            metadata_={
+                "advisor_id": aid,
+                "advisor_name": advisor.name,
+                "roundtable_group": roundtable_group,
+                "roundtable_index": index,
+                "routed_advisors": routed_ids,
+                "include_workspace": include_workspace,
+                "include_memory": include_memory,
+                "include_repo": include_repo,
+            },
+        )
+        db.add(msg)
+        return msg
+
+    tasks = [_call_advisor(aid, idx) for idx, aid in enumerate(routed_ids)]
+    advisor_messages = await asyncio.gather(*tasks)
+
     await db.flush()
-    await db.refresh(assistant_msg)
-    return assistant_msg
+    for msg in advisor_messages:
+        await db.refresh(msg)
+
+    return list(advisor_messages), routed_ids, roundtable_group
 
 
 async def get_history(

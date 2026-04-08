@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, verify_api_key
@@ -10,6 +11,7 @@ from app.models.draft import Draft
 from app.models.project import Project
 from app.models.sync import SyncRun
 from app.schemas.ai import (
+    DashboardAnalyticsResponse,
     DashboardSummaryResponse,
     GenerateRequest,
     GenerateResponse,
@@ -149,6 +151,89 @@ async def dashboard_summary(
         total_syncs=total_syncs,
         recent_activity=recent_activity,
     )
+
+
+@router.get("/dashboard/analytics", response_model=DashboardAnalyticsResponse)
+async def dashboard_analytics(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> DashboardAnalyticsResponse:
+    """Return 12 weeks of activity data for dashboard charts."""
+    weeks_back = 12
+
+    # Commits per week
+    commits_result = await db.execute(text("""
+        SELECT date_trunc('week', committed_at)::date AS week_start,
+               COUNT(*) AS cnt
+        FROM github_commits
+        WHERE committed_at >= now() - interval '12 weeks'
+        GROUP BY week_start
+        ORDER BY week_start
+    """))
+
+    # Papers per week (blog_posts tagged 'paper')
+    papers_result = await db.execute(text("""
+        SELECT date_trunc('week', created_at)::date AS week_start,
+               COUNT(*) AS cnt
+        FROM blog_posts
+        WHERE created_at >= now() - interval '12 weeks'
+          AND tags @> ARRAY['paper']::text[]
+        GROUP BY week_start
+        ORDER BY week_start
+    """))
+
+    # Drafts per week
+    drafts_result = await db.execute(text("""
+        SELECT date_trunc('week', created_at)::date AS week_start,
+               COUNT(*) AS cnt
+        FROM drafts
+        WHERE created_at >= now() - interval '12 weeks'
+        GROUP BY week_start
+        ORDER BY week_start
+    """))
+
+    # Memory entries per week
+    memory_result = await db.execute(text("""
+        SELECT date_trunc('week', created_at)::date AS week_start,
+               COUNT(*) AS cnt
+        FROM memory_entries
+        WHERE created_at >= now() - interval '12 weeks'
+        GROUP BY week_start
+        ORDER BY week_start
+    """))
+
+    # Build lookup dicts: ISO date string -> count
+    commits_map = {str(row[0]): row[1] for row in commits_result.all()}
+    papers_map = {str(row[0]): row[1] for row in papers_result.all()}
+    drafts_map = {str(row[0]): row[1] for row in drafts_result.all()}
+    memory_map = {str(row[0]): row[1] for row in memory_result.all()}
+
+    # Find the Monday of the current week (UTC) and walk back 12 weeks,
+    # filling zeros for any week with no activity so the chart always has 12 points.
+    now = datetime.utcnow()
+    current_monday = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+    weeks = []
+    totals: dict = {"commits": 0, "papers": 0, "drafts": 0, "memory": 0}
+
+    for i in range(weeks_back - 1, -1, -1):
+        week_start = current_monday - timedelta(weeks=i)
+        week_str = week_start.strftime("%Y-%m-%d")
+
+        c = commits_map.get(week_str, 0)
+        p = papers_map.get(week_str, 0)
+        d = drafts_map.get(week_str, 0)
+        m = memory_map.get(week_str, 0)
+
+        weeks.append({"week": week_str, "commits": c, "papers": p, "drafts": d, "memory": m})
+        totals["commits"] += c
+        totals["papers"] += p
+        totals["drafts"] += d
+        totals["memory"] += m
+
+    return DashboardAnalyticsResponse(weeks=weeks, totals=totals)
 
 
 @router.post("/generate/summary", response_model=GenerateResponse)

@@ -11,7 +11,8 @@ import { useProjects } from "@/lib/hooks/useProjects";
 import { useProjectStats } from "@/lib/hooks/useProjectStats";
 import { dashboard, memory as memoryApi } from "@/lib/api";
 import { formatDistanceToNow } from "@/lib/utils";
-import type { DashboardSummary, MemoryEntry } from "@/lib/types";
+import { ActivityChart } from "@/components/dashboard/ActivityChart";
+import type { DashboardSummary, DashboardAnalyticsResponse, MemoryEntry } from "@/lib/types";
 import { useState, useRef } from "react";
 import {
   Plus,
@@ -27,16 +28,24 @@ import {
   X,
   Loader2,
   Activity,
+  LogOut,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function ProjectsPage() {
+  const { user, logout } = useAuth();
   const { data: projectList, error, isLoading } = useProjects();
   const { statsMap } = useProjectStats();
   const { data: summaryData } = useSWR<DashboardSummary>(
     "/dashboard/summary",
     () => dashboard.summary(),
     { refreshInterval: 60_000 },
+  );
+  const { data: analyticsData } = useSWR<DashboardAnalyticsResponse>(
+    "/dashboard/analytics",
+    () => dashboard.analytics(),
+    { refreshInterval: 300_000 },
   );
 
   const myProjects = (projectList ?? []).filter((p) => p.status !== "demo");
@@ -100,6 +109,15 @@ export default function ProjectsPage() {
                   <Settings className="w-4 h-4" />
                 </Button>
               </Link>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-foreground"
+                title="Sign out"
+                onClick={logout}
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
           </div>
 
@@ -179,6 +197,27 @@ export default function ProjectsPage() {
                     <p className="text-sm font-medium">{summaryData?.total_projects ?? 0}</p>
                     <p className="text-[11px] text-muted-foreground">Connected</p>
                   </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Activity chart */}
+          {analyticsData && analyticsData.weeks.length > 0 && (
+            <div className="mt-5">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Activity (last 12 weeks)
+                </h3>
+                <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+                  <span>{analyticsData.totals.commits} commits</span>
+                  <span>{analyticsData.totals.papers} papers</span>
+                  <span>{analyticsData.totals.drafts} drafts</span>
+                </div>
+              </div>
+              <Card className="border-border/50 overflow-hidden">
+                <CardContent className="p-4">
+                  <ActivityChart data={analyticsData.weeks} height={160} />
                 </CardContent>
               </Card>
             </div>

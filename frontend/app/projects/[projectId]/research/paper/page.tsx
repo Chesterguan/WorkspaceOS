@@ -23,8 +23,10 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ReviewTimeline } from "@/components/research/ReviewTimeline";
 import { PaperDiffView } from "@/components/research/PaperDiffView";
+import { AgentLogPanel } from "@/components/research/AgentLogPanel";
+import { RoundtableReviewPanel } from "@/components/research/RoundtableReviewPanel";
 import { useProjectContext } from "@/components/ProjectContext";
-import { paper as paperApi } from "@/lib/api";
+import { paper as paperApi, blogPublish } from "@/lib/api";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -44,6 +46,13 @@ import {
   BarChart3,
   ImagePlus,
   Check,
+  Pencil,
+  Eye,
+  Target,
+  Minimize2,
+  Maximize2,
+  Plus,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { paperMarkdownToHtml } from "@/lib/markdown";
@@ -54,11 +63,17 @@ import { usePaperExport } from "@/lib/hooks/usePaperExport";
 import type {
   PaperGenerateRequest,
   PaperGenerateResponse,
+  PaperGenerateV2Response,
+  PaperEditRequest,
+  PaperEditResponse,
+  AgentLogEntry,
+  VenueGuidelines,
   PaperVersionInfo,
   TitleSuggestion,
   GenerateTableResponse,
   GenerateChartResponse,
   GenerateFigureResponse,
+  ReviewerFeedback,
 } from "@/lib/types";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -103,6 +118,20 @@ export default function PaperPage({ params }: PaperPageProps) {
   // Inserted content is appended to paper; we track it as an overlay state
   const [insertedVisuals, setInsertedVisuals] = useState<string[]>([]);
 
+  // ── Edit mode state ─────────────────────────────────────────────────────────
+  type ViewMode = "view" | "edit";
+  const [viewMode, setViewMode] = useState<ViewMode>("view");
+  const [editInstruction, setEditInstruction] = useState("");
+  const [editTargetSection, setEditTargetSection] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editResult, setEditResult] = useState<PaperEditResponse | null>(null);
+  // V2 response extras
+  const [agentLog, setAgentLog] = useState<AgentLogEntry[]>([]);
+  const [venueGuidelines, setVenueGuidelines] = useState<VenueGuidelines | null>(null);
+  const [roundtableReviews, setRoundtableReviews] = useState<ReviewerFeedback[]>([]);
+  // Use v2 pipeline
+  const [useV2, setUseV2] = useState(true);
+
   // ── Generation state ────────────────────────────────────────────────────────
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<PaperGenerateResponse | null>(null);
@@ -134,22 +163,25 @@ export default function PaperPage({ params }: PaperPageProps) {
   // version's content. The final content lives in result.final_content.
   const currentVersionContent = useCallback((): string => {
     if (!result) return "";
+    // Latest version = final content
     if (selectedVersion === result.versions.length) {
-      // Latest version = final content
       return result.final_content;
     }
     const v = result.versions.find((v) => v.version === selectedVersion);
-    // The API only returns final content + review info per version; we store
-    // changes_made as a proxy. Real per-version body requires a separate API call.
-    // For now we show final_content for the latest, and a note for older ones.
-    return v ? `[Version ${v.version} — ${v.changes_made}]\n\n${result.final_content}` : result.final_content;
+    // Use actual per-version content if available (from BlogPostVersion)
+    if (v?.content) return v.content;
+    // Fallback for old papers without per-version content
+    return result.final_content;
   }, [result, selectedVersion]);
 
   // Content for the "previous" version (selectedVersion - 1) used in diff view
   const previousVersionContent = useCallback((): string => {
     if (!result || selectedVersion <= 1) return "";
     const prev = result.versions.find((v) => v.version === selectedVersion - 1);
-    return prev ? `[Version ${prev.version} — ${prev.changes_made}]\n\n${result.final_content}` : result.final_content;
+    // Use actual per-version content if available
+    if (prev?.content) return prev.content;
+    // Fallback for old papers
+    return result.final_content;
   }, [result, selectedVersion]);
 
   // ── Suggest titles handler ────────────────────────────────────────────────────
@@ -257,15 +289,28 @@ export default function PaperPage({ params }: PaperPageProps) {
     startPassSimulation();
 
     try {
-      const res = await paperApi.generate(projectId, {
+      const reqData = {
         title: title.trim(),
         paper_type: paperType,
         target_venue: targetVenue.trim() || undefined,
         additional_instructions: additionalInstructions.trim() || undefined,
-      });
+      };
+      const res = useV2
+        ? await paperApi.generateV2(projectId, reqData)
+        : await paperApi.generate(projectId, reqData);
 
       stopPassSimulation();
       setResult(res);
+      // Capture v2 extras if available
+      if ("agent_log" in res) {
+        const v2Res = res as PaperGenerateV2Response;
+        setAgentLog(v2Res.agent_log);
+        setVenueGuidelines(v2Res.venue_guidelines);
+      }
+      if ("roundtable_reviews" in res) {
+        const v2Res = res as PaperGenerateV2Response;
+        setRoundtableReviews(v2Res.roundtable_reviews || []);
+      }
       // Default to the latest version
       setSelectedVersion(res.versions.length || 1);
       toast.success("Paper generated successfully");
@@ -276,6 +321,32 @@ export default function PaperPage({ params }: PaperPageProps) {
       toast.error("Paper generation failed", { description: msg });
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  // ── Edit handler ──────────────────────────────────────────────────────────
+  async function handleEditPaper(instruction: string, targetSection?: string | null) {
+    if (!result || !instruction.trim()) return;
+    setIsEditing(true);
+    setEditResult(null);
+    try {
+      const res = await paperApi.editPaper(projectId, result.blog_post_id, {
+        instruction: instruction.trim(),
+        target_section: targetSection || undefined,
+        target_venue: targetVenue.trim() || undefined,
+      });
+      setEditResult(res);
+      setAgentLog(res.agent_log);
+      // Update the main result's final_content with the edit
+      setResult((prev) =>
+        prev ? { ...prev, final_content: res.updated_content } : prev
+      );
+      toast.success(res.changes_summary);
+    } catch {
+      toast.error("Edit failed");
+    } finally {
+      setIsEditing(false);
+      setEditInstruction("");
     }
   }
 
@@ -298,6 +369,56 @@ export default function PaperPage({ params }: PaperPageProps) {
     handleDownloadTex,
     handleDownloadBib,
   } = usePaperExport(result, title);
+
+  async function handleDownloadPdf() {
+    if (!result) return;
+    try {
+      const res = await paperApi.exportPdf(projectId, {
+        blog_post_id: result.blog_post_id,
+        template: "arxiv",
+      });
+      const bytes = Uint8Array.from(atob(res.pdf_base64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("PDF downloaded");
+    } catch {
+      toast.error("PDF export failed — pdflatex may not be available");
+    }
+  }
+
+  // ── Publish handlers ─────────────────────────────────────────────────────────
+  async function handlePublishDevto() {
+    if (!result) return;
+    try {
+      const res = await blogPublish.devto(projectId, result.blog_post_id);
+      if (res.success) {
+        toast.success("Published to Dev.to", { description: res.post_url || "" });
+      } else {
+        toast.error("Dev.to publish failed", { description: res.error || "" });
+      }
+    } catch {
+      toast.error("Dev.to publish failed");
+    }
+  }
+
+  async function handlePublishHashnode() {
+    if (!result) return;
+    try {
+      const res = await blogPublish.hashnode(projectId, result.blog_post_id);
+      if (res.success) {
+        toast.success("Published to Hashnode", { description: res.post_url || "" });
+      } else {
+        toast.error("Hashnode publish failed", { description: res.error || "" });
+      }
+    } catch {
+      toast.error("Hashnode publish failed");
+    }
+  }
 
   // ── Cleanup on unmount ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -377,6 +498,34 @@ export default function PaperPage({ params }: PaperPageProps) {
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">.bib</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1.5 text-muted-foreground"
+              onClick={handleDownloadPdf}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">.pdf</span>
+            </Button>
+            <Separator orientation="vertical" className="h-4 mx-1" />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1.5 text-muted-foreground"
+              onClick={handlePublishDevto}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Dev.to</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1.5 text-muted-foreground"
+              onClick={handlePublishHashnode}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Hashnode</span>
             </Button>
           </div>
         )}
@@ -583,6 +732,17 @@ export default function PaperPage({ params }: PaperPageProps) {
                   />
                 </div>
 
+                {/* V2 pipeline toggle */}
+                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useV2}
+                    onChange={(e) => setUseV2(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  Use v2 multi-agent pipeline (section-by-section with backtracking)
+                </label>
+
                 {/* Generate button */}
                 <Button
                   size="lg"
@@ -656,6 +816,81 @@ export default function PaperPage({ params }: PaperPageProps) {
                         </p>
                       )}
                     </div>
+
+                    {/* View/Edit mode toggle */}
+                    <div className="flex items-center gap-2 mb-4">
+                      <Button
+                        variant={viewMode === "view" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setViewMode("view")}
+                      >
+                        <Eye className="h-4 w-4 mr-1" /> View
+                      </Button>
+                      <Button
+                        variant={viewMode === "edit" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setViewMode("edit")}
+                      >
+                        <Pencil className="h-4 w-4 mr-1" /> Edit
+                      </Button>
+                    </div>
+
+                    {/* Venue guidelines display */}
+                    {venueGuidelines && venueGuidelines.source !== "manual" && (
+                      <div className="flex items-center gap-3 text-sm text-muted-foreground mb-4 p-3 rounded-lg bg-secondary/30 border border-border">
+                        <Target className="h-4 w-4 shrink-0 text-violet-400" />
+                        <span>
+                          {venueGuidelines.venue_name}
+                          {venueGuidelines.page_limit && ` · ${venueGuidelines.page_limit} pages`}
+                          {venueGuidelines.anonymization && " · Double-blind"}
+                          {venueGuidelines.deadline && ` · Due: ${venueGuidelines.deadline}`}
+                          <span className="text-muted-foreground/60 ml-1">({venueGuidelines.source})</span>
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Edit mode panel */}
+                    {viewMode === "edit" && (
+                      <div className="space-y-3 border rounded-lg p-4 bg-muted/30 mb-4">
+                        <div className="flex gap-2 flex-wrap">
+                          <Button size="sm" variant="outline" onClick={() => setEditInstruction(`Condense to ${venueGuidelines?.page_limit || 8} pages`)}>
+                            <Minimize2 className="h-3 w-3 mr-1" /> Condense
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditInstruction("Expand with more detail and examples")}>
+                            <Maximize2 className="h-3 w-3 mr-1" /> Expand
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditInstruction("Add a section on ")}>
+                            <Plus className="h-3 w-3 mr-1" /> Add Section
+                          </Button>
+                        </div>
+                        <div className="flex gap-2">
+                          <Textarea
+                            value={editInstruction}
+                            onChange={(e) => setEditInstruction(e.target.value)}
+                            placeholder="Enter edit instruction (e.g., 'Rewrite the introduction to emphasize the governance gap')"
+                            className="min-h-[60px]"
+                          />
+                          <Button
+                            onClick={() => handleEditPaper(editInstruction, editTargetSection)}
+                            disabled={isEditing || !editInstruction.trim()}
+                            className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white"
+                          >
+                            {isEditing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+                          </Button>
+                        </div>
+                        {editResult && (
+                          <p className="text-xs text-muted-foreground">
+                            {editResult.changes_summary}
+                            {editResult.sections_modified.length > 0 && (
+                              <span className="ml-1">· Modified: {editResult.sections_modified.join(", ")}</span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <AgentLogPanel entries={agentLog} />
+                    <RoundtableReviewPanel reviews={roundtableReviews} />
 
                     {/* Rendered markdown */}
                     <div

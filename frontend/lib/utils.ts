@@ -69,3 +69,37 @@ export function platformCharLimit(platform: string): number | null {
   };
   return limits[platform] ?? null;
 }
+
+/**
+ * Group consecutive assistant messages by roundtable_group for rendering.
+ */
+export function groupMessages<T extends { role: string; metadata_?: Record<string, unknown> | null }>(
+  msgs: T[],
+): Array<{ type: "single"; message: T } | { type: "roundtable"; messages: T[]; group: string }> {
+  const groups: Array<{ type: "single"; message: T } | { type: "roundtable"; messages: T[]; group: string }> = [];
+  let i = 0;
+  while (i < msgs.length) {
+    const msg = msgs[i];
+    const group = msg.metadata_?.roundtable_group as string | undefined;
+
+    if (msg.role === "assistant" && group) {
+      const roundtableMessages: T[] = [msg];
+      while (
+        i + 1 < msgs.length &&
+        msgs[i + 1].metadata_?.roundtable_group === group
+      ) {
+        i++;
+        roundtableMessages.push(msgs[i]);
+      }
+      if (roundtableMessages.length > 1) {
+        groups.push({ type: "roundtable", messages: roundtableMessages, group });
+      } else {
+        groups.push({ type: "single", message: msg });
+      }
+    } else {
+      groups.push({ type: "single", message: msg });
+    }
+    i++;
+  }
+  return groups;
+}

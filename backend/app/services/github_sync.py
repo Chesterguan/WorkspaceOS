@@ -245,6 +245,16 @@ async def run_sync(project_id: uuid.UUID, db: AsyncSession) -> SyncRun:
 
     # Fire-and-forget theme extraction after a successful sync.
     if sync_run.status == "completed":
+        # Update project wiki summary
+        try:
+            from app.services.memory_service import upsert_wiki_summary
+            from app.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as wiki_db:
+                await upsert_wiki_summary(project_id, wiki_db)
+                await wiki_db.commit()
+        except Exception:
+            logger.exception("Wiki summary update failed for project %s (non-blocking)", project_id)
+
         _schedule_extraction(sync_run.id)
         _schedule_evolution_summary(sync_run.id)
 

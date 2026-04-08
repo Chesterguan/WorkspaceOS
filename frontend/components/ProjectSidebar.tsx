@@ -14,6 +14,7 @@ import {
   LayoutGrid,
   FlaskConical,
   History,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -88,6 +89,11 @@ function navGroups(projectId: string): NavGroup[] {
           label: "Memory",
           href: `/projects/${projectId}/memory`,
           icon: Brain,
+        },
+        {
+          label: "Files",
+          href: `/projects/${projectId}/files`,
+          icon: Upload,
         },
       ],
     },

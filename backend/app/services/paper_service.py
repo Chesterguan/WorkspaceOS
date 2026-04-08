@@ -693,6 +693,12 @@ async def generate_paper(
         "paper_service: pipeline complete for post %s. %s", post_id, review_summary
     )
 
+    # 8. Attach per-version content from DB for diff view
+    version_chain = await get_version_chain(post_id, db)
+    version_content_map = {v.version: v.content for v in version_chain}
+    for rec in version_records:
+        rec["content"] = version_content_map.get(rec["version"])
+
     return {
         "blog_post_id": str(post_id),
         "title": title,
@@ -1049,6 +1055,12 @@ async def generate_portfolio_paper(
         "paper_service: portfolio pipeline complete for post %s. %s", post_id, review_summary
     )
 
+    # Attach per-version content from DB for diff view
+    version_chain = await get_version_chain(post_id, db)
+    version_content_map = {v.version: v.content for v in version_chain}
+    for rec in version_records:
+        rec["content"] = version_content_map.get(rec["version"])
+
     return {
         "blog_post_id": str(post_id),
         "title": title,
@@ -1176,6 +1188,10 @@ def _python_md_to_latex(markdown_content: str, template: str) -> str:
             "\\usepackage{amsmath}\n"
             "\\usepackage{hyperref}"
         )
+    elif template in ("neurips", "icml", "iclr", "acl", "aaai"):
+        # Use venue-specific preamble from template service
+        from app.services.template_service import get_preamble
+        document_class, packages = get_preamble(None, template_override=template)
     else:  # arxiv / default
         document_class = "\\documentclass[12pt]{article}"
         packages = (
@@ -1424,3 +1440,64 @@ async def get_paper_context(
 ) -> Tuple[str, List[dict]]:
     """Public wrapper for the internal context builder used by the router endpoints."""
     return await _build_paper_context(project_id, db)
+
+
+async def compile_latex_to_pdf(latex_content: str) -> Optional[bytes]:
+    """Compile LaTeX to PDF using pdflatex.
+
+    Returns the PDF bytes or None if compilation fails.
+    Requires pdflatex to be installed (texlive-latex-base in Docker).
+    """
+    import asyncio
+    import os
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".tex", mode="w", encoding="utf-8", delete=False, dir="/tmp"
+    ) as tmp:
+        tmp.write(latex_content)
+        tex_path = tmp.name
+
+    pdf_path = tex_path.replace(".tex", ".pdf")
+    work_dir = os.path.dirname(tex_path)
+
+    try:
+        # Run pdflatex twice (for references/TOC to resolve correctly)
+        for pass_num in range(2):
+            proc = await asyncio.create_subprocess_exec(
+                "pdflatex",
+                "-interaction=nonstopmode",
+                "-output-directory", work_dir,
+                tex_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0 and pass_num == 1:
+                logger.warning(
+                    "compile_latex_to_pdf: pdflatex pass %d failed (rc=%d)",
+                    pass_num + 1, proc.returncode,
+                )
+                # Try to return partial PDF if it exists
+                if not os.path.exists(pdf_path):
+                    return None
+
+        if os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as f:
+                return f.read()
+        return None
+
+    except FileNotFoundError:
+        logger.warning("compile_latex_to_pdf: pdflatex not found")
+        return None
+    except Exception:
+        logger.exception("compile_latex_to_pdf: unexpected error")
+        return None
+    finally:
+        # Cleanup temp files
+        for ext in [".tex", ".pdf", ".aux", ".log", ".out"]:
+            path = tex_path.replace(".tex", ext)
+            try:
+                os.unlink(path)
+            except OSError:
+                pass

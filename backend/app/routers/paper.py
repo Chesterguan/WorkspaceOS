@@ -14,6 +14,7 @@ Endpoints:
       Generate a diagram from a description or file tree.
       Returns both the source code and the rendered SVG.
 """
+import base64
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -24,8 +25,11 @@ from app.dependencies import get_db, verify_api_key
 from app.models.blog import BlogPost
 from app.models.project import Project
 from app.schemas.paper import (
+    AgentLogEntry,
     ExportLatexRequest,
     ExportLatexResponse,
+    ExportPdfRequest,
+    ExportPdfResponse,
     GenerateChartRequest,
     GenerateChartResponse,
     GenerateDiagramRequest,
@@ -34,15 +38,20 @@ from app.schemas.paper import (
     GenerateFigureResponse,
     GenerateTableRequest,
     GenerateTableResponse,
+    PaperEditRequest,
+    PaperEditResponse,
     PaperGenerateRequest,
     PaperGenerateResponse,
+    PaperGenerateV2Response,
     PaperVersionSummary,
     PortfolioPaperGenerateRequest,
+    ReviewerFeedback,
     SuggestTitlesRequest,
     SuggestTitlesResponse,
     TitleSuggestion,
+    VenueGuidelinesSchema,
 )
-from app.services import paper_service
+from app.services import paper_pipeline_v2, paper_service
 from app.services.diagram_service import (
     generate_architecture_diagram,
     generate_comparison_table,
@@ -60,7 +69,7 @@ portfolio_paper_router = APIRouter(prefix="/portfolio/paper", tags=["paper"])
 _VALID_PAPER_TYPES = frozenset(["conference", "journal", "technical_report", "white_paper"])
 
 # Valid LaTeX templates
-_VALID_TEMPLATES = frozenset(["arxiv", "ieee", "acm"])
+_VALID_TEMPLATES = frozenset(["arxiv", "ieee", "acm", "neurips", "icml", "iclr", "acl", "aaai"])
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +211,53 @@ async def export_latex(
     )
 
     return ExportLatexResponse(latex=latex, bibtex=bibtex_out)
+
+
+@router.post(
+    "/export-pdf",
+    response_model=ExportPdfResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Export a paper to PDF",
+)
+async def export_pdf(
+    project_id: uuid.UUID,
+    body: ExportPdfRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> ExportPdfResponse:
+    """Compile a paper's LaTeX to PDF using pdflatex."""
+    await _require_project(project_id, db)
+
+    if body.template not in _VALID_TEMPLATES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid template '{body.template}'. Must be one of: {sorted(_VALID_TEMPLATES)}",
+        )
+
+    post = await _require_blog_post(body.blog_post_id, db)
+
+    # Generate LaTeX from the paper's stored Markdown
+    latex, _ = await paper_service.export_to_latex(
+        markdown_content=post.content,
+        bibtex="",
+        template=body.template,
+    )
+
+    # Compile LaTeX to PDF
+    pdf_bytes = await paper_service.compile_latex_to_pdf(latex)
+    if pdf_bytes is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="PDF compilation failed. pdflatex may not be available.",
+        )
+
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    filename = f"{post.title[:50].replace(' ', '_')}.pdf"
+
+    return ExportPdfResponse(
+        pdf_base64=pdf_b64,
+        filename=filename,
+    )
 
 
 @router.post(
@@ -466,8 +522,201 @@ async def generate_figure(
 
 
 # ---------------------------------------------------------------------------
+# V2 multi-agent pipeline
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/generate-v2",
+    response_model=PaperGenerateV2Response,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate a paper using the v2 multi-agent pipeline",
+)
+async def generate_paper_v2(
+    project_id: uuid.UUID,
+    body: PaperGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> PaperGenerateV2Response:
+    """Run the v2 multi-agent section-by-section paper pipeline (5-15 minutes)."""
+    await _require_project(project_id, db)
+
+    if body.paper_type not in _VALID_PAPER_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid paper_type '{body.paper_type}'. Must be one of: {sorted(_VALID_PAPER_TYPES)}",
+        )
+
+    result = await paper_pipeline_v2.generate_paper_v2(
+        project_id=project_id,
+        paper_type=body.paper_type,
+        title=body.title,
+        target_venue=body.target_venue,
+        additional_instructions=body.additional_instructions,
+        db=db,
+    )
+
+    return PaperGenerateV2Response(
+        blog_post_id=result["blog_post_id"],
+        title=result["title"],
+        final_content=result["final_content"],
+        bibtex=result["bibtex"],
+        latex=result.get("latex"),
+        versions=[PaperVersionSummary(**v) for v in result["versions"]],
+        review_summary=result["review_summary"],
+        agent_log=[AgentLogEntry(**e) for e in result["agent_log"]],
+        venue_guidelines=VenueGuidelinesSchema(**result["venue_guidelines"]) if result.get("venue_guidelines") else None,
+        roundtable_reviews=[
+            ReviewerFeedback(**r) for r in result.get("roundtable_reviews", [])
+        ] if result.get("roundtable_reviews") else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Edit an existing paper via natural-language instruction
+# NOTE: This path-param endpoint is intentionally placed AFTER all fixed-path
+# endpoints (/generate-v2, /suggest-titles, /generate-table, etc.) so FastAPI
+# does not accidentally match those paths as blog_post_id values.
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{blog_post_id}/resume",
+    response_model=PaperGenerateV2Response,
+    status_code=status.HTTP_200_OK,
+    summary="Resume a failed paper pipeline",
+)
+async def resume_paper(
+    project_id: uuid.UUID,
+    blog_post_id: str,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> dict:
+    """Resume a paper pipeline that failed mid-run."""
+    await _require_project(project_id, db)
+    post = await _require_blog_post(blog_post_id, db)
+
+    result = await paper_pipeline_v2.resume_paper_v2(
+        blog_post_id=post.id,
+        db=db,
+    )
+
+    # If it returned a status message (already complete or cannot resume),
+    # wrap into the response shape with minimal fields
+    if "status" in result:
+        return {
+            "blog_post_id": result["blog_post_id"],
+            "title": result["title"],
+            "final_content": result.get("final_content", ""),
+            "bibtex": "",
+            "latex": None,
+            "versions": [],
+            "review_summary": result.get("message", ""),
+            "agent_log": [],
+            "venue_guidelines": None,
+            "roundtable_reviews": None,
+        }
+
+    return PaperGenerateV2Response(
+        blog_post_id=result["blog_post_id"],
+        title=result["title"],
+        final_content=result["final_content"],
+        bibtex=result.get("bibtex", ""),
+        latex=result.get("latex"),
+        versions=[PaperVersionSummary(**v) for v in result.get("versions", [])],
+        review_summary=result.get("review_summary", ""),
+        agent_log=[AgentLogEntry(**e) for e in result.get("agent_log", [])],
+        venue_guidelines=VenueGuidelinesSchema(**result["venue_guidelines"]) if result.get("venue_guidelines") else None,
+        roundtable_reviews=[
+            ReviewerFeedback(**r) for r in result.get("roundtable_reviews", [])
+        ] if result.get("roundtable_reviews") else None,
+    )
+
+
+@router.post(
+    "/{blog_post_id}/edit",
+    response_model=PaperEditResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Edit an existing paper via instruction",
+)
+async def edit_paper(
+    project_id: uuid.UUID,
+    blog_post_id: str,
+    body: PaperEditRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> PaperEditResponse:
+    """Edit an existing paper based on a natural-language instruction."""
+    await _require_project(project_id, db)
+    post = await _require_blog_post(blog_post_id, db)
+
+    result = await paper_pipeline_v2.edit_paper(
+        blog_post_id=post.id,
+        instruction=body.instruction,
+        target_section=body.target_section,
+        target_pages=body.target_pages,
+        target_venue=body.target_venue,
+        db=db,
+    )
+
+    return PaperEditResponse(
+        blog_post_id=result["blog_post_id"],
+        updated_content=result["updated_content"],
+        previous_version=result["previous_version"],
+        new_version=result["new_version"],
+        changes_summary=result["changes_summary"],
+        agent_log=[AgentLogEntry(**e) for e in result["agent_log"]],
+        sections_modified=result["sections_modified"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Portfolio paper endpoint (no single project scope)
 # ---------------------------------------------------------------------------
+
+@portfolio_paper_router.post(
+    "/generate-v2",
+    response_model=PaperGenerateV2Response,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate a multi-project portfolio paper using v2 pipeline",
+)
+async def generate_portfolio_paper_v2(
+    body: PortfolioPaperGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> PaperGenerateV2Response:
+    """Run the v2 multi-agent pipeline for a multi-project paper with roundtable review."""
+    if body.paper_type not in _VALID_PAPER_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid paper_type '{body.paper_type}'. Must be one of: {sorted(_VALID_PAPER_TYPES)}",
+        )
+
+    try:
+        result = await paper_pipeline_v2.generate_portfolio_paper_v2(
+            project_ids=body.project_ids,
+            paper_type=body.paper_type,
+            title=body.title,
+            target_venue=body.target_venue,
+            additional_instructions=body.additional_instructions,
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return PaperGenerateV2Response(
+        blog_post_id=result["blog_post_id"],
+        title=result["title"],
+        final_content=result["final_content"],
+        bibtex=result["bibtex"],
+        latex=result.get("latex"),
+        versions=[PaperVersionSummary(**v) for v in result["versions"]],
+        review_summary=result["review_summary"],
+        agent_log=[AgentLogEntry(**e) for e in result["agent_log"]],
+        venue_guidelines=VenueGuidelinesSchema(**result["venue_guidelines"]) if result.get("venue_guidelines") else None,
+        roundtable_reviews=[
+            ReviewerFeedback(**r) for r in result.get("roundtable_reviews", [])
+        ] if result.get("roundtable_reviews") else None,
+    )
+
 
 @portfolio_paper_router.post(
     "/generate",

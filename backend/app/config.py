@@ -1,4 +1,10 @@
+import logging
+import sys
+from typing import List, Tuple
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -53,8 +59,77 @@ class Settings(BaseSettings):
     linkedin_client_secret: str = ""
     linkedin_redirect_uri: str = "http://localhost:8989/api/v1/linkedin/callback"
 
+    # Dev.to (Forem) API
+    devto_api_key: str = ""
+
+    # Hashnode
+    hashnode_api_key: str = ""
+    hashnode_publication_id: str = ""
+
+    # Google Drive (future)
+    google_drive_credentials: str = ""
+    # Notion (future)
+    notion_api_key: str = ""
+
+    # Budget tracking
+    daily_budget_warning_usd: float = 5.0  # warn when daily spend exceeds this
+
     # Sync limits
     max_commits_per_sync: int = 50
+
+
+    def validate_startup(self) -> bool:
+        """Validate required and optional env vars at startup.
+
+        Returns True if all required vars are present. Logs warnings for
+        missing optional vars. Logs FATAL + returns False for missing required vars.
+        """
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        # Required: cloud AI provider key
+        if self.cloud_ai_provider == "gemini" and not self.gemini_api_key:
+            errors.append("GEMINI_API_KEY is required (cloud_ai_provider=gemini)")
+        elif self.cloud_ai_provider == "openai" and not self.openai_api_key:
+            errors.append("OPENAI_API_KEY is required (cloud_ai_provider=openai)")
+        elif self.cloud_ai_provider == "anthropic" and not self.anthropic_api_key:
+            errors.append("ANTHROPIC_API_KEY is required (cloud_ai_provider=anthropic)")
+
+        # Required: API secret should not be the dev default in production
+        if self.api_secret_key == "dev-secret-key":
+            warnings.append(
+                "API_SECRET_KEY is using the default 'dev-secret-key' — "
+                "set a strong secret for production"
+            )
+
+        # Optional but important
+        if not self.openai_api_key:
+            warnings.append(
+                "OPENAI_API_KEY not set — paper reviewer and roundtable critic "
+                "will fall back to Gemini (less effective cross-model review)"
+            )
+        if not self.github_token:
+            warnings.append(
+                "GITHUB_TOKEN not set — GitHub sync, repo context, and release "
+                "publishing will not work"
+            )
+
+        # Log results
+        for w in warnings:
+            logger.warning("CONFIG WARNING: %s", w)
+        for e in errors:
+            logger.critical("CONFIG FATAL: %s", e)
+
+        if errors:
+            logger.critical(
+                "Startup aborted — %d required config var(s) missing. "
+                "Check your .env file.",
+                len(errors),
+            )
+            return False
+
+        logger.info("Config validation passed (%d warnings)", len(warnings))
+        return True
 
 
 settings = Settings()

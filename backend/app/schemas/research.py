@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 class ResearchMessageRequest(BaseModel):
     message: str
+    reviewer_id: Optional[str] = None  # specific reviewer, or None for roundtable
     # Context toggles — default True gives the AI the richest possible context
     include_literature: bool = True  # search Semantic Scholar for related papers
     include_workspace: bool = True   # include local workspace snapshot
@@ -48,8 +49,25 @@ class ResearchMessageResponse(BaseModel):
     content: str
     metadata_: Optional[dict] = None
     created_at: datetime
+    reviewer_id: Optional[str] = None
+    reviewer_name: Optional[str] = None
+
+
+class ResearchRoundtableResponse(BaseModel):
+    messages: List[ResearchMessageResponse]
+    routed_reviewers: List[str]
+    roundtable_group: str
 
 
 class ResearchHistoryResponse(BaseModel):
     messages: List[ResearchMessageResponse]
     total: int
+
+
+class ReviewerInfo(BaseModel):
+    id: str
+    name: str
+    modeled_after: str
+    focus: str
+    color: str
+    avatar: str

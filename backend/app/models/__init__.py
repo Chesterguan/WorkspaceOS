@@ -10,7 +10,10 @@ from app.models.posting import PostRecord, PostSchedule
 from app.models.project import Project
 from app.models.sync import GitHubCommit, GitHubRelease, SyncRun
 from app.models.user import User
+from app.models.venue import VenueCache
 from app.models.workspace import WorkspaceSnapshot
+from app.models.app_settings import AppSetting
+from app.models.ai_usage import AIUsageLog
 
 __all__ = [
     "User",
@@ -27,5 +30,8 @@ __all__ = [
     "BlogPostVersion",
     "AIFeedback",
     "ChatMessage",
+    "VenueCache",
     "WorkspaceSnapshot",
+    "AppSetting",
+    "AIUsageLog",
 ]

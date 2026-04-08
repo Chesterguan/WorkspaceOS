@@ -2,11 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import { ChatMessage } from "@/components/chat/ChatMessage";
 import { PaperSearchDialog } from "@/components/research/PaperSearchDialog";
 import { useResearch } from "@/lib/hooks/useResearch";
 import { research as researchApi } from "@/lib/api";
@@ -17,10 +16,12 @@ import {
   Loader2,
   Trash2,
   Search,
-  FlaskConical,
   FileText,
+  Users,
 } from "lucide-react";
-import { cn, formatDistanceToNow } from "@/lib/utils";
+import { cn, formatDistanceToNow, groupMessages } from "@/lib/utils";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
+import { ContextPill } from "@/components/chat/ContextPill";
 import { researchMarkdownToHtml } from "@/lib/markdown";
 import type { ChatMessage as ChatMessageType } from "@/lib/types";
 
@@ -65,44 +66,16 @@ const FALLBACK_STARTERS: StarterGroup[] = [
   },
 ];
 
-// Context toggle pill — matches the style from ChatWindow exactly
-function ContextPill({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "px-3 py-1 rounded-full text-xs font-medium border transition-all select-none",
-        active
-          ? "bg-violet-500/15 text-violet-400 border-violet-500/40"
-          : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground/70",
-      )}
-    >
-      {label}
-    </button>
-  );
-}
-
-// Animated typing indicator shown while waiting for the AI response
-function TypingIndicator() {
-  return (
-    <div className="flex items-start gap-1 animate-in fade-in-0 duration-200">
-      <div className="bg-card border border-border rounded-lg rounded-bl-sm px-4 py-3 flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
-      </div>
-    </div>
-  );
-}
+// Research reviewer metadata for the picker bar
+const RESEARCH_REVIEWERS: Record<string, { id: string; name: string; modeled_after: string; avatar: string; color: string }> = {
+  technical_rigor: { id: "technical_rigor", name: "Technical Rigor", modeled_after: "Yoshua Bengio", avatar: "/avatars/reviewer_technical_rigor.svg", color: "#DC2626" },
+  novelty_positioning: { id: "novelty_positioning", name: "Novelty & Positioning", modeled_after: "Yann LeCun", avatar: "/avatars/reviewer_novelty_positioning.svg", color: "#2563EB" },
+  writing_clarity: { id: "writing_clarity", name: "Writing Clarity", modeled_after: "Steven Pinker", avatar: "/avatars/reviewer_writing_clarity.svg", color: "#7C3AED" },
+  practical_impact: { id: "practical_impact", name: "Practical Impact", modeled_after: "Andrew Ng", avatar: "/avatars/reviewer_practical_impact.svg", color: "#059669" },
+  design_elegance: { id: "design_elegance", name: "Design Elegance", modeled_after: "Saining Xie", avatar: "/avatars/reviewer_design_elegance.svg", color: "#D97706" },
+  science_communication: { id: "science_communication", name: "Science Communication", modeled_after: "Eric Topol", avatar: "/avatars/reviewer_science_communication.svg", color: "#0891B2" },
+};
+const RESEARCH_REVIEWER_ORDER = ["technical_rigor", "novelty_positioning", "writing_clarity", "practical_impact", "design_elegance", "science_communication"];
 
 export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
   const { data: history, isLoading, mutate } = useResearch(projectId);
@@ -116,6 +89,9 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
   const [includeLiterature, setIncludeLiterature] = useState(true);
   const [includeWorkspace, setIncludeWorkspace] = useState(true);
   const [includeRepo, setIncludeRepo] = useState(true);
+
+  // Selected reviewer (null = roundtable mode, specific ID = single reviewer)
+  const [selectedReviewer, setSelectedReviewer] = useState<string | null>(null);
 
   // Paper search dialog state
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
@@ -183,6 +159,7 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
     try {
       await researchApi.send(projectId, {
         message: messageText,
+        reviewer_id: selectedReviewer || undefined,
         include_literature: includeLiterature,
         include_workspace: includeWorkspace,
         include_repo: includeRepo,
@@ -200,7 +177,7 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
     } finally {
       setIsSending(false);
     }
-  }, [inputValue, isSending, projectId, includeLiterature, includeWorkspace, includeRepo, mutate]);
+  }, [inputValue, isSending, projectId, selectedReviewer, includeLiterature, includeWorkspace, includeRepo, mutate]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -243,10 +220,10 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
         <div className="flex items-center gap-2.5">
           <BookOpen className="w-4 h-4 text-violet-400" />
           <span className="text-sm font-semibold">Research Assistant</span>
-          {/* ARIS-Powered badge in violet/purple tones */}
+          {/* Roundtable badge */}
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/25 text-violet-500 dark:text-violet-400">
-            <FlaskConical className="w-3 h-3" />
-            <span className="text-[10px] font-semibold tracking-wide uppercase">ARIS-Powered</span>
+            <Users className="w-3 h-3" />
+            <span className="text-[10px] font-semibold tracking-wide uppercase">Roundtable</span>
           </div>
         </div>
 
@@ -329,9 +306,17 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
           </div>
         ) : (
           <>
-            {displayMessages.map((msg) => (
-              <ResearchChatMessage key={msg.id} message={msg} />
-            ))}
+            {groupMessages(displayMessages).map((item, idx) =>
+              item.type === "roundtable" ? (
+                <ResearchRoundtableGroup
+                  key={item.group}
+                  messages={item.messages}
+                  roundtableGroup={item.group}
+                />
+              ) : (
+                <ResearchChatMessage key={item.message.id} message={item.message} />
+              ),
+            )}
             {/* Typing indicator while waiting for assistant response */}
             {isSending && <TypingIndicator />}
           </>
@@ -343,6 +328,49 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
 
       {/* Input area */}
       <div className="shrink-0 px-4 py-3 space-y-2">
+        {/* Reviewer picker */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
+          <button
+            type="button"
+            onClick={() => setSelectedReviewer(null)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all shrink-0 text-xs font-medium",
+              selectedReviewer === null
+                ? "border-violet-500 bg-violet-500/10 text-violet-400"
+                : "border-border text-muted-foreground hover:border-violet-500/30",
+            )}
+          >
+            <Users className="w-3.5 h-3.5" />
+            Roundtable
+          </button>
+          {RESEARCH_REVIEWER_ORDER.map((id) => {
+            const reviewer = RESEARCH_REVIEWERS[id];
+            if (!reviewer) return null;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setSelectedReviewer(selectedReviewer === id ? null : id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all shrink-0 text-xs",
+                  selectedReviewer === id
+                    ? "border-2 bg-secondary/30"
+                    : "border-border hover:bg-secondary/50",
+                )}
+                style={selectedReviewer === id ? { borderColor: reviewer.color } : undefined}
+              >
+                <div className="w-6 h-6 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: reviewer.color }}>
+                  <Image src={reviewer.avatar} alt={reviewer.name} width={24} height={24} className="rounded-full" />
+                </div>
+                <div className="text-left min-w-0">
+                  <p className="text-xs font-semibold truncate">{reviewer.name}</p>
+                  <p className="text-[9px] text-muted-foreground truncate">{reviewer.modeled_after}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Context toggles — Literature is an extra toggle unique to Research */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted-foreground mr-1">Context:</span>
@@ -350,16 +378,19 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
             label="Literature Search"
             active={includeLiterature}
             onClick={() => setIncludeLiterature((v) => !v)}
+            activeClassName="bg-violet-500/15 text-violet-400 border-violet-500/40"
           />
           <ContextPill
             label="Workspace"
             active={includeWorkspace}
             onClick={() => setIncludeWorkspace((v) => !v)}
+            activeClassName="bg-violet-500/15 text-violet-400 border-violet-500/40"
           />
           <ContextPill
             label="Repo"
             active={includeRepo}
             onClick={() => setIncludeRepo((v) => !v)}
+            activeClassName="bg-violet-500/15 text-violet-400 border-violet-500/40"
           />
         </div>
 
@@ -401,10 +432,55 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
   );
 }
 
+// ─── ResearchRoundtableGroup ─────────────────────────────────────────────────
+// Groups multiple reviewer responses under a shared roundtable header.
+
+interface ResearchRoundtableGroupProps {
+  messages: ChatMessageType[];
+  roundtableGroup: string;
+}
+
+function ResearchRoundtableGroup({ messages, roundtableGroup }: ResearchRoundtableGroupProps) {
+  const reviewerIds = messages
+    .map((m) => (m.metadata_?.reviewer_id as string | undefined))
+    .filter((id): id is string => !!id);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 px-1">
+        <Users className="w-3.5 h-3.5 text-muted-foreground" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Research Roundtable
+        </span>
+        <div className="flex -space-x-1.5">
+          {reviewerIds.map((id) => {
+            const reviewer = RESEARCH_REVIEWERS[id];
+            if (!reviewer) return null;
+            return (
+              <div key={id} className="w-5 h-5 rounded-full overflow-hidden border border-background" title={reviewer.name}>
+                <Image src={reviewer.avatar} alt={reviewer.name} width={20} height={20} />
+              </div>
+            );
+          })}
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          {reviewerIds.length} reviewers weighed in
+        </span>
+      </div>
+      <div className="space-y-3 border-l-2 border-violet-500/20 pl-3 ml-1">
+        {messages.map((msg) => (
+          <ResearchChatMessage key={msg.id} message={msg} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── ResearchChatMessage ──────────────────────────────────────────────────────
 // Extends the base ChatMessage with citation rendering for academic text.
 // When the assistant message contains [1], [2]… citation markers, they are
 // highlighted visually to signal that paper references are present.
+// Also displays reviewer identity when the message comes from a specific reviewer.
 
 interface ResearchChatMessageProps {
   message: ChatMessageType;
@@ -413,6 +489,10 @@ interface ResearchChatMessageProps {
 
 function ResearchChatMessage({ message }: ResearchChatMessageProps) {
   const isUser = message.role === "user";
+
+  // Extract reviewer info from metadata
+  const reviewerId = message.metadata_?.reviewer_id as string | undefined;
+  const reviewer = reviewerId ? RESEARCH_REVIEWERS[reviewerId] : null;
 
   return (
     <div
@@ -423,9 +503,19 @@ function ResearchChatMessage({ message }: ResearchChatMessageProps) {
     >
       {/* Role label + timestamp */}
       <div className={cn("flex items-center gap-2 px-1", isUser ? "flex-row-reverse" : "flex-row")}>
-        <span className="text-xs font-medium text-muted-foreground">
-          {isUser ? "You" : "Research Assistant"}
-        </span>
+        {reviewer && !isUser ? (
+          <div className="flex items-center gap-1.5">
+            <div className="w-5 h-5 rounded-full overflow-hidden border" style={{ borderColor: reviewer.color }}>
+              <Image src={reviewer.avatar} alt={reviewer.name} width={20} height={20} className="rounded-full" />
+            </div>
+            <span className="text-xs font-semibold" style={{ color: reviewer.color }}>{reviewer.name}</span>
+            <span className="text-[10px] text-muted-foreground">({reviewer.modeled_after})</span>
+          </div>
+        ) : (
+          <span className="text-xs font-medium text-muted-foreground">
+            {isUser ? "You" : "Research Assistant"}
+          </span>
+        )}
         <span className="text-xs text-muted-foreground/60">
           {formatDistanceToNow(message.created_at)}
         </span>
@@ -439,8 +529,13 @@ function ResearchChatMessage({ message }: ResearchChatMessageProps) {
           "leading-7",
           isUser
             ? "bg-violet-500/10 text-foreground border border-violet-500/20 rounded-br-sm shadow-sm"
-            : "bg-card text-foreground border border-border rounded-bl-sm",
+            : "bg-card text-foreground border rounded-bl-sm",
         )}
+        style={
+          reviewer && !isUser
+            ? { borderColor: `${reviewer.color}30`, borderLeftWidth: "3px", borderLeftColor: reviewer.color }
+            : isUser ? undefined : { borderColor: "var(--border)" }
+        }
       >
         {isUser ? (
           <span className="whitespace-pre-wrap break-words">{message.content}</span>

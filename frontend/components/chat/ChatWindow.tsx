@@ -10,51 +10,18 @@ import { useChat } from "@/lib/hooks/useChat";
 import { chat as chatApi, workspace as workspaceApi } from "@/lib/api";
 import type { ChatStarterGroup } from "@/lib/api";
 import { toast } from "sonner";
-import { MessageSquare, Send, Loader2, Trash2, GraduationCap } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { AdvisorCard } from "@/components/chat/AdvisorCard";
+import { RoundtableGroup } from "@/components/chat/RoundtableGroup";
+import { ADVISORS, ADVISOR_ORDER } from "@/lib/advisors";
+import type { ChatRoundtableResponse } from "@/lib/types";
+import { MessageSquare, Send, Loader2, Trash2, Users } from "lucide-react";
+import { cn, groupMessages } from "@/lib/utils";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
+import { ContextPill } from "@/components/chat/ContextPill";
 import type { ChatMessage as ChatMessageType, WorkspaceContext, WorkspaceSnapshot } from "@/lib/types";
 
 interface ChatWindowProps {
   projectId: string;
-}
-
-// Context toggle pill — tracks on/off state visually
-function ContextPill({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "px-3 py-1 rounded-full text-xs font-medium border transition-all select-none",
-        active
-          ? "bg-primary/15 text-primary border-primary/40"
-          : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground/70",
-      )}
-    >
-      {label}
-    </button>
-  );
-}
-
-// Animated typing indicator shown while waiting for the AI response
-function TypingIndicator() {
-  return (
-    <div className="flex items-start gap-1 animate-in fade-in-0 duration-200">
-      <div className="bg-card border border-border rounded-lg rounded-bl-sm px-4 py-3 flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
-      </div>
-    </div>
-  );
 }
 
 // Fallback starters used if the backend request fails
@@ -101,6 +68,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
   const [includeWorkspace, setIncludeWorkspace] = useState(true);
   const [includeMemory, setIncludeMemory] = useState(true);
   const [includeRepo, setIncludeRepo] = useState(true);
+  const [selectedAdvisor, setSelectedAdvisor] = useState<string | null>(null);
 
   // Workspace context state
   const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContext | null>(null);
@@ -186,6 +154,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
     try {
       await chatApi.send(projectId, {
         message: messageText,
+        advisor_id: selectedAdvisor || undefined,
         include_workspace: includeWorkspace,
         include_memory: includeMemory,
         include_repo: includeRepo,
@@ -203,7 +172,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
     } finally {
       setIsSending(false);
     }
-  }, [inputValue, isSending, projectId, includeWorkspace, includeMemory, includeRepo, mutate]);
+  }, [inputValue, isSending, projectId, selectedAdvisor, includeWorkspace, includeMemory, includeRepo, mutate]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -231,10 +200,9 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
         <div className="flex items-center gap-2.5">
           <MessageSquare className="w-4 h-4 text-primary" />
           <span className="text-sm font-semibold">Co-Founder AI</span>
-          {/* YC-style advisor mode badge */}
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-600 dark:text-amber-400">
-            <GraduationCap className="w-3 h-3" />
-            <span className="text-[10px] font-semibold tracking-wide uppercase">YC-Style Advisor</span>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/25 text-primary">
+            <Users className="w-3 h-3" />
+            <span className="text-[10px] font-semibold tracking-wide uppercase">Roundtable</span>
           </div>
         </div>
         <Button
@@ -266,13 +234,13 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
         ) : displayMessages.length === 0 && !isSending ? (
           /* Empty state with grouped strategic conversation starters */
           <div className="flex flex-col items-center justify-center h-full gap-6 py-8">
-            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-              <GraduationCap className="w-7 h-7 text-amber-500" />
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Users className="w-7 h-7 text-primary" />
             </div>
             <div className="text-center space-y-1">
-              <p className="text-sm font-medium">Your YC-style strategic advisor is ready</p>
+              <p className="text-sm font-medium">Your co-founder roundtable is ready</p>
               <p className="text-xs text-muted-foreground">
-                Ask about stage, monetization, growth, pitch, or fundraising — grounded in your actual project data.
+                Ask anything — 3-4 advisors will weigh in from different perspectives, grounded in your actual project data.
               </p>
             </div>
 
@@ -289,7 +257,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
                         key={prompt}
                         type="button"
                         onClick={() => handleSend(prompt)}
-                        className="text-left text-sm px-4 py-2.5 rounded-lg border border-border bg-card hover:border-amber-500/30 hover:bg-amber-500/5 transition-all text-muted-foreground hover:text-foreground"
+                        className="text-left text-sm px-4 py-2.5 rounded-lg border border-border bg-card hover:border-primary/30 hover:bg-primary/5 transition-all text-muted-foreground hover:text-foreground"
                       >
                         {prompt}
                       </button>
@@ -301,9 +269,17 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
           </div>
         ) : (
           <>
-            {displayMessages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
-            ))}
+            {groupMessages(displayMessages).map((item, idx) =>
+              item.type === "roundtable" ? (
+                <RoundtableGroup
+                  key={item.group}
+                  messages={item.messages}
+                  roundtableGroup={item.group}
+                />
+              ) : (
+                <ChatMessage key={item.message.id} message={item.message} />
+              ),
+            )}
             {/* Typing indicator while waiting for assistant response */}
             {isSending && <TypingIndicator />}
           </>
@@ -315,6 +291,36 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
 
       {/* Input area */}
       <div className="shrink-0 px-4 py-3 space-y-2">
+        {/* Advisor picker */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
+          <button
+            type="button"
+            onClick={() => setSelectedAdvisor(null)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all shrink-0 text-xs font-medium",
+              selectedAdvisor === null
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:border-primary/30",
+            )}
+          >
+            <Users className="w-3.5 h-3.5" />
+            Roundtable
+          </button>
+          {ADVISOR_ORDER.map((id) => {
+            const advisor = ADVISORS[id];
+            if (!advisor) return null;
+            return (
+              <AdvisorCard
+                key={id}
+                advisor={advisor}
+                size="lg"
+                selected={selectedAdvisor === id}
+                onClick={() => setSelectedAdvisor(selectedAdvisor === id ? null : id)}
+              />
+            );
+          })}
+        </div>
+
         {/* Context toggles */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground mr-1">Context:</span>

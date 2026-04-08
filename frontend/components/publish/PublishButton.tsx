@@ -192,120 +192,6 @@ function GitHubReleaseDialog({
   );
 }
 
-// ─── Twitter Confirm Dialog ───────────────────────────────────────────────────
-
-interface TwitterConfirmDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  draftId: string;
-  onPublished: () => void;
-}
-
-function TwitterConfirmDialog({
-  open,
-  onOpenChange,
-  projectId,
-  draftId,
-  onPublished,
-}: TwitterConfirmDialogProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  async function handlePost() {
-    setIsSubmitting(true);
-    try {
-      const result = await publish.twitter(projectId, draftId);
-
-      if (!result.success) {
-        // Surface Twitter-specific credential errors helpfully
-        const isCredentialError =
-          result.error?.toLowerCase().includes("credential") ||
-          result.error?.toLowerCase().includes("token") ||
-          result.error?.toLowerCase().includes("auth") ||
-          result.error?.toLowerCase().includes("configur");
-
-        if (isCredentialError) {
-          toast.error("Twitter not configured", {
-            description:
-              "Add TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, and TWITTER_ACCESS_TOKEN_SECRET to your environment variables, then restart the server.",
-            duration: 8000,
-          });
-        } else {
-          throw new Error(result.error ?? "Post failed");
-        }
-        return;
-      }
-
-      toast.success("Posted to Twitter / X!", {
-        description: result.post_url ? (
-          <a
-            href={result.post_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 underline text-sky-400"
-          >
-            View tweet <ExternalLink className="w-3 h-3" />
-          </a>
-        ) : "Your tweet is live.",
-      });
-
-      // Mark draft as published
-      await draftsApi.update(projectId, draftId, { status: "published" });
-
-      onPublished();
-      onOpenChange(false);
-    } catch (err) {
-      toast.error("Tweet failed", {
-        description: err instanceof Error ? err.message : "Unknown error",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm bg-card border-border">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {/* Bird icon used as X/Twitter proxy since lucide's Twitter icon was renamed */}
-            <Send className="w-5 h-5 text-sky-400" />
-            Post to Twitter / X
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 pt-2">
-          <p className="text-sm text-muted-foreground">
-            This will post the draft content to Twitter / X using your
-            configured API credentials. This action cannot be undone.
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="flex-1 gap-1.5 bg-sky-700 hover:bg-sky-600 text-white border-0"
-              onClick={handlePost}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Send className="w-3.5 h-3.5" />
-              )}
-              {isSubmitting ? "Posting..." : "Post now"}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Mark as Posted Dialog ────────────────────────────────────────────────────
 
 interface MarkPostedDialogProps {
@@ -491,6 +377,226 @@ function LinkedInConfirmDialog({
   );
 }
 
+// ─── Dev.to Confirm Dialog ────────────────────────────────────────────────────
+
+interface DevtoConfirmDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  draftId: string;
+  onPublished: () => void;
+}
+
+function DevtoConfirmDialog({
+  open,
+  onOpenChange,
+  projectId,
+  draftId,
+  onPublished,
+}: DevtoConfirmDialogProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handlePost() {
+    setIsSubmitting(true);
+    try {
+      const result = await publish.devto(projectId, draftId);
+
+      if (!result.success) {
+        const isKeyError =
+          result.error?.toLowerCase().includes("api_key") ||
+          result.error?.toLowerCase().includes("configured") ||
+          result.error?.toLowerCase().includes("settings");
+
+        if (isKeyError) {
+          toast.error("Dev.to API key not configured", {
+            description:
+              "Add your Dev.to API key in Settings > AI & API Keys, then try again.",
+            duration: 8000,
+          });
+        } else {
+          throw new Error(result.error ?? "Post failed");
+        }
+        return;
+      }
+
+      toast.success("Published to Dev.to!", {
+        description: result.post_url ? (
+          <a
+            href={result.post_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 underline text-sky-400"
+          >
+            View article <ExternalLink className="w-3 h-3" />
+          </a>
+        ) : "Your article is live.",
+      });
+
+      await draftsApi.update(projectId, draftId, { status: "published" });
+
+      onPublished();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error("Dev.to publish failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm bg-card border-border">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="w-5 h-5 text-violet-400" />
+            Publish to Dev.to
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <p className="text-sm text-muted-foreground">
+            This will publish the draft as an article on Dev.to using your
+            configured API key. This action cannot be undone.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 gap-1.5 bg-violet-700 hover:bg-violet-600 text-white border-0"
+              onClick={handlePost}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Send className="w-3.5 h-3.5" />
+              )}
+              {isSubmitting ? "Publishing..." : "Publish now"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Hashnode Confirm Dialog ─────────────────────────────────────────────
+
+interface HashnodeConfirmDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  draftId: string;
+  onPublished: () => void;
+}
+
+function HashnodeConfirmDialog({
+  open,
+  onOpenChange,
+  projectId,
+  draftId,
+  onPublished,
+}: HashnodeConfirmDialogProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handlePost() {
+    setIsSubmitting(true);
+    try {
+      const result = await publish.hashnode(projectId, draftId);
+
+      if (!result.success) {
+        const isKeyError =
+          result.error?.toLowerCase().includes("api_key") ||
+          result.error?.toLowerCase().includes("configured") ||
+          result.error?.toLowerCase().includes("settings");
+
+        if (isKeyError) {
+          toast.error("Hashnode API key not configured", {
+            description:
+              "Add your Hashnode API key and Publication ID in Settings > AI & API Keys, then try again.",
+            duration: 8000,
+          });
+        } else {
+          throw new Error(result.error ?? "Post failed");
+        }
+        return;
+      }
+
+      toast.success("Published to Hashnode!", {
+        description: result.post_url ? (
+          <a
+            href={result.post_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 underline text-sky-400"
+          >
+            View article <ExternalLink className="w-3 h-3" />
+          </a>
+        ) : "Your article is live.",
+      });
+
+      await draftsApi.update(projectId, draftId, { status: "published" });
+
+      onPublished();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error("Hashnode publish failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm bg-card border-border">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="w-5 h-5 text-blue-400" />
+            Publish to Hashnode
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <p className="text-sm text-muted-foreground">
+            This will publish the draft as an article on Hashnode using your
+            configured API key. This action cannot be undone.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 gap-1.5 bg-blue-700 hover:bg-blue-600 text-white border-0"
+              onClick={handlePost}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Send className="w-3.5 h-3.5" />
+              )}
+              {isSubmitting ? "Publishing..." : "Publish now"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main PublishButton ───────────────────────────────────────────────────────
 
 interface PublishButtonProps {
@@ -512,8 +618,9 @@ export function PublishButton({
   compact = false,
 }: PublishButtonProps) {
   const [githubDialogOpen, setGitForkDialogOpen] = useState(false);
-  const [twitterDialogOpen, setTwitterDialogOpen] = useState(false);
   const [linkedInDialogOpen, setLinkedInDialogOpen] = useState(false);
+  const [devtoDialogOpen, setDevtoDialogOpen] = useState(false);
+  const [hashnodeDialogOpen, setHashnodeDialogOpen] = useState(false);
   const [markPostedDialogOpen, setMarkPostedDialogOpen] = useState(false);
 
   // LinkedIn connection state — only fetched when the platform is linkedin
@@ -648,22 +755,46 @@ export function PublishButton({
     );
   }
 
-  // ── Twitter / X ───────────────────────────────────────────────────────────
-  if (platform === "twitter") {
+  // ── Dev.to ────────────────────────────────────────────────────────────────
+  if (platform === "devto") {
     return (
       <>
         <Button
           size={compact ? "sm" : "sm"}
-          onClick={() => setTwitterDialogOpen(true)}
-          className="gap-1.5 text-xs bg-sky-700 hover:bg-sky-600 text-white border-0"
+          onClick={() => setDevtoDialogOpen(true)}
+          className="gap-1.5 text-xs bg-violet-700 hover:bg-violet-600 text-white border-0"
         >
           <Send className="w-3.5 h-3.5" />
-          {compact ? "Post" : "Post to X"}
+          {compact ? "Publish" : "Publish to Dev.to"}
         </Button>
 
-        <TwitterConfirmDialog
-          open={twitterDialogOpen}
-          onOpenChange={setTwitterDialogOpen}
+        <DevtoConfirmDialog
+          open={devtoDialogOpen}
+          onOpenChange={setDevtoDialogOpen}
+          projectId={projectId}
+          draftId={draftId}
+          onPublished={onPublished}
+        />
+      </>
+    );
+  }
+
+  // ── Hashnode ──────────────────────────────────────────────────────────────
+  if (platform === "hashnode") {
+    return (
+      <>
+        <Button
+          size={compact ? "sm" : "sm"}
+          onClick={() => setHashnodeDialogOpen(true)}
+          className="gap-1.5 text-xs bg-blue-700 hover:bg-blue-600 text-white border-0"
+        >
+          <Send className="w-3.5 h-3.5" />
+          {compact ? "Publish" : "Publish to Hashnode"}
+        </Button>
+
+        <HashnodeConfirmDialog
+          open={hashnodeDialogOpen}
+          onOpenChange={setHashnodeDialogOpen}
           projectId={projectId}
           draftId={draftId}
           onPublished={onPublished}

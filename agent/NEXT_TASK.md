@@ -3,25 +3,30 @@
 ## Status
 ready
 
-## Task
-Production readiness + test suite
+## All planned features complete!
 
-1. Add unit/integration tests (pytest + pytest-asyncio for backend endpoints)
-2. Add proper authentication (JWT or session-based, replace static API key)
-3. Environment variable validation on startup (fail fast if required vars missing)
-4. Dashboard analytics (charts, activity trends over time)
-5. Fix paper diff view (store per-version body, not just final_content)
+## What was built across sessions 5-6:
+- Paper Pipeline v2 (multi-agent section-by-section with backtracking)
+- Co-Founder Roundtable (8 business advisors, smart routing, parallel dispatch)
+- Research Roundtable (6 academic reviewers, same pattern)
+- Paper Roundtable Review (6 reviewers parallel critique)
+- Smart LaTeX Templates (8 venues)
+- PDF Export (pdflatex in Docker)
+- Universal File Ingest (upload + URL + AI auto-tagging)
+- LLM Wiki Layer (auto-maintained project summaries)
+- Dev.to + Hashnode publishing
+- JWT Authentication
+- UI API Key Settings (Fernet-encrypted, 12 keys)
+- Dashboard Analytics Chart
+- Paper Diff View Fix
+- DiceBear Portraits (advisors + reviewers)
+- Data Connector Stubs (Google Drive, Notion)
+- 35 Integration Tests
 
-## Scope
-- Files: [backend/tests/*, backend/app/dependencies.py, backend/app/config.py, backend/app/services/paper_service.py, frontend/app/dashboard/*]
-- Tests: [backend/tests/test_*.py]
-
-## Acceptance Criteria
-- [ ] At least 10 endpoint tests passing via pytest
-- [ ] Auth system beyond static API key
-- [ ] Startup validation for required env vars
-- [ ] Paper diff shows actual content differences between versions
-- [ ] QA verifier passes all checks
-
-## Priority
-high
+## Future directions
+1. Extract configurable framework (WorkspaceOS / new project)
+2. Google Drive API connector (actual integration)
+3. Notion API connector (actual integration)
+4. Entity pages (wiki layer phase 2)
+5. More test coverage (E2E with Playwright)
+6. Mobile-responsive UI

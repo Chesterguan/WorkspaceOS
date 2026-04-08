@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -53,3 +53,16 @@ class DashboardSummaryResponse(BaseModel):
     total_drafts: int
     total_syncs: int
     recent_activity: List[dict]
+
+
+class WeeklyData(BaseModel):
+    week: str
+    commits: int
+    papers: int
+    drafts: int
+    memory: int
+
+
+class DashboardAnalyticsResponse(BaseModel):
+    weeks: List[WeeklyData]
+    totals: Dict[str, int]

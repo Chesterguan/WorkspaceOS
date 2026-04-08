@@ -22,9 +22,10 @@ import { MemoryLogList } from "@/components/MemoryLogList";
 import { ConsolidateMemoryButton } from "@/components/ai/ConsolidateMemoryButton";
 import { useProjectContext } from "@/components/ProjectContext";
 import { useMemory } from "@/lib/hooks/useMemory";
-import { memory as memoryApi } from "@/lib/api";
+import { memory as memoryApi, wiki as wikiApi } from "@/lib/api";
 import { toast } from "sonner";
-import { Search, Plus, Brain, X, Loader2, Globe } from "lucide-react";
+import { Search, Plus, Brain, X, Loader2, Globe, BookOpen, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import type { MemoryEntryType, MemoryEntry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -56,6 +57,9 @@ export default function MemoryPage() {
   const [crossProject, setCrossProject] = useState(false);
   const crossProjectRef = useRef(crossProject);
   crossProjectRef.current = crossProject;
+
+  const [wikiContent, setWikiContent] = useState<string | null>(null);
+  const [isRefreshingWiki, setIsRefreshingWiki] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -101,6 +105,29 @@ export default function MemoryPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [crossProject]);
+
+  useEffect(() => {
+    if (entries) {
+      const wikiEntry = entries.find((e) => e.entry_type === "wiki_summary");
+      if (wikiEntry) {
+        setWikiContent(wikiEntry.content);
+      }
+    }
+  }, [entries]);
+
+  async function handleRefreshWiki() {
+    setIsRefreshingWiki(true);
+    try {
+      const res = await wikiApi.refresh(project.id);
+      setWikiContent(res.content);
+      toast.success("Wiki summary updated");
+      mutate();
+    } catch {
+      toast.error("Failed to refresh wiki");
+    } finally {
+      setIsRefreshingWiki(false);
+    }
+  }
 
   function clearSearch() {
     setSearchQuery("");
@@ -233,6 +260,47 @@ export default function MemoryPage() {
         <p className="text-xs text-muted-foreground">
           {filteredEntries.length} result{filteredEntries.length !== 1 ? "s" : ""} for &quot;{searchQuery}&quot;
         </p>
+      )}
+
+      {/* Wiki Summary — pinned at top */}
+      {wikiContent && (
+        <details open className="mb-6 border border-primary/20 rounded-lg bg-primary/5">
+          <summary className="p-4 cursor-pointer flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold">Wiki Summary</span>
+              <Badge variant="outline" className="text-[10px] text-primary border-primary/30">
+                Auto-generated
+              </Badge>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1.5 text-muted-foreground"
+              onClick={(e) => { e.preventDefault(); handleRefreshWiki(); }}
+              disabled={isRefreshingWiki}
+            >
+              {isRefreshingWiki ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              Refresh
+            </Button>
+          </summary>
+          <div className="px-4 pb-4 text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">
+            {wikiContent}
+          </div>
+        </details>
+      )}
+      {!wikiContent && !isRefreshingWiki && entries && entries.length > 0 && (
+        <div className="mb-6 border border-dashed border-border rounded-lg p-4 text-center">
+          <p className="text-sm text-muted-foreground mb-2">No wiki summary yet</p>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRefreshWiki}>
+            <BookOpen className="w-3.5 h-3.5" />
+            Generate Wiki Summary
+          </Button>
+        </div>
       )}
 
       {/* Content */}

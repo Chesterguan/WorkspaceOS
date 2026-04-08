@@ -9,6 +9,8 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   xiaohongshu: "Xiaohongshu",
   medium_outline: "Medium",
   github_release: "GitHub Release",
+  devto: "Dev.to",
+  hashnode: "Hashnode",
 };
 
 const PLATFORM_COLORS: Record<Platform, string> = {
@@ -17,6 +19,8 @@ const PLATFORM_COLORS: Record<Platform, string> = {
   xiaohongshu: "bg-red-600/20 text-red-400 border-red-600/30",
   medium_outline: "bg-emerald-600/20 text-emerald-400 border-emerald-600/30",
   github_release: "bg-purple-600/20 text-purple-400 border-purple-600/30",
+  devto: "bg-violet-600/20 text-violet-400 border-violet-600/30",
+  hashnode: "text-blue-400 bg-blue-400/10 border-blue-400/30",
 };
 
 interface PlatformBadgeProps {

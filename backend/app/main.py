@@ -6,10 +6,11 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import ai, drafts, memory, narratives, projects, sync
+from app.routers import ai, auth, drafts, files as files_router, memory, narratives, projects, sync
 from app.routers import agentic, blog, chat, github, linkedin, posting, publish, workspace
-from app.routers import paper, research
+from app.routers import paper, research, settings as settings_router
 from app.routers.paper import portfolio_paper_router
+from app.routers.publish import blog_publish_router
 from app.routers.chat import starters_router as chat_starters_router
 from app.routers.research import starters_router as research_starters_router
 
@@ -20,6 +21,31 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 SYNC_INTERVAL_SECONDS = 24 * 60 * 60  # 24 hours
 SYNC_INITIAL_DELAY_SECONDS = 60  # wait 60s after startup before first check
+
+
+async def _daily_backup_loop() -> None:
+    """Background loop that runs pg_dump daily."""
+    import subprocess
+
+    await asyncio.sleep(120)  # wait 2 min after startup
+    logger.info("Backup scheduler started")
+
+    while True:
+        try:
+            result = subprocess.run(
+                ["bash", "/app/scripts/backup.sh"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if result.returncode == 0:
+                logger.info("Daily backup completed: %s", result.stdout.strip().split("\n")[-1])
+            else:
+                logger.warning("Backup failed: %s", result.stderr[:200])
+        except Exception:
+            logger.exception("Backup scheduler error")
+
+        await asyncio.sleep(24 * 60 * 60)  # 24 hours
 
 
 async def _daily_sync_loop() -> None:
@@ -91,13 +117,33 @@ async def _daily_sync_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Startup/shutdown lifecycle for background tasks."""
+    """Startup/shutdown lifecycle: validate config, then start background tasks."""
+    from app.config import settings
+    if not settings.validate_startup():
+        logger.critical("Aborting startup due to config validation failure")
+        raise SystemExit(1)
+
+    # Load DB-stored API keys (overlay onto runtime settings)
+    from app.services.settings_service import load_db_keys_into_settings
+    from app.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        loaded = await load_db_keys_into_settings(db)
+        if loaded:
+            logger.info("Loaded %d API key(s) from database", loaded)
+
     sync_task = asyncio.create_task(_daily_sync_loop())
     logger.info("Background auto-sync task scheduled")
+    backup_task = asyncio.create_task(_daily_backup_loop())
+    logger.info("Background backup task scheduled")
     yield
     sync_task.cancel()
+    backup_task.cancel()
     try:
         await sync_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await backup_task
     except asyncio.CancelledError:
         pass
 
@@ -121,6 +167,7 @@ app.add_middleware(
 
 API_PREFIX = "/api/v1"
 
+app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(projects.router, prefix=API_PREFIX)
 app.include_router(narratives.router, prefix=API_PREFIX)
 app.include_router(sync.router, prefix=API_PREFIX)
@@ -128,6 +175,7 @@ app.include_router(drafts.router, prefix=API_PREFIX)
 app.include_router(ai.router, prefix=API_PREFIX)
 app.include_router(memory.router, prefix=API_PREFIX)
 app.include_router(memory.global_router, prefix=API_PREFIX)
+app.include_router(files_router.router, prefix=API_PREFIX)
 app.include_router(github.router, prefix=API_PREFIX)
 app.include_router(posting.router, prefix=API_PREFIX)
 app.include_router(blog.router, prefix=API_PREFIX)
@@ -136,9 +184,11 @@ app.include_router(workspace.router, prefix=API_PREFIX)
 app.include_router(chat.router, prefix=API_PREFIX)
 app.include_router(chat_starters_router, prefix=API_PREFIX)
 app.include_router(publish.router, prefix=API_PREFIX)
+app.include_router(blog_publish_router, prefix=API_PREFIX)
 app.include_router(linkedin.router, prefix=API_PREFIX)
 app.include_router(research.router, prefix=API_PREFIX)
 app.include_router(research_starters_router, prefix=API_PREFIX)
+app.include_router(settings_router.router, prefix=API_PREFIX)
 app.include_router(paper.router, prefix=API_PREFIX)
 app.include_router(portfolio_paper_router, prefix=API_PREFIX)
 

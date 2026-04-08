@@ -618,3 +618,408 @@ async def publish_linkedin(
         "error": None,
         "details": {"post_urn": post_urn, "author_urn": author_urn},
     }
+
+
+# ---------------------------------------------------------------------------
+# Dev.to publishing
+# ---------------------------------------------------------------------------
+
+async def publish_devto(
+    project_id: uuid.UUID,
+    draft_id: uuid.UUID,
+    db: AsyncSession,
+) -> dict:
+    """
+    Publish a draft as a Dev.to article.
+
+    Uses the Dev.to (Forem) REST API:
+      POST https://dev.to/api/articles
+      Headers: api-key, Content-Type, User-Agent
+      Body: {"article": {"title": ..., "body_markdown": ..., "published": true, "tags": [...]}}
+
+    Returns a dict with keys: success, post_url, post_record_id, error, details.
+    Never raises — publishing failures are captured in the returned dict.
+    """
+    if not settings.devto_api_key:
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": "DEVTO_API_KEY is not configured. Set it in Settings > AI & API Keys.",
+            "details": None,
+        }
+
+    draft = await _load_draft(draft_id, db)
+    if draft is None or draft.project_id != project_id:
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": f"Draft {draft_id} not found.",
+            "details": None,
+        }
+
+    # Extract tags from draft platform or use a generic tag
+    tags = []
+    if draft.platform:
+        tags.append(draft.platform.lower().replace(" ", ""))
+    tags.append("projectscribe")
+    # Dev.to allows max 4 tags
+    tags = tags[:4]
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://dev.to/api/articles",
+                headers={
+                    "api-key": settings.devto_api_key,
+                    "Content-Type": "application/json",
+                    "User-Agent": "ProjectScribe/1.0",
+                },
+                json={
+                    "article": {
+                        "title": draft.title or "Untitled",
+                        "body_markdown": draft.content or "",
+                        "published": True,
+                        "tags": tags,
+                    }
+                },
+            )
+
+        if resp.status_code == 201:
+            data = resp.json()
+            post_url = data.get("url", "")
+
+            # Mark draft as published
+            draft.status = "published"
+            await db.flush()
+
+            record = await _create_post_record(
+                draft_id=draft_id,
+                project_id=project_id,
+                platform="devto",
+                post_url=post_url,
+                db=db,
+            )
+
+            return {
+                "success": True,
+                "post_url": post_url,
+                "post_record_id": record.id,
+                "error": None,
+                "details": {
+                    "article_id": data.get("id"),
+                    "slug": data.get("slug"),
+                    "reading_time_minutes": data.get("reading_time_minutes"),
+                },
+            }
+        else:
+            error_body = resp.text[:500]
+            logger.warning(
+                "publish_devto: API returned %d: %s", resp.status_code, error_body
+            )
+            return {
+                "success": False,
+                "post_url": None,
+                "post_record_id": None,
+                "error": f"Dev.to API returned {resp.status_code}: {error_body[:200]}",
+                "details": {"status_code": resp.status_code, "body": error_body},
+            }
+
+    except Exception as exc:
+        logger.exception("publish_devto: unexpected error")
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": f"Dev.to publishing failed: {exc}",
+            "details": None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Hashnode publishing
+# ---------------------------------------------------------------------------
+
+async def publish_hashnode(
+    project_id: uuid.UUID,
+    draft_id: uuid.UUID,
+    db: AsyncSession,
+) -> dict:
+    """Publish a draft as a Hashnode blog post via GraphQL API."""
+    if not settings.hashnode_api_key:
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": "HASHNODE_API_KEY is not configured. Set it in Settings > AI & API Keys.",
+            "details": None,
+        }
+    if not settings.hashnode_publication_id:
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": "HASHNODE_PUBLICATION_ID is not configured. Set it in Settings > AI & API Keys.",
+            "details": None,
+        }
+
+    draft = await _load_draft(draft_id, db)
+    if draft is None or draft.project_id != project_id:
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": f"Draft {draft_id} not found.", "details": None,
+        }
+
+    mutation = """
+    mutation ($input: PublishPostInput!) {
+      publishPost(input: $input) {
+        post {
+          url
+          id
+          slug
+        }
+      }
+    }
+    """
+
+    variables = {
+        "input": {
+            "publicationId": settings.hashnode_publication_id,
+            "title": draft.title or "Untitled",
+            "contentMarkdown": draft.content or "",
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://gql.hashnode.com",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": settings.hashnode_api_key,
+                },
+                json={"query": mutation, "variables": variables},
+            )
+
+        data = resp.json()
+
+        if resp.status_code == 200 and "data" in data and data["data"].get("publishPost"):
+            post_data = data["data"]["publishPost"]["post"]
+            post_url = post_data.get("url", "")
+
+            draft.status = "published"
+            await db.flush()
+
+            record = await _create_post_record(
+                draft_id=draft_id,
+                project_id=project_id,
+                platform="hashnode",
+                post_url=post_url,
+                db=db,
+            )
+
+            return {
+                "success": True,
+                "post_url": post_url,
+                "post_record_id": record.id,
+                "error": None,
+                "details": {
+                    "post_id": post_data.get("id"),
+                    "slug": post_data.get("slug"),
+                },
+            }
+        else:
+            errors = data.get("errors", [])
+            error_msg = errors[0].get("message", str(data)) if errors else str(data)
+            logger.warning("publish_hashnode: API error: %s", error_msg[:200])
+            return {
+                "success": False, "post_url": None, "post_record_id": None,
+                "error": f"Hashnode API error: {error_msg[:200]}",
+                "details": {"response": data},
+            }
+
+    except Exception as exc:
+        logger.exception("publish_hashnode: unexpected error")
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": f"Hashnode publishing failed: {exc}",
+            "details": None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Content-based publishing (for BlogPosts — papers, articles)
+# ---------------------------------------------------------------------------
+# These functions accept title+content directly instead of loading a Draft.
+# They do NOT create a PostRecord because PostRecord.draft_id is a non-nullable
+# FK to drafts.id which cannot hold a blog_post_id.
+# ---------------------------------------------------------------------------
+
+async def publish_content_to_devto(
+    project_id: uuid.UUID,
+    title: str,
+    content: str,
+    source_id: uuid.UUID,
+    source_type: str,  # "draft" or "blog_post"
+    db: AsyncSession,
+) -> dict:
+    """Publish any content to Dev.to (used for BlogPost publishing)."""
+    if not settings.devto_api_key:
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": "DEVTO_API_KEY is not configured. Set it in Settings > AI & API Keys.",
+            "details": None,
+        }
+
+    tags = ["projectscribe"]
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://dev.to/api/articles",
+                headers={
+                    "api-key": settings.devto_api_key,
+                    "Content-Type": "application/json",
+                    "User-Agent": "ProjectScribe/1.0",
+                },
+                json={
+                    "article": {
+                        "title": title or "Untitled",
+                        "body_markdown": content or "",
+                        "published": True,
+                        "tags": tags,
+                    }
+                },
+            )
+
+        if resp.status_code == 201:
+            data = resp.json()
+            post_url = data.get("url", "")
+
+            logger.info(
+                "publish_content_to_devto: published %s %s -> %s",
+                source_type, source_id, post_url,
+            )
+
+            return {
+                "success": True,
+                "post_url": post_url,
+                "post_record_id": None,
+                "error": None,
+                "details": {
+                    "article_id": data.get("id"),
+                    "slug": data.get("slug"),
+                    "reading_time_minutes": data.get("reading_time_minutes"),
+                },
+            }
+        else:
+            error_body = resp.text[:500]
+            logger.warning(
+                "publish_content_to_devto: API returned %d: %s",
+                resp.status_code, error_body,
+            )
+            return {
+                "success": False, "post_url": None, "post_record_id": None,
+                "error": f"Dev.to API returned {resp.status_code}: {error_body[:200]}",
+                "details": {"status_code": resp.status_code, "body": error_body},
+            }
+
+    except Exception as exc:
+        logger.exception("publish_content_to_devto: unexpected error")
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": f"Dev.to publishing failed: {exc}",
+            "details": None,
+        }
+
+
+async def publish_content_to_hashnode(
+    project_id: uuid.UUID,
+    title: str,
+    content: str,
+    source_id: uuid.UUID,
+    source_type: str,  # "draft" or "blog_post"
+    db: AsyncSession,
+) -> dict:
+    """Publish any content to Hashnode (used for BlogPost publishing)."""
+    if not settings.hashnode_api_key:
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": "HASHNODE_API_KEY is not configured. Set it in Settings > AI & API Keys.",
+            "details": None,
+        }
+    if not settings.hashnode_publication_id:
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": "HASHNODE_PUBLICATION_ID is not configured. Set it in Settings > AI & API Keys.",
+            "details": None,
+        }
+
+    mutation = """
+    mutation ($input: PublishPostInput!) {
+      publishPost(input: $input) {
+        post {
+          url
+          id
+          slug
+        }
+      }
+    }
+    """
+
+    variables = {
+        "input": {
+            "publicationId": settings.hashnode_publication_id,
+            "title": title or "Untitled",
+            "contentMarkdown": content or "",
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://gql.hashnode.com",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": settings.hashnode_api_key,
+                },
+                json={"query": mutation, "variables": variables},
+            )
+
+        data = resp.json()
+
+        if resp.status_code == 200 and "data" in data and data["data"].get("publishPost"):
+            post_data = data["data"]["publishPost"]["post"]
+            post_url = post_data.get("url", "")
+
+            logger.info(
+                "publish_content_to_hashnode: published %s %s -> %s",
+                source_type, source_id, post_url,
+            )
+
+            return {
+                "success": True,
+                "post_url": post_url,
+                "post_record_id": None,
+                "error": None,
+                "details": {
+                    "post_id": post_data.get("id"),
+                    "slug": post_data.get("slug"),
+                },
+            }
+        else:
+            errors = data.get("errors", [])
+            error_msg = errors[0].get("message", str(data)) if errors else str(data)
+            logger.warning(
+                "publish_content_to_hashnode: API error: %s", error_msg[:200],
+            )
+            return {
+                "success": False, "post_url": None, "post_record_id": None,
+                "error": f"Hashnode API error: {error_msg[:200]}",
+                "details": {"response": data},
+            }
+
+    except Exception as exc:
+        logger.exception("publish_content_to_hashnode: unexpected error")
+        return {
+            "success": False, "post_url": None, "post_record_id": None,
+            "error": f"Hashnode publishing failed: {exc}",
+            "details": None,
+        }

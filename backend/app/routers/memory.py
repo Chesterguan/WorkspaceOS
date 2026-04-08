@@ -55,6 +55,31 @@ async def create_memory_entry(
     )
 
 
+@router.post(
+    "/wiki/refresh",
+    status_code=status.HTTP_200_OK,
+    summary="Refresh the project wiki summary",
+)
+async def refresh_wiki(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+) -> dict:
+    """Manually trigger wiki summary generation/update."""
+    from app.services.memory_service import upsert_wiki_summary
+
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    entry = await upsert_wiki_summary(project_id, db)
+    return {
+        "id": str(entry.id),
+        "content": entry.content,
+        "updated_at": entry.created_at.isoformat() if entry.created_at else None,
+    }
+
+
 @router.post("/search", response_model=list[MemoryEntryResponse])
 async def search_memory(
     project_id: uuid.UUID,

@@ -25,8 +25,11 @@ from app.schemas.research import (
     ResearchHistoryResponse,
     ResearchMessageRequest,
     ResearchMessageResponse,
+    ResearchRoundtableResponse,
+    ReviewerInfo,
 )
 from app.services import research_service
+from app.services.paper_reviewers import get_reviewer_info_list
 from app.services.research_service import RESEARCH_STARTERS
 from app.services.scholar_service import (
     format_paper_citation,
@@ -49,6 +52,25 @@ async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return project
+
+
+def _to_response(msg: ChatMessage) -> ResearchMessageResponse:
+    """Convert a ChatMessage ORM object to response schema with reviewer fields."""
+    reviewer_id = None
+    reviewer_name = None
+    if msg.metadata_:
+        reviewer_id = msg.metadata_.get("reviewer_id")
+        reviewer_name = msg.metadata_.get("reviewer_name")
+    return ResearchMessageResponse(
+        id=msg.id,
+        project_id=msg.project_id,
+        role=msg.role,
+        content=msg.content,
+        metadata_=msg.metadata_,
+        created_at=msg.created_at,
+        reviewer_id=reviewer_id,
+        reviewer_name=reviewer_name,
+    )
 
 
 def _paper_dict_to_result(paper: dict) -> PaperResult:
@@ -85,7 +107,7 @@ def _paper_dict_to_result(paper: dict) -> PaperResult:
 
 @router.post(
     "",
-    response_model=ResearchMessageResponse,
+    response_model=ResearchRoundtableResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def send_research_message(
@@ -93,21 +115,27 @@ async def send_research_message(
     body: ResearchMessageRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
-) -> ChatMessage:
+) -> ResearchRoundtableResponse:
     """
-    Send a message to the Research Assistant and receive a citation-backed reply.
+    Send a message to the Research Assistant roundtable and receive reviewer replies.
 
-    The assistant searches Semantic Scholar for related papers and uses them
-    to ground its response. All messages are stored in the database.
+    Routes to 3-4 paper reviewers (or a specific reviewer if reviewer_id is set).
+    Each reviewer provides citation-aware advice from their unique perspective.
     """
     await _require_project(project_id, db)
-    return await research_service.send_research_message(
+    messages, routed_ids, group = await research_service.send_research_message(
         project_id=project_id,
         user_message=body.message,
         include_literature=body.include_literature,
         include_workspace=body.include_workspace,
         include_repo=body.include_repo,
         db=db,
+        reviewer_id=body.reviewer_id,
+    )
+    return ResearchRoundtableResponse(
+        messages=[_to_response(m) for m in messages],
+        routed_reviewers=routed_ids,
+        roundtable_group=group,
     )
 
 
@@ -124,7 +152,10 @@ async def get_research_history(
     messages, total = await research_service.get_research_history(
         project_id, db, limit=limit, offset=offset
     )
-    return ResearchHistoryResponse(messages=messages, total=total)
+    return ResearchHistoryResponse(
+        messages=[_to_response(m) for m in messages],
+        total=total,
+    )
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
@@ -175,3 +206,11 @@ async def get_research_starters(
 ) -> List[dict]:
     """Return grouped research conversation starters."""
     return RESEARCH_STARTERS
+
+
+@starters_router.get("/reviewers", response_model=List[ReviewerInfo])
+async def get_reviewers(
+    _key: str = Depends(verify_api_key),
+) -> List[dict]:
+    """Return all reviewer configs (no system prompts) for the frontend reviewer picker."""
+    return get_reviewer_info_list()

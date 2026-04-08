@@ -25,6 +25,16 @@ class PublishLinkedInRequest(BaseModel):
     pass
 
 
+class PublishDevtoRequest(BaseModel):
+    # No extra params needed — content is pulled from the draft
+    pass
+
+
+class PublishHashnodeRequest(BaseModel):
+    # No extra params needed — content is pulled from the draft
+    pass
+
+
 class PublishResponse(BaseModel):
     platform: str
     success: bool
