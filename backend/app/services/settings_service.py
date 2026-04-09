@@ -146,4 +146,8 @@ async def load_db_keys_into_settings(db: AsyncSession) -> int:
         setattr(settings, settings_attr, plaintext)
         loaded += 1
 
+    if loaded > 0:
+        from app.services.ai_client import reset_clients
+        reset_clients()
+
     return loaded

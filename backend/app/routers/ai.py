@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, verify_api_key
 from app.models.draft import Draft
 from app.models.project import Project
 from app.models.sync import SyncRun
@@ -110,31 +110,58 @@ async def generate_portfolio(
 async def dashboard_summary(
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> DashboardSummaryResponse:
     """
     Return cross-project stats and recent activity for the dashboard.
+
+    When JWT auth is used, results are scoped to the authenticated user's
+    projects. API key auth (admin/scripts) sees everything.
     """
-    # TODO: Filter analytics by user's projects when multi-user is prioritized
+    # Resolve the user's project IDs for scoping (None = show all)
+    user_project_ids: Optional[list] = None
+    if user_id:
+        pid_result = await db.execute(
+            select(Project.id).where(Project.user_id == user_id)
+        )
+        user_project_ids = [row[0] for row in pid_result.all()]
+
     # Total counts
-    project_count_result = await db.execute(select(func.count()).select_from(Project))
-    total_projects: int = project_count_result.scalar_one()
-
-    draft_count_result = await db.execute(select(func.count()).select_from(Draft))
-    total_drafts: int = draft_count_result.scalar_one()
-
-    sync_count_result = await db.execute(
-        select(func.count()).select_from(SyncRun).where(SyncRun.status == "completed")
-    )
-    total_syncs: int = sync_count_result.scalar_one()
+    if user_project_ids is not None:
+        total_projects = len(user_project_ids)
+        draft_count_result = await db.execute(
+            select(func.count()).select_from(Draft).where(Draft.project_id.in_(user_project_ids))
+        )
+        total_drafts: int = draft_count_result.scalar_one()
+        sync_count_result = await db.execute(
+            select(func.count()).select_from(SyncRun).where(
+                SyncRun.status == "completed",
+                SyncRun.project_id.in_(user_project_ids),
+            )
+        )
+        total_syncs: int = sync_count_result.scalar_one()
+    else:
+        project_count_result = await db.execute(select(func.count()).select_from(Project))
+        total_projects = project_count_result.scalar_one()
+        draft_count_result = await db.execute(select(func.count()).select_from(Draft))
+        total_drafts = draft_count_result.scalar_one()
+        sync_count_result = await db.execute(
+            select(func.count()).select_from(SyncRun).where(SyncRun.status == "completed")
+        )
+        total_syncs = sync_count_result.scalar_one()
 
     # Recent activity: last 10 completed sync runs with project names
-    recent_runs_result = await db.execute(
+    recent_query = (
         select(SyncRun, Project.name)
         .join(Project, Project.id == SyncRun.project_id)
         .where(SyncRun.status == "completed")
         .order_by(SyncRun.completed_at.desc())
         .limit(10)
     )
+    if user_project_ids is not None:
+        recent_query = recent_query.where(SyncRun.project_id.in_(user_project_ids))
+    recent_runs_result = await db.execute(recent_query)
+
     recent_activity = []
     for run, project_name in recent_runs_result.all():
         recent_activity.append({
@@ -158,48 +185,71 @@ async def dashboard_summary(
 async def dashboard_analytics(
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> DashboardAnalyticsResponse:
-    """Return 12 weeks of activity data for dashboard charts."""
-    # TODO: Filter analytics by user's projects when multi-user is prioritized
+    """Return 12 weeks of activity data for dashboard charts.
+
+    When JWT auth is used, results are scoped to the authenticated user's
+    projects. API key auth (admin/scripts) sees everything.
+    """
     weeks_back = 12
 
+    # Resolve project scoping
+    user_project_ids: Optional[list] = None
+    if user_id:
+        pid_result = await db.execute(
+            select(Project.id).where(Project.user_id == user_id)
+        )
+        user_project_ids = [row[0] for row in pid_result.all()]
+
+    # Build optional project filter clause for raw SQL
+    if user_project_ids is not None:
+        pids_str = ",".join(f"'{str(pid)}'" for pid in user_project_ids)
+        project_filter = f"AND project_id IN ({pids_str})" if pids_str else "AND FALSE"
+    else:
+        project_filter = ""
+
     # Commits per week
-    commits_result = await db.execute(text("""
+    commits_result = await db.execute(text(f"""
         SELECT date_trunc('week', committed_at)::date AS week_start,
                COUNT(*) AS cnt
         FROM github_commits
         WHERE committed_at >= now() - interval '12 weeks'
+        {project_filter}
         GROUP BY week_start
         ORDER BY week_start
     """))
 
     # Papers per week (blog_posts tagged 'paper')
-    papers_result = await db.execute(text("""
+    papers_result = await db.execute(text(f"""
         SELECT date_trunc('week', created_at)::date AS week_start,
                COUNT(*) AS cnt
         FROM blog_posts
         WHERE created_at >= now() - interval '12 weeks'
           AND tags @> ARRAY['paper']::text[]
+        {project_filter}
         GROUP BY week_start
         ORDER BY week_start
     """))
 
     # Drafts per week
-    drafts_result = await db.execute(text("""
+    drafts_result = await db.execute(text(f"""
         SELECT date_trunc('week', created_at)::date AS week_start,
                COUNT(*) AS cnt
         FROM drafts
         WHERE created_at >= now() - interval '12 weeks'
+        {project_filter}
         GROUP BY week_start
         ORDER BY week_start
     """))
 
     # Memory entries per week
-    memory_result = await db.execute(text("""
+    memory_result = await db.execute(text(f"""
         SELECT date_trunc('week', created_at)::date AS week_start,
                COUNT(*) AS cnt
         FROM memory_entries
         WHERE created_at >= now() - interval '12 weeks'
+        {project_filter}
         GROUP BY week_start
         ORDER BY week_start
     """))

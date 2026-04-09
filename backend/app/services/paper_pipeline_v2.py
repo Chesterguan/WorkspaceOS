@@ -29,7 +29,8 @@ from app.services.paper_reviewers import (
     MAX_ROUNDTABLE_ROUNDS,
 )
 from app.services.blog_service import create_blog_post, update_blog_post
-from app.services.paper_service import _build_paper_context, export_to_latex
+from app.services.latex_service import export_to_latex
+from app.services.paper_service import _build_paper_context
 from app.services.scholar_service import generate_bibtex_for_papers
 from app.services.venue_service import VenueGuidelines, resolve_venue
 from app.utils.diff_utils import compute_diff_stats

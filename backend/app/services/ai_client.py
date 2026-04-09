@@ -234,6 +234,14 @@ def get_cloud_client() -> AIClient:
     return _cloud_client
 
 
+def reset_clients() -> None:
+    """Clear cached AI client singletons so they pick up new API keys."""
+    global _local_client, _cloud_client
+    _local_client = None
+    _cloud_client = None
+    logger.info("AI client singletons reset — will recreate on next call")
+
+
 def get_ai_client() -> AIClient:
     """Backward compat — returns the cloud client (used by generation code)."""
     return get_cloud_client()
