@@ -306,7 +306,7 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
           </div>
         ) : (
           <>
-            {groupMessages(displayMessages).map((item, idx) =>
+            {groupMessages(displayMessages).map((item) =>
               item.type === "roundtable" ? (
                 <ResearchRoundtableGroup
                   key={item.group}

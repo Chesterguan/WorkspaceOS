@@ -469,12 +469,14 @@ async def send_message(
                 "include_repo": include_repo,
             },
         )
-        db.add(msg)
         return msg
 
     tasks = [_call_advisor(aid, idx) for idx, aid in enumerate(routed_ids)]
     advisor_messages = await asyncio.gather(*tasks)
 
+    # Add all messages to session AFTER gather completes (single-threaded, safe)
+    for msg in advisor_messages:
+        db.add(msg)
     await db.flush()
     for msg in advisor_messages:
         await db.refresh(msg)

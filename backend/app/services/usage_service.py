@@ -25,9 +25,19 @@ COST_PER_1M_TOKENS: Dict[str, Dict[str, float]] = {
 }
 
 
-def estimate_tokens(text: str) -> int:
-    """Rough token estimate: ~4 chars per token for English text."""
-    return max(1, len(text) // 4)
+# Chars-per-token ratios by provider (approximate)
+_CHARS_PER_TOKEN: Dict[str, float] = {
+    "gemini": 3.5,
+    "openai": 4.0,
+    "anthropic": 3.8,
+    "ollama": 4.0,
+}
+
+
+def estimate_tokens(text: str, provider: str = "gemini") -> int:
+    """Estimate token count based on text length and provider-specific ratio."""
+    ratio = _CHARS_PER_TOKEN.get(provider, 4.0)
+    return max(1, int(len(text) / ratio))
 
 
 def estimate_cost(provider: str, input_tokens: int, output_tokens: int) -> float:
@@ -47,8 +57,8 @@ async def log_usage(
     db: AsyncSession,
 ) -> None:
     """Log an AI API call with estimated tokens and cost."""
-    input_tokens = estimate_tokens(input_text)
-    output_tokens = estimate_tokens(output_text)
+    input_tokens = estimate_tokens(input_text, provider)
+    output_tokens = estimate_tokens(output_text, provider)
     cost = estimate_cost(provider, input_tokens, output_tokens)
 
     entry = AIUsageLog(

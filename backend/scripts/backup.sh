@@ -36,3 +36,12 @@ cd "$BACKUP_DIR"
 ls -t projectscribe_*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm
 COUNT=$(ls projectscribe_*.sql.gz 2>/dev/null | wc -l)
 echo "Retained backups: $COUNT"
+
+# Also backup the Fernet encryption key (needed to decrypt app_settings)
+FERNET_KEY="/app/backend_data/fernet.key"
+if [ -f "$FERNET_KEY" ]; then
+    cp "$FERNET_KEY" "$BACKUP_DIR/fernet_${TIMESTAMP}.key"
+    echo "Fernet key backed up"
+    # Rotate: keep only last 7 fernet key backups
+    ls -t "$BACKUP_DIR"/fernet_*.key 2>/dev/null | tail -n +8 | xargs -r rm
+fi

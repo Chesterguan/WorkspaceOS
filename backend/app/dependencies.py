@@ -48,3 +48,22 @@ async def verify_api_key(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or missing API key / token",
     )
+
+
+async def get_optional_user_id(
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(default=None),
+) -> Optional[str]:
+    """Extract user ID from JWT if present. Returns None for API key auth.
+
+    This allows endpoints to scope queries by user when JWT auth is used,
+    while preserving backward compat for API key auth (admin/scripts see all).
+    """
+    if authorization and authorization.startswith("Bearer "):
+        from app.services.auth_service import decode_access_token
+
+        token = authorization[7:]
+        payload = decode_access_token(token)
+        if payload and payload.get("sub"):
+            return payload["sub"]
+    return None

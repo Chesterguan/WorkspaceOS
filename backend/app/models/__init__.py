@@ -14,6 +14,7 @@ from app.models.venue import VenueCache
 from app.models.workspace import WorkspaceSnapshot
 from app.models.app_settings import AppSetting
 from app.models.ai_usage import AIUsageLog
+from app.models.worklog import WorkLog
 
 __all__ = [
     "User",
@@ -34,4 +35,5 @@ __all__ = [
     "WorkspaceSnapshot",
     "AppSetting",
     "AIUsageLog",
+    "WorkLog",
 ]

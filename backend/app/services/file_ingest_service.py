@@ -5,10 +5,13 @@ and store as memory entries with enriched metadata.
 Pipeline:
   File/URL → extract text → AI auto-tag → memory_service.add_entry() → set metadata_ → return
 """
+import ipaddress
 import logging
 import re
+import socket
 import uuid
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -170,6 +173,34 @@ async def ingest_file(
 
 
 # ---------------------------------------------------------------------------
+# URL safety check (SSRF prevention)
+# ---------------------------------------------------------------------------
+def _is_safe_url(url: str) -> bool:
+    """Reject URLs pointing to internal/private networks."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname or ""
+        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+            return False
+        # Block common Docker internal hostnames
+        if hostname in ("db", "backend", "frontend", "host.docker.internal"):
+            return False
+        # Try to resolve and check for private IPs
+        try:
+            ip = socket.getaddrinfo(hostname, None)[0][4][0]
+            addr = ipaddress.ip_address(ip)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                return False
+        except (socket.gaierror, ValueError):
+            pass  # Can't resolve — allow (might be a valid external domain)
+        return True
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # URL ingest
 # ---------------------------------------------------------------------------
 async def ingest_url(
@@ -183,6 +214,9 @@ async def ingest_url(
     Downloads up to MAX_URL_BYTES, detects MIME type from response headers,
     then delegates to ingest_file().
     """
+    if not _is_safe_url(url):
+        raise ValueError("URL not allowed: must be a public HTTP(S) URL")
+
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         response = await client.get(url)
         response.raise_for_status()
@@ -196,7 +230,6 @@ async def ingest_url(
     mime_type = content_type.split(";")[0].strip()
 
     # Derive filename from URL path
-    from urllib.parse import urlparse
     parsed = urlparse(url)
     filename = parsed.path.split("/")[-1] or "index.html"
 

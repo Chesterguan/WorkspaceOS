@@ -416,21 +416,7 @@ async def upsert_wiki_summary(
             db=db,
         )
 
-    # 2. Call AI
-    ai = get_cloud_client()
-    user_prompt = (
-        "## Project Context\n\n"
-        + "\n\n".join(context_parts)
-        + "\n\n---\nGenerate the wiki summary now."
-    )
-
-    try:
-        wiki_content = await ai.complete(system=_WIKI_SYSTEM, user=user_prompt)
-    except Exception:
-        logger.exception("Wiki: AI generation failed for project %s", project_id)
-        wiki_content = "## Project Overview\nWiki generation failed. Will retry on next sync."
-
-    # 3. Upsert
+    # 2. Check for existing wiki entry (needed for accumulation)
     existing_result = await db.execute(
         select(MemoryEntry).where(
             MemoryEntry.project_id == project_id,
@@ -439,6 +425,37 @@ async def upsert_wiki_summary(
     )
     existing_entry = existing_result.scalar_one_or_none()
 
+    # 3. Call AI — include previous summary for knowledge accumulation
+    ai = get_cloud_client()
+
+    if existing_entry:
+        # Accumulate: AI sees old summary and decides what to keep/update/remove
+        previous_summary = existing_entry.content
+        user_prompt = (
+            "## Project Context\n\n"
+            + "\n\n".join(context_parts)
+            + "\n\n## Previous Wiki Summary (preserve any insights still relevant)\n\n"
+            + previous_summary
+            + "\n\n---\nGenerate an UPDATED wiki summary. Keep insights from the previous "
+            "summary that are still relevant. Add new information. Remove anything outdated."
+        )
+    else:
+        user_prompt = (
+            "## Project Context\n\n"
+            + "\n\n".join(context_parts)
+            + "\n\n---\nGenerate the wiki summary now."
+        )
+
+    try:
+        wiki_content = await ai.complete(system=_WIKI_SYSTEM, user=user_prompt)
+    except Exception:
+        logger.exception("Wiki: AI generation failed for project %s", project_id)
+        if existing_entry:
+            wiki_content = existing_entry.content  # keep old content on failure
+        else:
+            wiki_content = "## Project Overview\nWiki generation failed. Will retry on next sync."
+
+    # 4. Upsert
     metadata = {
         "page_type": "project_summary",
         "auto_generated": True,

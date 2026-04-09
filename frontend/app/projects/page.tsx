@@ -152,6 +152,20 @@ export default function ProjectsPage() {
                 </Card>
               </Link>
 
+              <Link href="/worklog">
+                <Card className="hover:border-primary/50 hover:bg-card/80 transition-all cursor-pointer group">
+                  <CardContent className="flex items-center gap-3 p-3">
+                    <div className="w-9 h-9 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-orange-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium group-hover:text-primary transition-colors">Work Log</p>
+                      <p className="text-[11px] text-muted-foreground">Reports</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+
               <Card className="border-border/50">
                 <CardContent className="flex items-center gap-3 p-3">
                   <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">

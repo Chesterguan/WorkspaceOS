@@ -6,6 +6,7 @@ Endpoints:
   GET /linkedin/callback  — OAuth redirect target; exchanges code for token.
   GET /linkedin/status    — Check whether a LinkedIn token is stored and valid.
 """
+import html
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -75,8 +76,8 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)) -
         return HTMLResponse(
             content=_html_page(
                 title="LinkedIn Connection Failed",
-                body=f"<p>OAuth error: <strong>{error}</strong></p>"
-                     f"<p>{error_description}</p>"
+                body=f"<p>OAuth error: <strong>{html.escape(error)}</strong></p>"
+                     f"<p>{html.escape(error_description)}</p>"
                      "<p>You can close this window and try again.</p>",
                 success=False,
             ),
@@ -101,7 +102,7 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)) -
         return HTMLResponse(
             content=_html_page(
                 title="LinkedIn Connection Failed",
-                body=f"<p>Failed to exchange authorization code: {exc}</p>"
+                body=f"<p>Failed to exchange authorization code: {html.escape(str(exc))}</p>"
                      "<p>You can close this window and try again.</p>",
                 success=False,
             ),
@@ -187,13 +188,14 @@ async def disconnect(db: AsyncSession = Depends(get_db)) -> dict:
 def _html_page(title: str, body: str, success: bool) -> str:
     """Minimal HTML page returned to the OAuth popup window."""
     color = "#22c55e" if success else "#ef4444"
-    icon = "✓" if success else "✗"
+    icon = "&#x2713;" if success else "&#x2717;"
+    safe_title = html.escape(title)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{title}</title>
+  <title>{safe_title}</title>
   <style>
     body {{
       font-family: system-ui, -apple-system, sans-serif;
@@ -226,7 +228,7 @@ def _html_page(title: str, body: str, success: bool) -> str:
 <body>
   <div class="card">
     <div class="icon">{icon}</div>
-    <h1>{title}</h1>
+    <h1>{safe_title}</h1>
     {body}
   </div>
 </body>

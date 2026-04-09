@@ -114,6 +114,7 @@ async def dashboard_summary(
     """
     Return cross-project stats and recent activity for the dashboard.
     """
+    # TODO: Filter analytics by user's projects when multi-user is prioritized
     # Total counts
     project_count_result = await db.execute(select(func.count()).select_from(Project))
     total_projects: int = project_count_result.scalar_one()
@@ -159,6 +160,7 @@ async def dashboard_analytics(
     _key: str = Depends(verify_api_key),
 ) -> DashboardAnalyticsResponse:
     """Return 12 weeks of activity data for dashboard charts."""
+    # TODO: Filter analytics by user's projects when multi-user is prioritized
     weeks_back = 12
 
     # Commits per week

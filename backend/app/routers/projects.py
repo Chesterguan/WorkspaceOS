@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, verify_api_key
 from app.models.draft import Draft
 from app.models.project import Project
 from app.models.sync import SyncRun
@@ -40,8 +40,13 @@ async def create_project(
     body: ProjectCreate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Project:
-    resolved_user_id = await _resolve_user_id(body.user_id, db)
+    # Prefer explicit body.user_id, then JWT user, then DB fallback
+    effective_user_id = body.user_id
+    if effective_user_id is None and jwt_user_id:
+        effective_user_id = uuid.UUID(jwt_user_id)
+    resolved_user_id = await _resolve_user_id(effective_user_id, db)
 
     # Enforce unique slug per user
     existing = await db.execute(
@@ -70,6 +75,7 @@ async def get_projects_stats(
     user_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ProjectStatsResponse:
     """
     Return draft counts and last sync timestamps for all projects in one query.
@@ -97,6 +103,8 @@ async def get_projects_stats(
     proj_query = select(Project.id)
     if user_id:
         proj_query = proj_query.where(Project.user_id == user_id)
+    elif jwt_user_id:
+        proj_query = proj_query.where(Project.user_id == uuid.UUID(jwt_user_id))
     proj_result = await db.execute(proj_query)
     project_ids = [row[0] for row in proj_result.all()]
 
@@ -116,10 +124,16 @@ async def list_projects(
     user_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> List[Project]:
     query = select(Project).order_by(Project.created_at.desc())
     if user_id:
+        # Explicit user_id query param takes priority
         query = query.where(Project.user_id == user_id)
+    elif jwt_user_id:
+        # JWT auth: auto-scope to the authenticated user's projects
+        query = query.where(Project.user_id == uuid.UUID(jwt_user_id))
+    # API key auth with no user_id param: return all (admin/script mode)
     result = await db.execute(query)
     return list(result.scalars().all())
 
@@ -129,8 +143,12 @@ async def get_project(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    query = select(Project).where(Project.id == project_id)
+    if user_id:
+        query = query.where(Project.user_id == uuid.UUID(user_id))
+    result = await db.execute(query)
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -143,8 +161,12 @@ async def update_project(
     body: ProjectUpdate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    query = select(Project).where(Project.id == project_id)
+    if user_id:
+        query = query.where(Project.user_id == uuid.UUID(user_id))
+    result = await db.execute(query)
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -162,8 +184,12 @@ async def delete_project(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    query = select(Project).where(Project.id == project_id)
+    if user_id:
+        query = query.where(Project.user_id == uuid.UUID(user_id))
+    result = await db.execute(query)
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")

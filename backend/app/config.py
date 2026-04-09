@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     # App security
     api_secret_key: str = "dev-secret-key"
+    jwt_secret_key: str = ""  # Falls back to api_secret_key if empty
 
     # Twitter/X API (OAuth 1.0a — required for user-context write access)
     twitter_api_key: str = ""        # Consumer key (API Key)

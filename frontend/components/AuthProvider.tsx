@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { auth as authApi } from "@/lib/api";
+import { safeGetItem, safeSetItem, safeRemoveItem } from "@/lib/utils";
 import type { AuthUser } from "@/lib/types";
 
 interface AuthContextType {
@@ -34,16 +35,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Check for existing token on mount
+  // Check for existing token on mount; attempt refresh if expired
   useEffect(() => {
-    const token = localStorage.getItem("auth_token");
+    const token = safeGetItem("auth_token");
     if (token) {
       authApi.me()
         .then((u) => setUser(u))
-        .catch(() => {
-          // Token expired or invalid
-          localStorage.removeItem("auth_token");
-          localStorage.removeItem("auth_user");
+        .catch(async () => {
+          // Token might be expired — try refresh
+          const refreshToken = safeGetItem("refresh_token");
+          if (refreshToken) {
+            try {
+              const res = await authApi.refresh({ refresh_token: refreshToken });
+              safeSetItem("auth_token", res.access_token);
+              safeSetItem("refresh_token", res.refresh_token);
+              const u = await authApi.me();
+              setUser(u);
+              return;
+            } catch {
+              // Refresh also failed — truly expired
+            }
+          }
+          safeRemoveItem("auth_token");
+          safeRemoveItem("refresh_token");
+          safeRemoveItem("auth_user");
         })
         .finally(() => setIsLoading(false));
     } else {
@@ -60,8 +75,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await authApi.login({ email, password });
-    localStorage.setItem("auth_token", res.access_token);
-    localStorage.setItem("auth_user", JSON.stringify({
+    safeSetItem("auth_token", res.access_token);
+    safeSetItem("refresh_token", res.refresh_token);
+    safeSetItem("auth_user", JSON.stringify({
       id: res.user_id,
       email: res.email,
       display_name: res.display_name,
@@ -77,8 +93,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(async (email: string, password: string, displayName?: string) => {
     const res = await authApi.register({ email, password, display_name: displayName });
-    localStorage.setItem("auth_token", res.access_token);
-    localStorage.setItem("auth_user", JSON.stringify({
+    safeSetItem("auth_token", res.access_token);
+    safeSetItem("refresh_token", res.refresh_token);
+    safeSetItem("auth_user", JSON.stringify({
       id: res.user_id,
       email: res.email,
       display_name: res.display_name,
@@ -93,8 +110,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("auth_user");
+    safeRemoveItem("auth_token");
+    safeRemoveItem("refresh_token");
+    safeRemoveItem("auth_user");
     setUser(null);
     router.push("/login");
   }, [router]);

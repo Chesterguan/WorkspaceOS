@@ -1,14 +1,23 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+
+# Global rate limiter — 120 req/min per IP prevents runaway loops while
+# still being generous for legitimate use (AI endpoints take 5-30s each).
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
 from app.routers import ai, auth, drafts, files as files_router, memory, narratives, projects, sync
 from app.routers import agentic, blog, chat, github, linkedin, posting, publish, workspace
-from app.routers import paper, research, settings as settings_router
+from app.routers import paper, research, settings as settings_router, worklog as worklog_router
 from app.routers.paper import portfolio_paper_router
 from app.routers.publish import blog_publish_router
 from app.routers.chat import starters_router as chat_starters_router
@@ -155,6 +164,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 # Allow all origins in development. Tighten this in production by replacing
 # allow_origins with a specific list of frontend URLs.
 app.add_middleware(
@@ -164,6 +177,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_slow_requests(request, call_next):
+    """Log any request that takes longer than 5 seconds."""
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+    if duration > 5.0:
+        logger.warning(
+            "SLOW REQUEST: %s %s took %.1fs",
+            request.method,
+            request.url.path,
+            duration,
+        )
+    return response
 
 API_PREFIX = "/api/v1"
 
@@ -191,8 +220,25 @@ app.include_router(research_starters_router, prefix=API_PREFIX)
 app.include_router(settings_router.router, prefix=API_PREFIX)
 app.include_router(paper.router, prefix=API_PREFIX)
 app.include_router(portfolio_paper_router, prefix=API_PREFIX)
+app.include_router(worklog_router.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["health"])
 async def health_check() -> dict:
-    return {"status": "ok", "version": app.version}
+    """Check API and database health."""
+    from app.database import AsyncSessionLocal
+    from sqlalchemy import text
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+        db_status = "ok"
+    except Exception as exc:
+        logger.warning("Health check DB probe failed: %s", exc)
+        db_status = "error"
+
+    return {
+        "status": "ok" if db_status == "ok" else "degraded",
+        "version": app.version,
+        "database": db_status,
+    }

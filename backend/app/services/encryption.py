@@ -23,12 +23,17 @@ def _get_fernet() -> Fernet:
 
     if _KEY_PATH.exists():
         key = _KEY_PATH.read_bytes().strip()
-        logger.info("encryption: loaded Fernet key from %s", _KEY_PATH)
+        logger.info("encryption: loaded existing Fernet key from %s", _KEY_PATH)
     else:
         key = Fernet.generate_key()
         _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
         _KEY_PATH.write_bytes(key)
-        logger.info("encryption: generated new Fernet key at %s", _KEY_PATH)
+        os.chmod(_KEY_PATH, 0o600)
+        logger.warning(
+            "encryption: NO EXISTING KEY FOUND — generating new Fernet key at %s. "
+            "Previously encrypted values will be UNREADABLE.",
+            _KEY_PATH,
+        )
 
     _fernet = Fernet(key)
     return _fernet

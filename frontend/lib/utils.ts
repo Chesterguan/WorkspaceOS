@@ -71,6 +71,22 @@ export function platformCharLimit(platform: string): number | null {
 }
 
 /**
+ * Safe localStorage wrappers — return gracefully when storage is unavailable
+ * (e.g. SSR, private browsing quota exceeded, or SecurityError in iframes).
+ */
+export function safeGetItem(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+export function safeSetItem(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* storage unavailable */ }
+}
+
+export function safeRemoveItem(key: string): void {
+  try { localStorage.removeItem(key); } catch { /* storage unavailable */ }
+}
+
+/**
  * Group consecutive assistant messages by roundtable_group for rendering.
  */
 export function groupMessages<T extends { role: string; metadata_?: Record<string, unknown> | null }>(

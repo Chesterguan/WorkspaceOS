@@ -753,6 +753,46 @@ export interface UsageStats {
   by_provider: Record<string, { calls: number; cost: number }>;
 }
 
+// ─── Work Log ───────────────────────────────────────────────────
+
+export interface WorkLogGoal {
+  description: string;
+  achieved: boolean;
+  evidence: string;
+}
+
+export interface GenerateWorkLogRequest {
+  period_type: 'weekly' | 'monthly' | 'quarterly';
+  period_start: string;
+  period_end: string;
+  project_ids: string[];
+  goals: WorkLogGoal[];
+  additional_instructions?: string;
+}
+
+export interface WorkLogReport {
+  id: string;
+  title: string;
+  period_type: string;
+  period_start: string;
+  period_end: string;
+  project_ids: string[];
+  content: string;
+  goals: WorkLogGoal[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkLogListResponse {
+  reports: WorkLogReport[];
+  total: number;
+}
+
+export interface ExportDocxResponse {
+  docx_base64: string;
+  filename: string;
+}
+
 // ─── Auth ────────────────────────────────────────────────────────
 
 export interface LoginRequest {
@@ -768,6 +808,7 @@ export interface RegisterRequest {
 
 export interface TokenResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
   user_id: string;
   email: string;

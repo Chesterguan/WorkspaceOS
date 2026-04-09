@@ -77,7 +77,14 @@ import type {
   FileUploadResponse,
   ImportUrlRequest,
   FileListResponse,
+  WorkLogReport,
+  WorkLogGoal,
+  GenerateWorkLogRequest,
+  WorkLogListResponse,
+  ExportDocxResponse,
 } from './types';
+
+import { safeGetItem } from './utils';
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -106,7 +113,7 @@ async function apiFetch<T>(
   };
 
   // Auth: prefer JWT token from localStorage, fall back to env API key
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const token = typeof window !== 'undefined' ? safeGetItem('auth_token') : null;
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   } else if (API_KEY) {
@@ -779,6 +786,11 @@ export const auth = {
   me(): Promise<AuthUser> {
     return apiFetch<AuthUser>('/auth/me');
   },
+  refresh(data: { refresh_token: string }): Promise<TokenResponse> {
+    return apiFetch<TokenResponse>('/auth/refresh', {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  },
 };
 
 // ─── Files ───────────────────────────────────────────────────────────────────
@@ -789,7 +801,7 @@ export const files = {
     formData.append('file', file);
     if (tags) formData.append('tags', tags);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const token = typeof window !== 'undefined' ? safeGetItem('auth_token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -827,6 +839,33 @@ export const files = {
 export const wiki = {
   refresh(projectId: string): Promise<{ id: string; content: string; updated_at: string | null }> {
     return apiFetch(`/projects/${projectId}/memory/wiki/refresh`, { method: 'POST' });
+  },
+};
+
+// ─── Work Log ───────────────────────────────────────────────────────────────
+
+export const worklog = {
+  generate(data: GenerateWorkLogRequest): Promise<WorkLogReport> {
+    return apiFetch<WorkLogReport>('/worklog/generate', {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  },
+  list(limit = 20): Promise<WorkLogListResponse> {
+    return apiFetch<WorkLogListResponse>(`/worklog?limit=${limit}`);
+  },
+  get(id: string): Promise<WorkLogReport> {
+    return apiFetch<WorkLogReport>(`/worklog/${id}`);
+  },
+  update(id: string, data: { content?: string; goals?: WorkLogGoal[]; title?: string }): Promise<WorkLogReport> {
+    return apiFetch<WorkLogReport>(`/worklog/${id}`, {
+      method: 'PUT', body: JSON.stringify(data),
+    });
+  },
+  delete(id: string): Promise<void> {
+    return apiFetch(`/worklog/${id}`, { method: 'DELETE' });
+  },
+  exportDocx(id: string): Promise<ExportDocxResponse> {
+    return apiFetch<ExportDocxResponse>(`/worklog/${id}/export-docx`, { method: 'POST' });
   },
 };
 

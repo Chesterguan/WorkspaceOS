@@ -269,7 +269,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
           </div>
         ) : (
           <>
-            {groupMessages(displayMessages).map((item, idx) =>
+            {groupMessages(displayMessages).map((item) =>
               item.type === "roundtable" ? (
                 <RoundtableGroup
                   key={item.group}

@@ -465,12 +465,14 @@ async def send_research_message(
                 "include_repo": include_repo,
             },
         )
-        db.add(msg)
         return msg
 
     tasks = [_call_reviewer(rid, idx) for idx, rid in enumerate(routed_ids)]
     reviewer_messages = await asyncio.gather(*tasks)
 
+    # Add all messages to session AFTER gather completes (single-threaded, safe)
+    for msg in reviewer_messages:
+        db.add(msg)
     await db.flush()
     for msg in reviewer_messages:
         await db.refresh(msg)

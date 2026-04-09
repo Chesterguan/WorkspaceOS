@@ -4,10 +4,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from app.schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
+from app.services import auth_service
 from app.services.auth_service import (
     authenticate_user,
     create_access_token,
+    create_refresh_token,
     decode_access_token,
     hash_password,
 )
@@ -28,8 +36,10 @@ async def login(
             detail="Invalid email or password",
         )
     token = create_access_token(str(user.id), user.email)
+    refresh = create_refresh_token(str(user.id))
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh,
         user_id=str(user.id),
         email=user.email,
         display_name=user.display_name,
@@ -59,8 +69,36 @@ async def register(
     await db.refresh(user)
 
     token = create_access_token(str(user.id), user.email)
+    refresh = create_refresh_token(str(user.id))
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh,
+        user_id=str(user.id),
+        email=user.email,
+        display_name=user.display_name,
+    )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(
+    body: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    """Exchange a refresh token for a new access + refresh token pair."""
+    user_id = auth_service.decode_refresh_token(body.refresh_token)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    new_access = create_access_token(str(user.id), user.email)
+    new_refresh = create_refresh_token(str(user.id))
+    return TokenResponse(
+        access_token=new_access,
+        refresh_token=new_refresh,
         user_id=str(user.id),
         email=user.email,
         display_name=user.display_name,
