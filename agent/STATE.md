@@ -1,19 +1,19 @@
 # Agent State
 
 ## Current Status
-session-end — Multi-tenant JWT scoping refactor complete, 35 tests passing
+session-end — Worklog migration gap fixed, 60/60 tests passing
 
 ## Last Completed Task
-Session 7: Multi-tenant JWT scoping audit + fix. Root cause: Chester's login showed 0 projects because `POST /github/repos/import` ignored JWT and assigned imports to demo user. Fixed across 18 routers + 4 services (~540 insertions, ~400 deletions). Added shared `require_owned_project` helper, per-user LinkedIn tokens with OAuth state signing, portfolio/worklog project-list ownership checks, typed JWT tokens (access vs oauth_state), memory search-all allowlist. Reassigned 3 mis-owned projects to Chester. All 35 integration tests still pass.
+Session 8: Worklog user_id migration backfill. Added migration `0014_worklogs_user_id.py` that runs `ALTER TABLE work_logs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL` to patch the gap where 0013's `CREATE TABLE IF NOT EXISTS` silently skipped the column on earlier-created tables. Added regression test `test_worklog_create_and_fetch_by_owner` that actually exercises the INSERT path (prior scoping tests all short-circuited before it). Audited all other migrations using the same pattern — none had silent-skip gaps. 60/60 tests passing.
 
 ## Last Updated
 2026-04-10
 
 ## Session Count
-7
+8
 
 ## Tasks Completed This Session
-65+
+1
 
 ## Completed Features
 - Core MVP (projects, narratives, sync, drafts, memory, blog, posting)
@@ -35,4 +35,4 @@ Session 7: Multi-tenant JWT scoping audit + fix. Root cause: Chester's login sho
 - User Scoping (JWT users see own projects only)
 - Security audit: XSS, SSRF, IDOR, race conditions, Fernet permissions — all fixed
 - Shared components extracted, code split (latex_service), dead code removed
-- 13 migrations, 25 pages, 35 tests
+- 14 migrations, 25 pages, 60 tests

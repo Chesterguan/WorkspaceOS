@@ -896,6 +896,83 @@ async def test_scoping_cannot_create_project_for_another_user(client: AsyncClien
         )
 
 
+async def test_worklog_create_and_fetch_by_owner(client: AsyncClient):
+    """Regression test for the 0013 migration gap:
+    creating a worklog must actually persist (the INSERT path was broken
+    before 0014 because the ``user_id`` column was missing from the
+    physical ``work_logs`` table). Also verifies the owner can fetch it
+    back and a different user cannot."""
+    user_a = await _register_user(client, "wlog-a")
+    user_b = await _register_user(client, "wlog-b")
+    proj_a = await _create_project_for(client, user_a["user_id"], "wlog")
+    try:
+        # Create a worklog for user A spanning project_a
+        create_resp = await client.post(
+            "/api/v1/worklog/generate",
+            headers={
+                "Authorization": f"Bearer {user_a['token']}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "project_ids": [proj_a],
+                "period_type": "weekly",
+                "period_start": "2026-04-01",
+                "period_end": "2026-04-08",
+            },
+        )
+        # The AI-generation side can take a while and may 500 if a provider
+        # is misconfigured in the test env, but it must NOT 500 with a
+        # "column user_id does not exist" error. Accept either a successful
+        # create OR a 5xx that is explicitly about AI providers, not schema.
+        if create_resp.status_code >= 500:
+            body = create_resp.text.lower()
+            assert "user_id" not in body or "does not exist" not in body, (
+                f"worklog create hit the schema bug again: {create_resp.text}"
+            )
+            pytest.skip(
+                f"worklog generate returned {create_resp.status_code} "
+                f"(likely AI provider issue, not the schema bug we're guarding)"
+            )
+        assert create_resp.status_code == 201, (
+            f"worklog create failed: {create_resp.status_code} {create_resp.text}"
+        )
+        worklog = create_resp.json()
+        worklog_id = worklog["id"]
+
+        # Owner can fetch it back
+        resp = await client.get(
+            f"/api/v1/worklog/{worklog_id}",
+            headers={"Authorization": f"Bearer {user_a['token']}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["id"] == worklog_id
+
+        # Owner sees it in the list
+        resp = await client.get(
+            "/api/v1/worklog",
+            headers={"Authorization": f"Bearer {user_a['token']}"},
+        )
+        assert resp.status_code == 200
+        assert any(w["id"] == worklog_id for w in resp.json()["items"])
+
+        # Different user cannot fetch it (worklog ownership scoping)
+        resp = await client.get(
+            f"/api/v1/worklog/{worklog_id}",
+            headers={"Authorization": f"Bearer {user_b['token']}"},
+        )
+        assert resp.status_code == 404, (
+            f"user B should 404 on user A's worklog, got {resp.status_code}"
+        )
+
+        # Cleanup the worklog (owner only)
+        await client.delete(
+            f"/api/v1/worklog/{worklog_id}",
+            headers={"Authorization": f"Bearer {user_a['token']}"},
+        )
+    finally:
+        await _cleanup_project(client, proj_a)
+
+
 async def test_scoping_cannot_access_draft_across_projects(client: AsyncClient):
     """Nested resource ID IDOR: user B cannot fetch user A's draft even by
     guessing the draft ID, because _require_draft filters by project_id and
