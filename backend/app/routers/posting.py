@@ -10,10 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.draft import Draft
 from app.models.posting import PostRecord, PostSchedule
-from app.models.project import Project
 from app.schemas.posting import (
     PostRecordCreate,
     PostRecordResponse,
@@ -23,18 +22,6 @@ from app.schemas.posting import (
 )
 
 router = APIRouter(prefix="/projects", tags=["posting"])
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +38,9 @@ async def create_post_schedule(
     body: PostScheduleCreate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PostSchedule:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     # Verify the referenced draft belongs to this project
     draft_result = await db.execute(
@@ -85,8 +73,9 @@ async def list_post_schedules(
     to_date: Optional[datetime] = Query(None, alias="to"),
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> List[PostSchedule]:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     query = (
         select(PostSchedule)
@@ -109,8 +98,9 @@ async def update_post_schedule(
     body: PostScheduleUpdate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PostSchedule:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     result = await db.execute(
         select(PostSchedule).where(
@@ -139,8 +129,9 @@ async def delete_post_schedule(
     schedule_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     result = await db.execute(
         select(PostSchedule).where(
@@ -170,8 +161,9 @@ async def create_post_record(
     body: PostRecordCreate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PostRecord:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     # Verify draft belongs to this project and update its status to 'published'
     draft_result = await db.execute(
@@ -208,8 +200,9 @@ async def list_post_records(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> List[PostRecord]:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     result = await db.execute(
         select(PostRecord)
@@ -228,8 +221,9 @@ async def delete_post_record(
     record_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     result = await db.execute(
         select(PostRecord).where(

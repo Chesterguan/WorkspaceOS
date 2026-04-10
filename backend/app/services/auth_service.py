@@ -52,6 +52,7 @@ def create_access_token(user_id: str, email: str) -> str:
     payload = {
         "sub": user_id,
         "email": email,
+        "type": "access",
         "exp": expire,
     }
     return jwt.encode(payload, _get_jwt_secret(), algorithm=ALGORITHM)
@@ -71,12 +72,22 @@ def create_refresh_token(user_id: str) -> str:
 
 
 def decode_access_token(token: str) -> Optional[dict]:
-    """Decode and validate a JWT token. Returns the payload or None."""
+    """Decode and validate an access JWT. Returns the payload or None.
+
+    Rejects any token whose ``type`` claim is not ``"access"`` so that refresh
+    tokens and OAuth state tokens (which are signed with the same secret)
+    cannot be replayed as access tokens. Pre-existing tokens without a ``type``
+    claim are accepted for a single rotation window so in-flight logins don't
+    break — remove that branch after all tokens have been reissued.
+    """
     try:
         payload = jwt.decode(token, _get_jwt_secret(), algorithms=[ALGORITHM])
-        return payload
     except JWTError:
         return None
+    token_type = payload.get("type")
+    if token_type is not None and token_type != "access":
+        return None
+    return payload
 
 
 def decode_refresh_token(token: str) -> Optional[str]:
@@ -84,6 +95,38 @@ def decode_refresh_token(token: str) -> Optional[str]:
     try:
         payload = jwt.decode(token, _get_jwt_secret(), algorithms=[ALGORITHM])
         if payload.get("type") != "refresh":
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
+
+
+def create_oauth_state_token(user_id: str, purpose: str) -> str:
+    """Create a short-lived signed state token for OAuth flows.
+
+    Used as the ``state`` parameter sent to the OAuth provider and echoed back
+    in the callback — lets us know which user initiated the flow and prevents
+    CSRF/linking attacks. Expires in 15 minutes.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    payload = {
+        "sub": user_id,
+        "type": "oauth_state",
+        "purpose": purpose,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "jti": str(uuid.uuid4()),
+    }
+    return jwt.encode(payload, _get_jwt_secret(), algorithm=ALGORITHM)
+
+
+def decode_oauth_state_token(token: str, expected_purpose: str) -> Optional[str]:
+    """Verify and decode an OAuth state token. Returns user_id or None."""
+    try:
+        payload = jwt.decode(token, _get_jwt_secret(), algorithms=[ALGORITHM])
+        if payload.get("type") != "oauth_state":
+            return None
+        if payload.get("purpose") != expected_purpose:
             return None
         return payload.get("sub")
     except JWTError:

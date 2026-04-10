@@ -1,13 +1,11 @@
 import uuid
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.chat import ChatMessage
-from app.models.project import Project
 from app.schemas.chat import (
     AdvisorInfo,
     ChatHistoryResponse,
@@ -21,14 +19,6 @@ from app.services.chat_service import STRATEGIC_STARTERS
 
 router = APIRouter(prefix="/projects/{project_id}/chat", tags=["chat"])
 starters_router = APIRouter(prefix="/chat", tags=["chat"])
-
-
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
 
 
 def _to_response(msg: ChatMessage) -> ChatMessageResponse:
@@ -56,9 +46,10 @@ async def send_message(
     body: ChatSendRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ChatRoundtableResponse:
     """Send a message to the Co-Founder roundtable and receive advisor replies."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     messages, routed_ids, group = await chat_service.send_message(
         project_id=project_id,
         user_message=body.message,
@@ -82,9 +73,10 @@ async def get_history(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ChatHistoryResponse:
     """Retrieve paginated chat history for the project (oldest-first)."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     messages, total = await chat_service.get_history(project_id, db, limit=limit, offset=offset)
     return ChatHistoryResponse(
         messages=[_to_response(m) for m in messages],
@@ -97,9 +89,10 @@ async def clear_history(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
     """Delete all chat messages for the project."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     await chat_service.clear_history(project_id, db)
 
 

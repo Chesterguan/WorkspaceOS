@@ -1,16 +1,16 @@
 # Agent State
 
 ## Current Status
-session-end — All features complete, all security issues resolved, 35 tests passing
+session-end — Multi-tenant JWT scoping refactor complete, 35 tests passing
 
 ## Last Completed Task
-Sessions 5-6: Paper Pipeline v2, Co-Founder Roundtable, Research Roundtable, File Ingest, Wiki Layer, Work Log, Auth, Analytics, Publishing (Dev.to + Hashnode), Budget Tracking, Backups, 24-point security/quality audit (23 of 24 fixed)
+Session 7: Multi-tenant JWT scoping audit + fix. Root cause: Chester's login showed 0 projects because `POST /github/repos/import` ignored JWT and assigned imports to demo user. Fixed across 18 routers + 4 services (~540 insertions, ~400 deletions). Added shared `require_owned_project` helper, per-user LinkedIn tokens with OAuth state signing, portfolio/worklog project-list ownership checks, typed JWT tokens (access vs oauth_state), memory search-all allowlist. Reassigned 3 mis-owned projects to Chester. All 35 integration tests still pass.
 
 ## Last Updated
-2026-04-08
+2026-04-10
 
 ## Session Count
-6
+7
 
 ## Tasks Completed This Session
 65+

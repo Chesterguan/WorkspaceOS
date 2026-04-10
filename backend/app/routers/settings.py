@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, require_admin
 from app.schemas.settings import KeysStatusResponse, KeyStatus, SetKeysRequest
 from app.services import settings_service
 from app.services.settings_service import SETTINGS_KEY_MAP, _mask_value
@@ -24,11 +24,11 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 @router.get(
     "/usage",
-    summary="Get AI usage stats",
+    summary="Get AI usage stats (admin only)",
 )
 async def get_usage(
     db: AsyncSession = Depends(get_db),
-    _key: str = Depends(verify_api_key),
+    _key: str = Depends(require_admin),
 ) -> dict:
     """Return AI usage statistics: today, this week, this month, by provider."""
     from app.services.usage_service import get_usage_stats
@@ -38,11 +38,11 @@ async def get_usage(
 @router.get(
     "/keys",
     response_model=KeysStatusResponse,
-    summary="List all API key statuses",
+    summary="List all API key statuses (admin only)",
 )
 async def list_keys(
     db: AsyncSession = Depends(get_db),
-    _key: str = Depends(verify_api_key),
+    _key: str = Depends(require_admin),
 ) -> KeysStatusResponse:
     """Return all recognized keys with masked values and source indicators.
 
@@ -87,12 +87,12 @@ async def list_keys(
 @router.put(
     "/keys",
     response_model=KeysStatusResponse,
-    summary="Save one or more API keys",
+    summary="Save one or more API keys (admin only)",
 )
 async def save_keys(
     body: SetKeysRequest,
     db: AsyncSession = Depends(get_db),
-    _key: str = Depends(verify_api_key),
+    _key: str = Depends(require_admin),
 ) -> KeysStatusResponse:
     """Encrypt and store keys, then reload into runtime settings."""
     for key_name, value in body.keys.items():
@@ -107,19 +107,19 @@ async def save_keys(
     loaded = await settings_service.load_db_keys_into_settings(db)
     logger.info("Saved %d key(s), %d loaded into runtime", len(body.keys), loaded)
 
-    # Return updated status
-    return await list_keys(db=db, _key=_key)
+    # Return updated status — call list_keys directly (both paths are admin-only)
+    return await list_keys(db=db, _key=_key)  # type: ignore[arg-type]
 
 
 @router.delete(
     "/keys/{key_name}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete an API key from the database",
+    summary="Delete an API key from the database (admin only)",
 )
 async def delete_key(
     key_name: str,
     db: AsyncSession = Depends(get_db),
-    _key: str = Depends(verify_api_key),
+    _key: str = Depends(require_admin),
 ) -> None:
     """Remove a key from DB. The .env fallback value (if any) takes effect."""
     if key_name not in SETTINGS_KEY_MAP:
@@ -142,10 +142,10 @@ async def delete_key(
 
 @router.post(
     "/backup",
-    summary="Trigger a manual database backup",
+    summary="Trigger a manual database backup (admin only)",
 )
 async def trigger_backup(
-    _key: str = Depends(verify_api_key),
+    _key: str = Depends(require_admin),
 ) -> dict:
     """Run pg_dump and save to the backup directory."""
     import subprocess
@@ -166,10 +166,10 @@ async def trigger_backup(
 
 @router.get(
     "/backups",
-    summary="List available database backups",
+    summary="List available database backups (admin only)",
 )
 async def list_backups(
-    _key: str = Depends(verify_api_key),
+    _key: str = Depends(require_admin),
 ) -> dict:
     """List all backup files with sizes and dates."""
     import os

@@ -77,6 +77,19 @@ async def _get_or_create_project(
 
 async def seed() -> None:
     async with AsyncSessionLocal() as db:
+        # Idempotency guard: skip seeding entirely if the DB already has real
+        # users. Once the demo account has been renamed / merged into a real
+        # account, re-creating a fresh "demo@prsecretary.dev" row on every
+        # container restart would silently fork project ownership and leak
+        # seed projects onto a parallel account. Only seed on a truly empty DB.
+        existing_count_result = await db.execute(
+            text("SELECT COUNT(*) FROM users")
+        )
+        existing_count = existing_count_result.scalar_one()
+        if existing_count and existing_count > 0:
+            print(f"Seed skipped: {existing_count} user(s) already exist.")
+            return
+
         # ------------------------------------------------------------------
         # 1. Demo user
         # ------------------------------------------------------------------

@@ -16,12 +16,13 @@ Endpoints:
 """
 import base64
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.blog import BlogPost
 from app.models.project import Project
 from app.schemas.paper import (
@@ -76,15 +77,7 @@ _VALID_TEMPLATES = frozenset(["arxiv", "ieee", "acm", "neurips", "icml", "iclr",
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
-
-
-async def _require_blog_post(blog_post_id: str, db: AsyncSession) -> BlogPost:
+async def _require_blog_post(blog_post_id: str, project_id: uuid.UUID, db: AsyncSession) -> BlogPost:
     try:
         post_uuid = uuid.UUID(blog_post_id)
     except ValueError:
@@ -92,7 +85,9 @@ async def _require_blog_post(blog_post_id: str, db: AsyncSession) -> BlogPost:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid blog_post_id: {blog_post_id!r}",
         )
-    result = await db.execute(select(BlogPost).where(BlogPost.id == post_uuid))
+    result = await db.execute(
+        select(BlogPost).where(BlogPost.id == post_uuid, BlogPost.project_id == project_id)
+    )
     post = result.scalar_one_or_none()
     if post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
@@ -114,6 +109,7 @@ async def generate_paper(
     body: PaperGenerateRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PaperGenerateResponse:
     """
     Run the complete multi-pass paper writing pipeline.
@@ -126,7 +122,7 @@ async def generate_paper(
     Progress tags format: `["paper", "progress:N", "step:...", "pass:N/5"]`
     When complete: `["paper", "progress:100", "step:complete"]`
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     if body.paper_type not in _VALID_PAPER_TYPES:
         raise HTTPException(
@@ -168,6 +164,7 @@ async def export_latex(
     body: ExportLatexRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ExportLatexResponse:
     """
     Convert the Markdown paper stored in a BlogPost to LaTeX.
@@ -182,7 +179,7 @@ async def export_latex(
     - `ieee` — IEEEtran conference class
     - `acm` — ACM sigconf class
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     if body.template not in _VALID_TEMPLATES:
         raise HTTPException(
@@ -193,7 +190,7 @@ async def export_latex(
             ),
         )
 
-    post = await _require_blog_post(body.blog_post_id, db)
+    post = await _require_blog_post(body.blog_post_id, project_id, db)
 
     # Retrieve bibtex from the post's tags metadata if stored there,
     # otherwise use the paper content directly (best-effort)
@@ -224,9 +221,10 @@ async def export_pdf(
     body: ExportPdfRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ExportPdfResponse:
     """Compile a paper's LaTeX to PDF using pdflatex."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     if body.template not in _VALID_TEMPLATES:
         raise HTTPException(
@@ -234,7 +232,7 @@ async def export_pdf(
             detail=f"Invalid template '{body.template}'. Must be one of: {sorted(_VALID_TEMPLATES)}",
         )
 
-    post = await _require_blog_post(body.blog_post_id, db)
+    post = await _require_blog_post(body.blog_post_id, project_id, db)
 
     # Generate LaTeX from the paper's stored Markdown
     latex, _ = await paper_service.export_to_latex(
@@ -271,6 +269,7 @@ async def generate_diagram(
     body: GenerateDiagramRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> GenerateDiagramResponse:
     """
     Generate a diagram in two steps:
@@ -285,10 +284,7 @@ async def generate_diagram(
 
     Returns both the source code (for editing) and the rendered SVG string.
     """
-    await _require_project(project_id, db)
-
-    project_result = await db.execute(select(Project).where(Project.id == project_id))
-    project = project_result.scalar_one_or_none()
+    project = await require_owned_project(project_id, db, jwt_user_id)
     project_name = project.name if project else "Project"
 
     diagram_type = body.diagram_type.lower().strip()
@@ -331,6 +327,7 @@ async def suggest_titles(
     body: SuggestTitlesRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> SuggestTitlesResponse:
     """
     Analyse top-cited related papers from Semantic Scholar, identify title patterns,
@@ -340,7 +337,7 @@ async def suggest_titles(
     Useful before running the full paper pipeline when the user wants to pick a
     title rather than letting the AI invent one.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     if body.paper_type not in _VALID_PAPER_TYPES:
         raise HTTPException(
@@ -378,6 +375,7 @@ async def generate_table(
     body: GenerateTableRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> GenerateTableResponse:
     """
     Ask the cloud AI to produce a filled comparison table for this project.
@@ -386,7 +384,7 @@ async def generate_table(
     row items and column criteria. The AI fills every cell. Returns both a
     pipe-delimited markdown table and its LaTeX tabular equivalent.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     # Build a minimal project context for the AI to anchor its answers
     context_block, _ = await paper_service.get_paper_context(project_id, db)
@@ -417,6 +415,7 @@ async def generate_chart(
     body: GenerateChartRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> GenerateChartResponse:
     """
     Generate chart data and a Mermaid visualisation for this project.
@@ -426,7 +425,7 @@ async def generate_chart(
     description you supply. The chart is rendered via Kroki.io and the SVG is
     returned base64-encoded.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     valid_chart_types = frozenset(["bar", "line", "pie", "radar"])
     if body.chart_type.lower() not in valid_chart_types:
@@ -468,6 +467,7 @@ async def generate_figure(
     body: GenerateFigureRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> GenerateFigureResponse:
     """
     Generate a diagram figure using AI + Kroki.io rendering.
@@ -481,7 +481,7 @@ async def generate_figure(
 
     The rendered SVG is returned base64-encoded.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     valid_figure_types = frozenset(["architecture", "flow", "sequence", "class"])
     if body.figure_type.lower() not in valid_figure_types:
@@ -536,9 +536,10 @@ async def generate_paper_v2(
     body: PaperGenerateRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PaperGenerateV2Response:
     """Run the v2 multi-agent section-by-section paper pipeline (5-15 minutes)."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     if body.paper_type not in _VALID_PAPER_TYPES:
         raise HTTPException(
@@ -589,10 +590,11 @@ async def resume_paper(
     blog_post_id: str,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> dict:
     """Resume a paper pipeline that failed mid-run."""
-    await _require_project(project_id, db)
-    post = await _require_blog_post(blog_post_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
+    post = await _require_blog_post(blog_post_id, project_id, db)
 
     result = await paper_pipeline_v2.resume_paper_v2(
         blog_post_id=post.id,
@@ -643,10 +645,11 @@ async def edit_paper(
     body: PaperEditRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PaperEditResponse:
     """Edit an existing paper based on a natural-language instruction."""
-    await _require_project(project_id, db)
-    post = await _require_blog_post(blog_post_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
+    post = await _require_blog_post(blog_post_id, project_id, db)
 
     result = await paper_pipeline_v2.edit_paper(
         blog_post_id=post.id,
@@ -682,6 +685,7 @@ async def generate_portfolio_paper_v2(
     body: PortfolioPaperGenerateRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PaperGenerateV2Response:
     """Run the v2 multi-agent pipeline for a multi-project paper with roundtable review."""
     if body.paper_type not in _VALID_PAPER_TYPES:
@@ -689,6 +693,22 @@ async def generate_portfolio_paper_v2(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid paper_type '{body.paper_type}'. Must be one of: {sorted(_VALID_PAPER_TYPES)}",
         )
+
+    if jwt_user_id:
+        owner_uuid = uuid.UUID(jwt_user_id)
+        result_owned = await db.execute(
+            select(Project.id).where(
+                Project.id.in_(body.project_ids),
+                Project.user_id == owner_uuid,
+            )
+        )
+        owned_ids = {row[0] for row in result_owned.all()}
+        missing = [pid for pid in body.project_ids if pid not in owned_ids]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project(s) not found or not accessible: {missing}",
+            )
 
     try:
         result = await paper_pipeline_v2.generate_portfolio_paper_v2(
@@ -728,6 +748,7 @@ async def generate_portfolio_paper(
     body: PortfolioPaperGenerateRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PaperGenerateResponse:
     """
     Run the complete multi-pass paper writing pipeline across multiple projects.
@@ -750,6 +771,22 @@ async def generate_portfolio_paper(
                 f"Must be one of: {sorted(_VALID_PAPER_TYPES)}"
             ),
         )
+
+    if jwt_user_id:
+        owner_uuid = uuid.UUID(jwt_user_id)
+        result_owned = await db.execute(
+            select(Project.id).where(
+                Project.id.in_(body.project_ids),
+                Project.user_id == owner_uuid,
+            )
+        )
+        owned_ids = {row[0] for row in result_owned.all()}
+        missing = [pid for pid in body.project_ids if pid not in owned_ids]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project(s) not found or not accessible: {missing}",
+            )
 
     try:
         result = await paper_service.generate_portfolio_paper(

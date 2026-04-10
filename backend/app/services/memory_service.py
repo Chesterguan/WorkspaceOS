@@ -121,6 +121,7 @@ async def search_memory_vector(
     limit: int,
     db: AsyncSession,
     cross_project: bool = False,
+    project_id_allowlist: Optional[List[uuid.UUID]] = None,
 ) -> List[MemoryEntry]:
     """Semantic search using pgvector cosine distance (<=>)."""
     ai = get_local_client()
@@ -134,6 +135,10 @@ async def search_memory_vector(
     )
     if not cross_project:
         stmt = stmt.where(MemoryEntry.project_id == project_id)
+    elif project_id_allowlist is not None:
+        if not project_id_allowlist:
+            return []
+        stmt = stmt.where(MemoryEntry.project_id.in_(project_id_allowlist))
 
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -148,6 +153,7 @@ async def search_memory_bm25(
     limit: int,
     db: AsyncSession,
     cross_project: bool = False,
+    project_id_allowlist: Optional[List[uuid.UUID]] = None,
 ) -> List[MemoryEntry]:
     """Full-text BM25 search using PostgreSQL tsvector."""
     tsquery = func.plainto_tsquery("english", query)
@@ -160,6 +166,10 @@ async def search_memory_bm25(
     )
     if not cross_project:
         stmt = stmt.where(MemoryEntry.project_id == project_id)
+    elif project_id_allowlist is not None:
+        if not project_id_allowlist:
+            return []
+        stmt = stmt.where(MemoryEntry.project_id.in_(project_id_allowlist))
 
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -229,20 +239,25 @@ async def search_memory(
     db: AsyncSession,
     cross_project: bool = False,
     rerank: bool = True,
+    project_id_allowlist: Optional[List[uuid.UUID]] = None,
 ) -> List[MemoryEntry]:
     """Hybrid search: pgvector cosine + BM25 full-text, fused with RRF, reranked.
 
     Pipeline: dual retrieval → RRF fusion → FlashRank reranking → top-K.
     Falls back gracefully if BM25 or reranking unavailable.
+
+    When ``cross_project`` is True, ``project_id_allowlist`` (if provided) restricts
+    the search to the given project IDs — pass the authenticated user's project IDs
+    to prevent cross-user leakage.
     """
     fetch_limit = limit * 2
 
     # Run both searches
     vector_results = await search_memory_vector(
-        project_id, query, fetch_limit, db, cross_project
+        project_id, query, fetch_limit, db, cross_project, project_id_allowlist
     )
     bm25_results = await search_memory_bm25(
-        project_id, query, fetch_limit, db, cross_project
+        project_id, query, fetch_limit, db, cross_project, project_id_allowlist
     )
 
     # Fuse results

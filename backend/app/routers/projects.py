@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_optional_user_id, verify_api_key
+from app.dependencies import (
+    get_db,
+    get_optional_user_id,
+    parse_jwt_user_uuid,
+    verify_api_key,
+)
 from app.models.draft import Draft
 from app.models.project import Project
 from app.models.sync import SyncRun
@@ -42,10 +47,22 @@ async def create_project(
     _key: str = Depends(verify_api_key),
     jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Project:
-    # Prefer explicit body.user_id, then JWT user, then DB fallback
-    effective_user_id = body.user_id
-    if effective_user_id is None and jwt_user_id:
-        effective_user_id = uuid.UUID(jwt_user_id)
+    # Ownership resolution:
+    #   JWT auth → always forced to the JWT user (body.user_id is ignored to
+    #              prevent a JWT caller from planting a project in someone
+    #              else's namespace)
+    #   API key  → respect body.user_id if provided, else fall back to the
+    #              first user in the DB (admin / seed / script mode)
+    if jwt_user_id is not None:
+        try:
+            effective_user_id = uuid.UUID(jwt_user_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user id in token",
+            )
+    else:
+        effective_user_id = body.user_id
     resolved_user_id = await _resolve_user_id(effective_user_id, db)
 
     # Enforce unique slug per user
@@ -104,7 +121,7 @@ async def get_projects_stats(
     if user_id:
         proj_query = proj_query.where(Project.user_id == user_id)
     elif jwt_user_id:
-        proj_query = proj_query.where(Project.user_id == uuid.UUID(jwt_user_id))
+        proj_query = proj_query.where(Project.user_id == parse_jwt_user_uuid(jwt_user_id))
     proj_result = await db.execute(proj_query)
     project_ids = [row[0] for row in proj_result.all()]
 
@@ -132,7 +149,7 @@ async def list_projects(
         query = query.where(Project.user_id == user_id)
     elif jwt_user_id:
         # JWT auth: auto-scope to the authenticated user's projects
-        query = query.where(Project.user_id == uuid.UUID(jwt_user_id))
+        query = query.where(Project.user_id == parse_jwt_user_uuid(jwt_user_id))
     # API key auth with no user_id param: return all (admin/script mode)
     result = await db.execute(query)
     return list(result.scalars().all())

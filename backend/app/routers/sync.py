@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.memory import MemoryEntry
 from app.models.project import Project
 from app.models.sync import GitHubCommit, GitHubRelease, SyncRun
@@ -43,26 +43,19 @@ class TimelineResponse(BaseModel):
 router = APIRouter(prefix="/projects/{project_id}/sync", tags=["sync"])
 
 
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
-
-
 @router.post("", response_model=SyncRunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def trigger_sync(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> SyncRun:
     """
     Trigger a GitHub sync for a project.  Runs synchronously within the request
     so the caller gets immediate results. For large repos consider moving to a
     background task queue.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     sync_run = await run_sync(project_id, db)
     return sync_run
 
@@ -72,8 +65,9 @@ async def list_sync_runs(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> list[SyncRun]:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     result = await db.execute(
         select(SyncRun)
         .where(SyncRun.project_id == project_id)
@@ -93,10 +87,11 @@ async def get_project_timeline(
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Dict[str, Any]:
     """Build a chronological timeline of project milestones, releases,
     key commits, and AI-extracted insights. Grouped by month."""
-    project = await _require_project(project_id, db)
+    project = await require_owned_project(project_id, db, jwt_user_id)
 
     events: List[TimelineEvent] = []
 
@@ -187,7 +182,9 @@ async def get_sync_run(
     sync_run_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> SyncRun:
+    await require_owned_project(project_id, db, jwt_user_id)
     result = await db.execute(
         select(SyncRun).where(
             SyncRun.id == sync_run_id,
@@ -206,7 +203,9 @@ async def list_sync_commits(
     sync_run_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> list[GitHubCommit]:
+    await require_owned_project(project_id, db, jwt_user_id)
     result = await db.execute(
         select(GitHubCommit)
         .where(
@@ -224,7 +223,9 @@ async def list_sync_releases(
     sync_run_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> list[GitHubRelease]:
+    await require_owned_project(project_id, db, jwt_user_id)
     result = await db.execute(
         select(GitHubRelease)
         .where(

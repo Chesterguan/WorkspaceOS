@@ -9,15 +9,13 @@ Endpoints:
   POST   /projects/{project_id}/research/search-papers — direct Semantic Scholar search
 """
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.chat import ChatMessage
-from app.models.project import Project
 from app.schemas.research import (
     PaperResult,
     PaperSearchRequest,
@@ -45,13 +43,6 @@ starters_router = APIRouter(prefix="/research", tags=["research"])
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
 
 
 def _to_response(msg: ChatMessage) -> ResearchMessageResponse:
@@ -115,6 +106,7 @@ async def send_research_message(
     body: ResearchMessageRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ResearchRoundtableResponse:
     """
     Send a message to the Research Assistant roundtable and receive reviewer replies.
@@ -122,7 +114,7 @@ async def send_research_message(
     Routes to 3-4 paper reviewers (or a specific reviewer if reviewer_id is set).
     Each reviewer provides citation-aware advice from their unique perspective.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     messages, routed_ids, group = await research_service.send_research_message(
         project_id=project_id,
         user_message=body.message,
@@ -146,9 +138,10 @@ async def get_research_history(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ResearchHistoryResponse:
     """Retrieve paginated research conversation history (oldest-first)."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     messages, total = await research_service.get_research_history(
         project_id, db, limit=limit, offset=offset
     )
@@ -163,9 +156,10 @@ async def clear_research_history(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
     """Delete all research messages for the project. Co-founder chat is unaffected."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     await research_service.clear_research_history(project_id, db)
 
 
@@ -179,6 +173,7 @@ async def search_papers_endpoint(
     body: PaperSearchRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PaperSearchResponse:
     """
     Direct Semantic Scholar paper search for the given query.
@@ -186,7 +181,7 @@ async def search_papers_endpoint(
     Returns structured paper results including pre-formatted citation strings.
     Useful for building a bibliography or exploring the literature landscape.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     raw_papers = await search_papers(body.query, limit=body.limit)
     results = [_paper_dict_to_result(p) for p in raw_papers]
     return PaperSearchResponse(

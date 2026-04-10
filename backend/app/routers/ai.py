@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select, text
+from sqlalchemy import bindparam, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_optional_user_id, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.draft import Draft
 from app.models.project import Project
 from app.models.sync import SyncRun
@@ -28,26 +28,19 @@ from app.services.ai_generation import (
 router = APIRouter(tags=["ai"])
 
 
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
-
-
 @router.post("/projects/{project_id}/generate", response_model=GenerateResponse)
 async def generate_content(
     project_id: uuid.UUID,
     body: GenerateRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> GenerateResponse:
     """
     Generate a platform-specific content draft using the project's narrative,
     memory, and most recent sync data.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     try:
         content, draft_id = await generate_draft(
@@ -69,6 +62,7 @@ async def generate_portfolio(
     body: PortfolioGenerateRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PortfolioGenerateResponse:
     """
     Generate a combined social post covering multiple projects.
@@ -84,6 +78,29 @@ async def generate_portfolio(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="At most 5 project_ids are allowed per portfolio post.",
         )
+
+    # Verify the caller owns every project in the list (JWT users only).
+    if jwt_user_id:
+        try:
+            owner_uuid = uuid.UUID(jwt_user_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user id in token",
+            )
+        owned_rows = await db.execute(
+            select(Project.id).where(
+                Project.id.in_(body.project_ids),
+                Project.user_id == owner_uuid,
+            )
+        )
+        owned_ids = {row[0] for row in owned_rows.all()}
+        missing = [pid for pid in body.project_ids if pid not in owned_ids]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project(s) not found or not accessible: {missing}",
+            )
 
     try:
         content, draft_id, project_names = await generate_portfolio_draft(
@@ -201,58 +218,90 @@ async def dashboard_analytics(
             select(Project.id).where(Project.user_id == user_id)
         )
         user_project_ids = [row[0] for row in pid_result.all()]
+        # Authenticated user has no projects → nothing to query; return empty chart.
+        if not user_project_ids:
+            return DashboardAnalyticsResponse(
+                weeks=[
+                    {
+                        "week": (
+                            datetime.utcnow() - timedelta(days=datetime.utcnow().weekday())
+                        ).replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d"),
+                        "commits": 0, "papers": 0, "drafts": 0, "memory": 0,
+                    }
+                    for _ in range(weeks_back)
+                ],
+                totals={"commits": 0, "papers": 0, "drafts": 0, "memory": 0},
+            )
 
-    # Build optional project filter clause for raw SQL
-    if user_project_ids is not None:
-        pids_str = ",".join(f"'{str(pid)}'" for pid in user_project_ids)
-        project_filter = f"AND project_id IN ({pids_str})" if pids_str else "AND FALSE"
-    else:
-        project_filter = ""
+    # Build raw SQL queries with a parameterized project_id list. Using
+    # ``bindparam(expanding=True)`` means the caller's UUID list is bound as
+    # real SQL parameters rather than string-interpolated, eliminating any
+    # future SQL-injection risk if the source of ``user_project_ids`` changes.
+    scope_clause = "AND project_id IN :pids" if user_project_ids is not None else ""
+    params = {"pids": user_project_ids} if user_project_ids is not None else {}
+
+    def _stmt(sql: str):
+        stmt = text(sql)
+        if user_project_ids is not None:
+            stmt = stmt.bindparams(bindparam("pids", expanding=True))
+        return stmt
 
     # Commits per week
-    commits_result = await db.execute(text(f"""
-        SELECT date_trunc('week', committed_at)::date AS week_start,
-               COUNT(*) AS cnt
-        FROM github_commits
-        WHERE committed_at >= now() - interval '12 weeks'
-        {project_filter}
-        GROUP BY week_start
-        ORDER BY week_start
-    """))
+    commits_result = await db.execute(
+        _stmt(f"""
+            SELECT date_trunc('week', committed_at)::date AS week_start,
+                   COUNT(*) AS cnt
+            FROM github_commits
+            WHERE committed_at >= now() - interval '12 weeks'
+            {scope_clause}
+            GROUP BY week_start
+            ORDER BY week_start
+        """),
+        params,
+    )
 
     # Papers per week (blog_posts tagged 'paper')
-    papers_result = await db.execute(text(f"""
-        SELECT date_trunc('week', created_at)::date AS week_start,
-               COUNT(*) AS cnt
-        FROM blog_posts
-        WHERE created_at >= now() - interval '12 weeks'
-          AND tags @> ARRAY['paper']::text[]
-        {project_filter}
-        GROUP BY week_start
-        ORDER BY week_start
-    """))
+    papers_result = await db.execute(
+        _stmt(f"""
+            SELECT date_trunc('week', created_at)::date AS week_start,
+                   COUNT(*) AS cnt
+            FROM blog_posts
+            WHERE created_at >= now() - interval '12 weeks'
+              AND tags @> ARRAY['paper']::text[]
+            {scope_clause}
+            GROUP BY week_start
+            ORDER BY week_start
+        """),
+        params,
+    )
 
     # Drafts per week
-    drafts_result = await db.execute(text(f"""
-        SELECT date_trunc('week', created_at)::date AS week_start,
-               COUNT(*) AS cnt
-        FROM drafts
-        WHERE created_at >= now() - interval '12 weeks'
-        {project_filter}
-        GROUP BY week_start
-        ORDER BY week_start
-    """))
+    drafts_result = await db.execute(
+        _stmt(f"""
+            SELECT date_trunc('week', created_at)::date AS week_start,
+                   COUNT(*) AS cnt
+            FROM drafts
+            WHERE created_at >= now() - interval '12 weeks'
+            {scope_clause}
+            GROUP BY week_start
+            ORDER BY week_start
+        """),
+        params,
+    )
 
     # Memory entries per week
-    memory_result = await db.execute(text(f"""
-        SELECT date_trunc('week', created_at)::date AS week_start,
-               COUNT(*) AS cnt
-        FROM memory_entries
-        WHERE created_at >= now() - interval '12 weeks'
-        {project_filter}
-        GROUP BY week_start
-        ORDER BY week_start
-    """))
+    memory_result = await db.execute(
+        _stmt(f"""
+            SELECT date_trunc('week', created_at)::date AS week_start,
+                   COUNT(*) AS cnt
+            FROM memory_entries
+            WHERE created_at >= now() - interval '12 weeks'
+            {scope_clause}
+            GROUP BY week_start
+            ORDER BY week_start
+        """),
+        params,
+    )
 
     # Build lookup dicts: ISO date string -> count
     commits_map = {str(row[0]): row[1] for row in commits_result.all()}
@@ -293,11 +342,25 @@ async def generate_summary(
     body: SummaryRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> GenerateResponse:
     """
     Generate an evolution summary for a completed sync run and persist it
     on the SyncRun record.
+
+    The sync run's owning project must belong to the caller; otherwise this
+    endpoint would allow any authenticated user to enumerate and regenerate
+    summaries for other users' projects by guessing sync_run UUIDs.
     """
+    # Resolve sync_run → project, then enforce ownership.
+    sr_result = await db.execute(
+        select(SyncRun.project_id).where(SyncRun.id == body.sync_run_id)
+    )
+    sr_row = sr_result.one_or_none()
+    if sr_row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sync run not found")
+    await require_owned_project(sr_row[0], db, jwt_user_id)
+
     try:
         summary = await generate_evolution_summary(body.sync_run_id, db)
     except ValueError as exc:

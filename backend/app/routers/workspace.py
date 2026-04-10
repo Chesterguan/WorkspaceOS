@@ -2,11 +2,9 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
-from app.models.project import Project
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.schemas.workspace import (
     WorkspaceContextResponse,
     WorkspaceScanRequest,
@@ -17,20 +15,13 @@ from app.services import workspace_scanner
 router = APIRouter(prefix="/projects/{project_id}/workspace", tags=["workspace"])
 
 
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
-
-
 @router.post("/scan", response_model=WorkspaceSnapshotResponse, status_code=status.HTTP_201_CREATED)
 async def scan_workspace(
     project_id: uuid.UUID,
     body: Optional[WorkspaceScanRequest] = None,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> WorkspaceSnapshotResponse:
     """
     Trigger a local workspace scan for the project.
@@ -39,7 +30,7 @@ async def scan_workspace(
     to the path stored on the project record.  Raises 422 if neither is set.
     Body is optional — sending no body or an empty body is allowed.
     """
-    project = await _require_project(project_id, db)
+    project = await require_owned_project(project_id, db, jwt_user_id)
 
     local_path = (body.local_path if body else None) or project.local_path
     if not local_path:
@@ -65,9 +56,10 @@ async def get_workspace_context(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> WorkspaceContextResponse:
     """Return the latest workspace snapshot as a flat context object."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     snapshot = await workspace_scanner.get_latest_snapshot(project_id, db)
     if snapshot is None:

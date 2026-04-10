@@ -5,21 +5,39 @@ Endpoints:
   GET /linkedin/auth      — Return the OAuth authorization URL for the frontend.
   GET /linkedin/callback  — OAuth redirect target; exchanges code for token.
   GET /linkedin/status    — Check whether a LinkedIn token is stored and valid.
+
+Tokens are per-user: the OAuth ``state`` parameter carries a signed JWT
+identifying the initiating user so the callback can persist the token on
+the correct ``users.linkedin_access_token`` row. Cross-user leakage is
+prevented by always scoping /status and /disconnect by the JWT user.
 """
 import html
 import logging
+import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_db
+from app.dependencies import (
+    get_db,
+    get_optional_user_id,
+    parse_jwt_user_uuid,
+    verify_api_key,
+)
 from app.services import linkedin_service
+from app.services.auth_service import (
+    create_oauth_state_token,
+    decode_oauth_state_token,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/linkedin", tags=["linkedin"])
+
+_LINKEDIN_STATE_PURPOSE = "linkedin_connect"
 
 
 # ---------------------------------------------------------------------------
@@ -30,13 +48,17 @@ router = APIRouter(prefix="/linkedin", tags=["linkedin"])
     "/auth",
     summary="Get LinkedIn OAuth authorization URL",
 )
-async def get_auth_url() -> dict:
+async def get_auth_url(
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
     """
     Return the LinkedIn OAuth 2.0 authorization URL.
 
-    The frontend should open this URL (e.g. in a popup or redirect) to
-    start the OAuth flow. After the user authorizes, LinkedIn will redirect
-    to the configured callback URL.
+    Requires authentication — the caller's user ID is embedded in a signed
+    ``state`` token so that the callback can attach the resulting access
+    token to the correct user. API-key callers get None (legacy single-user
+    mode) and skip the state parameter.
     """
     if not settings.linkedin_client_id or not settings.linkedin_client_secret:
         raise HTTPException(
@@ -46,7 +68,10 @@ async def get_auth_url() -> dict:
                 "Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET in your environment."
             ),
         )
-    url = linkedin_service.get_auth_url()
+    state = None
+    if jwt_user_id:
+        state = create_oauth_state_token(jwt_user_id, _LINKEDIN_STATE_PURPOSE)
+    url = linkedin_service.get_auth_url(state=state)
     return {"url": url}
 
 
@@ -64,10 +89,12 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)) -
     """
     Handle the OAuth redirect from LinkedIn.
 
-    Exchanges the authorization code for an access token and stores it.
-    Returns a small HTML page the user can close.
+    Verifies the signed ``state`` token to identify the initiating user,
+    exchanges the code for an access token, and persists the token on that
+    user's row. Returns an HTML page the popup window can close.
     """
     code = request.query_params.get("code")
+    state = request.query_params.get("state")
     error = request.query_params.get("error")
     error_description = request.query_params.get("error_description", "")
 
@@ -94,8 +121,32 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)) -
             status_code=200,
         )
 
+    if not state:
+        logger.warning("LinkedIn OAuth callback missing state parameter")
+        return HTMLResponse(
+            content=_html_page(
+                title="LinkedIn Connection Failed",
+                body="<p>Missing OAuth state. Please start the connection flow again.</p>",
+                success=False,
+            ),
+            status_code=200,
+        )
+
+    user_id_str = decode_oauth_state_token(state, _LINKEDIN_STATE_PURPOSE)
+    if not user_id_str:
+        logger.warning("LinkedIn OAuth state token invalid or expired")
+        return HTMLResponse(
+            content=_html_page(
+                title="LinkedIn Connection Failed",
+                body="<p>OAuth state token is invalid or expired. Please start the connection flow again.</p>",
+                success=False,
+            ),
+            status_code=200,
+        )
+
     try:
-        await linkedin_service.exchange_code(code, db=db)
+        user_uuid = uuid.UUID(user_id_str)
+        await linkedin_service.exchange_code(code, user_id=user_uuid, db=db)
         await db.commit()
     except Exception as exc:
         logger.exception("LinkedIn token exchange failed: %s", exc)
@@ -109,7 +160,7 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)) -
             status_code=200,
         )
 
-    logger.info("LinkedIn OAuth flow completed successfully.")
+    logger.info("LinkedIn OAuth flow completed for user %s", user_id_str)
     return HTMLResponse(
         content=_html_page(
             title="LinkedIn Connected",
@@ -128,24 +179,32 @@ async def oauth_callback(request: Request, db: AsyncSession = Depends(get_db)) -
     "/status",
     summary="Check LinkedIn connection status",
 )
-async def get_status(db: AsyncSession = Depends(get_db)) -> dict:
+async def get_status(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
     """
-    Return whether a LinkedIn access token is stored and the associated
-    profile name when available.
+    Return whether a LinkedIn access token is stored for the authenticated
+    user. API-key callers see the first user's token (admin/legacy).
 
-    Response: { connected: bool, name?: str }
+    Response: { connected: bool }
     """
-    token = linkedin_service.get_stored_token()
-    if not token:
-        # Try loading from DB (e.g. after container restart)
-        token = await linkedin_service.load_token_from_db(db)
-    if not token:
-        return {"connected": False}
+    if jwt_user_id:
+        token = await linkedin_service.load_token_for_user(
+            parse_jwt_user_uuid(jwt_user_id), db
+        )
+    else:
+        # Admin / API key — look at the first user (legacy behavior)
+        from sqlalchemy import select
+        from app.models.user import User
+        result = await db.execute(
+            select(User).order_by(User.created_at.asc()).limit(1)
+        )
+        user = result.scalar_one_or_none()
+        token = user.linkedin_access_token if user else None
 
-    # We have a token — report connected. Profile lookup requires extra scopes
-    # (openid/profile) that may not be approved, so we skip it and just confirm
-    # the token exists. If it's expired, the publish call will surface the error.
-    return {"connected": True}
+    return {"connected": bool(token)}
 
 
 # ---------------------------------------------------------------------------
@@ -156,27 +215,38 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> dict:
     "/disconnect",
     summary="Disconnect LinkedIn (clear stored token)",
 )
-async def disconnect(db: AsyncSession = Depends(get_db)) -> dict:
+async def disconnect(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
     """
-    Clear the stored LinkedIn access token from both the in-memory cache and
-    the database, effectively disconnecting the account.
+    Clear the stored LinkedIn access token for the authenticated user.
 
     Response: { disconnected: true }
     """
-    linkedin_service.clear_token()
-
-    # Also wipe the persisted token in the DB so it does not reload on restart
-    try:
-        from sqlalchemy import select
-        from app.models.user import User
-        result = await db.execute(select(User).limit(1))
-        user = result.scalar_one_or_none()
-        if user and user.linkedin_access_token:
-            user.linkedin_access_token = None
+    if jwt_user_id:
+        try:
+            await linkedin_service.persist_token_for_user(
+                parse_jwt_user_uuid(jwt_user_id), None, db
+            )
             await db.commit()
-            logger.info("LinkedIn access token removed from database.")
-    except Exception as exc:
-        logger.warning("Could not clear LinkedIn token from DB: %s", exc)
+        except Exception as exc:
+            logger.warning("Could not clear LinkedIn token for user %s: %s", jwt_user_id, exc)
+    else:
+        # Admin / API key — clear the first user (legacy behavior)
+        try:
+            from sqlalchemy import select
+            from app.models.user import User
+            result = await db.execute(
+                select(User).order_by(User.created_at.asc()).limit(1)
+            )
+            user = result.scalar_one_or_none()
+            if user and user.linkedin_access_token:
+                user.linkedin_access_token = None
+                await db.commit()
+        except Exception as exc:
+            logger.warning("Could not clear LinkedIn token (admin mode): %s", exc)
 
     return {"disconnected": True}
 

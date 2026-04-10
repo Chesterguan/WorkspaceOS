@@ -8,12 +8,13 @@ Both endpoints follow the same contract:
 - On failure: return success=False with an error message rather than a 500.
 """
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.blog import BlogPost
 from app.models.draft import Draft
 from app.models.project import Project
@@ -41,14 +42,13 @@ async def _require_project_and_draft(
     project_id: uuid.UUID,
     draft_id: uuid.UUID,
     db: AsyncSession,
+    jwt_user_id: Optional[str] = None,
 ) -> Draft:
     """
     Raise 404 if the project or draft does not exist, or if the draft does not
-    belong to the project.
+    belong to the project. Raises 404 if jwt_user_id is set and does not own the project.
     """
-    proj_result = await db.execute(select(Project).where(Project.id == project_id))
-    if proj_result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    await require_owned_project(project_id, db, jwt_user_id)
 
     draft_result = await db.execute(select(Draft).where(Draft.id == draft_id))
     draft = draft_result.scalar_one_or_none()
@@ -74,6 +74,7 @@ async def publish_github_release(
     body: PublishGitHubReleaseRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PublishResponse:
     """
     Create a GitHub Release from the draft content.
@@ -81,7 +82,7 @@ async def publish_github_release(
     The release body is taken directly from the draft. The draft status is
     updated to 'published' and a PostRecord is created on success.
     """
-    await _require_project_and_draft(project_id, draft_id, db)
+    await _require_project_and_draft(project_id, draft_id, db, jwt_user_id)
 
     result = await publish_service.publish_github_release(
         project_id=project_id,
@@ -115,6 +116,7 @@ async def publish_twitter(
     body: PublishTweetRequest,  # noqa: ARG001 — no fields yet, kept for API consistency
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PublishResponse:
     """
     Post the draft to Twitter/X.
@@ -123,7 +125,7 @@ async def publish_twitter(
     reply chain. Single tweets are posted directly. The draft status is updated
     to 'published' and a PostRecord is created on success.
     """
-    await _require_project_and_draft(project_id, draft_id, db)
+    await _require_project_and_draft(project_id, draft_id, db, jwt_user_id)
 
     result = await publish_service.publish_tweet(
         project_id=project_id,
@@ -153,6 +155,7 @@ async def publish_linkedin(
     body: PublishLinkedInRequest,  # noqa: ARG001 — no fields yet, kept for API consistency
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PublishResponse:
     """
     Post the draft to LinkedIn.
@@ -161,7 +164,7 @@ async def publish_linkedin(
     OAuth flow via GET /linkedin/auth. The draft status is updated to
     'published' and a PostRecord is created on success.
     """
-    await _require_project_and_draft(project_id, draft_id, db)
+    await _require_project_and_draft(project_id, draft_id, db, jwt_user_id)
 
     result = await publish_service.publish_linkedin(
         project_id=project_id,
@@ -191,6 +194,7 @@ async def publish_devto(
     body: PublishDevtoRequest,  # noqa: ARG001 — no fields yet, kept for API consistency
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PublishResponse:
     """
     Publish the draft as an article on Dev.to.
@@ -199,7 +203,7 @@ async def publish_devto(
     becomes the article body (Markdown). The draft status is updated to
     'published' and a PostRecord is created on success.
     """
-    await _require_project_and_draft(project_id, draft_id, db)
+    await _require_project_and_draft(project_id, draft_id, db, jwt_user_id)
 
     result = await publish_service.publish_devto(
         project_id=project_id,
@@ -229,9 +233,10 @@ async def publish_hashnode(
     body: PublishHashnodeRequest,  # noqa: ARG001 — no fields yet, kept for API consistency
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PublishResponse:
     """Publish the draft to Hashnode via GraphQL API."""
-    await _require_project_and_draft(project_id, draft_id, db)
+    await _require_project_and_draft(project_id, draft_id, db, jwt_user_id)
     result = await publish_service.publish_hashnode(
         project_id=project_id, draft_id=draft_id, db=db,
     )
@@ -259,14 +264,13 @@ async def _require_project_and_blog_post(
     project_id: uuid.UUID,
     blog_post_id: uuid.UUID,
     db: AsyncSession,
+    jwt_user_id: Optional[str] = None,
 ) -> BlogPost:
     """
     Raise 404 if the project or blog post does not exist, or if the blog post
-    does not belong to the project.
+    does not belong to the project. Raises 404 if jwt_user_id is set and does not own the project.
     """
-    proj_result = await db.execute(select(Project).where(Project.id == project_id))
-    if proj_result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    await require_owned_project(project_id, db, jwt_user_id)
 
     post_result = await db.execute(select(BlogPost).where(BlogPost.id == blog_post_id))
     post = post_result.scalar_one_or_none()
@@ -287,9 +291,10 @@ async def publish_blog_to_devto(
     blog_post_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PublishResponse:
     """Publish a BlogPost (paper or article) to Dev.to as a long-form article."""
-    post = await _require_project_and_blog_post(project_id, blog_post_id, db)
+    post = await _require_project_and_blog_post(project_id, blog_post_id, db, jwt_user_id)
     result = await publish_service.publish_content_to_devto(
         project_id=project_id,
         title=post.title,
@@ -319,9 +324,10 @@ async def publish_blog_to_hashnode(
     blog_post_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PublishResponse:
     """Publish a BlogPost (paper or article) to Hashnode via GraphQL API."""
-    post = await _require_project_and_blog_post(project_id, blog_post_id, db)
+    post = await _require_project_and_blog_post(project_id, blog_post_id, db, jwt_user_id)
     result = await publish_service.publish_content_to_hashnode(
         project_id=project_id,
         title=post.title,

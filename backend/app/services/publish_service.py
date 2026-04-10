@@ -487,23 +487,38 @@ async def publish_linkedin(
     db: AsyncSession,
 ) -> dict:
     """
-    Publish a draft as a LinkedIn post.
+    Publish a draft as a LinkedIn post using the project owner's stored token.
 
-    Requires a valid access token stored via the OAuth flow
+    Requires the project owner to have completed the OAuth flow
     (GET /linkedin/auth → /linkedin/callback).
 
     Returns a dict with keys: success, post_url, post_record_id, error, details.
     Never raises.
     """
-    access_token = linkedin_service.get_stored_token()
+    # Look up the project owner to fetch their LinkedIn token.
+    from sqlalchemy import select
+    from app.models.project import Project
+
+    proj_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = proj_result.scalar_one_or_none()
+    if project is None:
+        return {
+            "success": False,
+            "post_url": None,
+            "post_record_id": None,
+            "error": f"Project {project_id} not found.",
+            "details": None,
+        }
+
+    access_token = await linkedin_service.load_token_for_user(project.user_id, db)
     if not access_token:
         return {
             "success": False,
             "post_url": None,
             "post_record_id": None,
             "error": (
-                "LinkedIn is not connected. "
-                "Visit /linkedin/auth to authorize your account."
+                "LinkedIn is not connected for this project's owner. "
+                "Visit Settings → LinkedIn to authorize your account."
             ),
             "details": None,
         }
@@ -519,18 +534,12 @@ async def publish_linkedin(
         }
 
     # Get the LinkedIn member ID for the author URN.
-    # Try multiple approaches since scope availability varies.
     person_id = None
     try:
         profile = await linkedin_service.get_profile(access_token)
         person_id = profile.get("id") or profile.get("sub")
     except Exception:
-        logger.debug("Profile fetch failed, will try alternative approach")
-
-    if not person_id:
-        # Try /v2/emailAddress as a last resort to get member context
-        # Or use the stored member_id if we saved it during a previous successful call
-        person_id = linkedin_service.get_stored_member_id()
+        logger.debug("LinkedIn profile fetch failed", exc_info=True)
 
     if not person_id:
         return {

@@ -8,9 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.blog import BlogPost, BlogPostVersion
-from app.models.project import Project
 from app.schemas.blog import (
     BlogGenerateRequest,
     BlogPostCreate,
@@ -26,14 +25,6 @@ from app.services.blog_service import (
 )
 
 router = APIRouter(prefix="/projects", tags=["blog"])
-
-
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
 
 
 async def _require_post(
@@ -60,8 +51,9 @@ async def create_post(
     body: BlogPostCreate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> BlogPost:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     return await create_blog_post(project_id, body, db)
 
 
@@ -72,8 +64,9 @@ async def list_posts(
     tag: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> List[BlogPost]:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     query = (
         select(BlogPost)
@@ -99,7 +92,9 @@ async def get_post(
     post_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> BlogPost:
+    await require_owned_project(project_id, db, jwt_user_id)
     return await _require_post(project_id, post_id, db)
 
 
@@ -110,7 +105,9 @@ async def update_post(
     body: BlogPostUpdate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> BlogPost:
+    await require_owned_project(project_id, db, jwt_user_id)
     await _require_post(project_id, post_id, db)
     return await update_blog_post(post_id, body, db)
 
@@ -124,7 +121,9 @@ async def delete_post(
     post_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
+    await require_owned_project(project_id, db, jwt_user_id)
     post = await _require_post(project_id, post_id, db)
     await db.delete(post)
     await db.flush()
@@ -139,7 +138,9 @@ async def list_versions(
     post_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> List[BlogPostVersion]:
+    await require_owned_project(project_id, db, jwt_user_id)
     await _require_post(project_id, post_id, db)
     return await get_version_chain(post_id, db)
 
@@ -154,7 +155,9 @@ async def get_version(
     version_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> BlogPostVersion:
+    await require_owned_project(project_id, db, jwt_user_id)
     await _require_post(project_id, post_id, db)
 
     result = await db.execute(
@@ -179,8 +182,10 @@ async def generate_post(
     body: BlogGenerateRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> BlogPost:
     """AI-generate blog content for an existing post, replacing its current content."""
+    await require_owned_project(project_id, db, jwt_user_id)
     await _require_post(project_id, post_id, db)
 
     try:

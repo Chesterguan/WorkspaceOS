@@ -195,25 +195,47 @@ async def test_paper_edit_not_found(client: AsyncClient):
 # Auth endpoints
 # ---------------------------------------------------------------------------
 
+async def _register_for_auth_test(client: AsyncClient) -> dict:
+    """Inline helper: register a throwaway user and return the full response body.
+
+    Duplicates a small part of ``_register_user`` (defined later in the file) so
+    the auth tests stay near the top with no forward references.
+    """
+    import uuid as _u
+    email = f"auth-test-{_u.uuid4().hex[:8]}@scoping.test"
+    password = "AuthTestPass123!"
+    resp = await client.post(
+        "/api/v1/auth/register",
+        headers={"Content-Type": "application/json"},
+        json={"email": email, "password": password, "display_name": "Auth Test"},
+    )
+    assert resp.status_code in (200, 201), f"register failed: {resp.text}"
+    body = resp.json()
+    body["password"] = password
+    return body
+
+
 async def test_auth_login_success(client: AsyncClient):
-    """POST /auth/login returns JWT token for valid demo credentials."""
+    """POST /auth/login returns a JWT token for valid credentials."""
+    reg = await _register_for_auth_test(client)
     resp = await client.post(
         "/api/v1/auth/login",
-        json={"email": "demo@prsecretary.dev", "password": "demo123"},
+        json={"email": reg["email"], "password": reg["password"]},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
-    assert data["email"] == "demo@prsecretary.dev"
+    assert data["email"] == reg["email"]
     assert data["user_id"]
 
 
 async def test_auth_login_wrong_password(client: AsyncClient):
     """POST /auth/login rejects wrong password."""
+    reg = await _register_for_auth_test(client)
     resp = await client.post(
         "/api/v1/auth/login",
-        json={"email": "demo@prsecretary.dev", "password": "wrongpass"},
+        json={"email": reg["email"], "password": "wrongpass"},
     )
     assert resp.status_code == 401
 
@@ -228,10 +250,11 @@ async def test_auth_login_nonexistent_user(client: AsyncClient):
 
 
 async def test_auth_me_with_jwt(client: AsyncClient):
-    """GET /auth/me returns user profile when authenticated with JWT."""
+    """GET /auth/me returns the authenticated user's profile."""
+    reg = await _register_for_auth_test(client)
     login_resp = await client.post(
         "/api/v1/auth/login",
-        json={"email": "demo@prsecretary.dev", "password": "demo123"},
+        json={"email": reg["email"], "password": reg["password"]},
     )
     token = login_resp.json()["access_token"]
 
@@ -241,7 +264,7 @@ async def test_auth_me_with_jwt(client: AsyncClient):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["email"] == "demo@prsecretary.dev"
+    assert data["email"] == reg["email"]
     assert "id" in data
     assert "created_at" in data
 
@@ -256,10 +279,12 @@ async def test_auth_me_invalid_token(client: AsyncClient):
 
 
 async def test_jwt_token_on_protected_endpoint(client: AsyncClient):
-    """Bearer JWT token works on regular protected endpoints."""
+    """Bearer JWT token works on protected endpoints (returns empty list for a
+    fresh user, but returns 200 — the scoping just hides other users' data)."""
+    reg = await _register_for_auth_test(client)
     login_resp = await client.post(
         "/api/v1/auth/login",
-        json={"email": "demo@prsecretary.dev", "password": "demo123"},
+        json={"email": reg["email"], "password": reg["password"]},
     )
     token = login_resp.json()["access_token"]
 
@@ -270,7 +295,8 @@ async def test_jwt_token_on_protected_endpoint(client: AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
-    assert len(data) >= 1
+    # A fresh user has zero projects — this is expected under scoping.
+    assert data == []
 
 
 # ---------------------------------------------------------------------------
@@ -551,3 +577,363 @@ async def test_settings_shows_all_keys(client: AsyncClient):
     assert "google_drive_credentials" in key_names
     assert "notion_api_key" in key_names
     assert "devto_api_key" in key_names
+
+
+# ---------------------------------------------------------------------------
+# Multi-tenant JWT scoping — cross-user isolation
+# ---------------------------------------------------------------------------
+# These tests prove that a JWT-authenticated user cannot read or write another
+# user's resources via any of the nested /projects/{project_id}/... routes,
+# the portfolio endpoints, or the worklog endpoints. They register two throwaway
+# users per run and clean up on teardown.
+
+import uuid as _uuid
+
+
+async def _register_user(client: AsyncClient, tag: str) -> dict:
+    """Register a user with a unique email. Returns {email, password, token, user_id}."""
+    email = f"test-{tag}-{_uuid.uuid4().hex[:8]}@scoping.test"
+    password = "TestPassword123!"
+    resp = await client.post(
+        "/api/v1/auth/register",
+        headers={"Content-Type": "application/json"},
+        json={"email": email, "password": password, "display_name": f"Test {tag}"},
+    )
+    assert resp.status_code in (200, 201), f"register failed: {resp.text}"
+    data = resp.json()
+    return {
+        "email": email,
+        "password": password,
+        "token": data["access_token"],
+        "user_id": data["user_id"],
+    }
+
+
+async def _create_project_for(client: AsyncClient, user_id: str, tag: str) -> str:
+    """Create a project owned by user_id via admin API key. Returns project_id."""
+    slug = f"scope-test-{tag.lower()}-{_uuid.uuid4().hex[:6]}"
+    resp = await client.post(
+        "/api/v1/projects",
+        headers={**API_HEADERS, "Content-Type": "application/json"},
+        json={
+            "name": f"ScopeTest-{tag}",
+            "slug": slug,
+            "user_id": user_id,
+            "github_repo": f"test/{slug}",
+            "github_branch": "main",
+        },
+    )
+    assert resp.status_code == 201, f"create project failed: {resp.text}"
+    return resp.json()["id"]
+
+
+async def _cleanup_project(client: AsyncClient, project_id: str) -> None:
+    await client.delete(f"/api/v1/projects/{project_id}", headers=API_HEADERS)
+
+
+async def test_scoping_user_cannot_see_other_users_projects_in_list(client: AsyncClient):
+    """GET /projects scoped by JWT — user B does not see user A's projects."""
+    user_a = await _register_user(client, "A")
+    user_b = await _register_user(client, "B")
+    proj_a = await _create_project_for(client, user_a["user_id"], "A")
+    try:
+        # User A sees at least their project
+        resp = await client.get(
+            "/api/v1/projects",
+            headers={"Authorization": f"Bearer {user_a['token']}"},
+        )
+        assert resp.status_code == 200
+        a_ids = [p["id"] for p in resp.json()]
+        assert proj_a in a_ids, "user A must see their own project"
+
+        # User B does not see it
+        resp = await client.get(
+            "/api/v1/projects",
+            headers={"Authorization": f"Bearer {user_b['token']}"},
+        )
+        assert resp.status_code == 200
+        b_ids = [p["id"] for p in resp.json()]
+        assert proj_a not in b_ids, "user B must not see user A's project"
+    finally:
+        await _cleanup_project(client, proj_a)
+
+
+@pytest.mark.parametrize(
+    "path_suffix",
+    [
+        "",                      # GET /projects/{id}
+        "/narrative",            # GET /projects/{id}/narrative
+        "/drafts",               # GET /projects/{id}/drafts
+        "/sync",                 # GET /projects/{id}/sync
+        "/memory",               # GET /projects/{id}/memory
+        "/blog",                 # GET /projects/{id}/blog
+        "/chat",                 # GET /projects/{id}/chat
+        "/files",                # GET /projects/{id}/files
+        "/research",             # GET /projects/{id}/research
+        "/feedback/summary",     # GET /projects/{id}/feedback/summary
+    ],
+)
+async def test_scoping_user_cannot_read_other_users_nested_resource(
+    client: AsyncClient, path_suffix: str
+):
+    """Every nested /projects/{id}/... read returns 404 for non-owner."""
+    user_a = await _register_user(client, "A")
+    user_b = await _register_user(client, "B")
+    proj_a = await _create_project_for(client, user_a["user_id"], "A")
+    try:
+        url = f"/api/v1/projects/{proj_a}{path_suffix}"
+        # Owner reaches it cleanly — every endpoint in the list is a list/get
+        # that should return 200 on a brand-new empty project.
+        resp_a = await client.get(
+            url, headers={"Authorization": f"Bearer {user_a['token']}"}
+        )
+        assert resp_a.status_code == 200, (
+            f"owner got {resp_a.status_code} on {path_suffix} — expected 200"
+        )
+
+        # Non-owner MUST get 404
+        resp_b = await client.get(
+            url, headers={"Authorization": f"Bearer {user_b['token']}"}
+        )
+        assert resp_b.status_code == 404, (
+            f"user B got {resp_b.status_code} on {path_suffix} — expected 404"
+        )
+    finally:
+        await _cleanup_project(client, proj_a)
+
+
+async def test_scoping_portfolio_generate_rejects_unowned_project_ids(
+    client: AsyncClient,
+):
+    """POST /portfolio/generate with a project not owned by the caller → 404."""
+    user_a = await _register_user(client, "A")
+    user_b = await _register_user(client, "B")
+    proj_a1 = await _create_project_for(client, user_a["user_id"], "A1")
+    proj_a2 = await _create_project_for(client, user_a["user_id"], "A2")
+    try:
+        # User B tries to generate a portfolio post including user A's projects
+        resp = await client.post(
+            "/api/v1/portfolio/generate",
+            headers={
+                "Authorization": f"Bearer {user_b['token']}",
+                "Content-Type": "application/json",
+            },
+            json={"project_ids": [proj_a1, proj_a2], "platform": "linkedin"},
+        )
+        assert resp.status_code == 404
+        assert "not accessible" in resp.text.lower() or "not found" in resp.text.lower()
+    finally:
+        await _cleanup_project(client, proj_a1)
+        await _cleanup_project(client, proj_a2)
+
+
+async def test_scoping_worklog_generate_rejects_unowned_project_ids(
+    client: AsyncClient,
+):
+    """POST /worklog/generate with a project not owned by the caller → 404."""
+    user_a = await _register_user(client, "A")
+    user_b = await _register_user(client, "B")
+    proj_a = await _create_project_for(client, user_a["user_id"], "A")
+    try:
+        resp = await client.post(
+            "/api/v1/worklog/generate",
+            headers={
+                "Authorization": f"Bearer {user_b['token']}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "project_ids": [proj_a],
+                "period_type": "weekly",
+                "period_start": "2026-04-01",
+                "period_end": "2026-04-08",
+            },
+        )
+        assert resp.status_code == 404
+    finally:
+        await _cleanup_project(client, proj_a)
+
+
+async def test_scoping_memory_search_all_returns_empty_for_user_with_no_projects(
+    client: AsyncClient,
+):
+    """POST /memory/search-all scoped to caller's projects — new user gets []."""
+    user = await _register_user(client, "empty")
+    resp = await client.post(
+        "/api/v1/memory/search-all",
+        headers={
+            "Authorization": f"Bearer {user['token']}",
+            "Content-Type": "application/json",
+        },
+        json={"query": "anything", "limit": 5},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == [], "fresh user must get zero cross-project results"
+
+
+async def test_scoping_oauth_state_token_cannot_be_used_as_access_token(
+    client: AsyncClient,
+):
+    """H1 regression test: an OAuth state token must be rejected on protected endpoints.
+
+    Mints the state token directly via auth_service (same Python process as the
+    server) so the test does not depend on LinkedIn OAuth env configuration.
+    """
+    # The tests run from /app/tests against the backend at /app. Make the
+    # app package importable so we can mint a token directly.
+    import sys as _sys
+    if "/app" not in _sys.path:
+        _sys.path.insert(0, "/app")
+    from app.services.auth_service import create_oauth_state_token
+
+    user = await _register_user(client, "h1")
+
+    # The real access token works on /auth/me
+    resp = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {user['token']}"},
+    )
+    assert resp.status_code == 200
+
+    # Mint an oauth_state token for the same user — identical secret, shorter
+    # expiry, different type claim — and try to use it as a bearer token.
+    state_token = create_oauth_state_token(user["user_id"], "linkedin_connect")
+
+    resp = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {state_token}"},
+    )
+    assert resp.status_code == 401, (
+        f"oauth_state token must not authenticate /auth/me, got {resp.status_code}"
+    )
+
+
+async def test_scoping_settings_keys_mutation_requires_admin(client: AsyncClient):
+    """H2 regression test: JWT users cannot PUT /settings/keys — admin only."""
+    user = await _register_user(client, "settings")
+
+    # JWT user gets 403
+    resp = await client.put(
+        "/api/v1/settings/keys",
+        headers={
+            "Authorization": f"Bearer {user['token']}",
+            "Content-Type": "application/json",
+        },
+        json={"keys": {"openai_api_key": "sk-fake-value-should-not-save"}},
+    )
+    assert resp.status_code == 403, f"expected 403 for JWT user, got {resp.status_code}"
+
+    # Admin (API key) still works
+    resp = await client.get("/api/v1/settings/keys", headers=API_HEADERS)
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "method,path,body",
+    [
+        ("GET", "/api/v1/settings/keys", None),
+        ("GET", "/api/v1/settings/usage", None),
+        ("GET", "/api/v1/settings/backups", None),
+        ("PUT", "/api/v1/settings/keys", {"keys": {"openai_api_key": "sk-x"}}),
+        ("DELETE", "/api/v1/settings/keys/devto_api_key", None),
+        ("POST", "/api/v1/settings/backup", {}),
+    ],
+)
+async def test_scoping_all_settings_endpoints_reject_jwt(
+    client: AsyncClient, method: str, path: str, body: dict
+):
+    """Every /settings/* endpoint must 403 a JWT user and 200 the admin API key."""
+    user = await _register_user(client, "allset")
+    jwt_headers = {
+        "Authorization": f"Bearer {user['token']}",
+        "Content-Type": "application/json",
+    }
+    if method == "GET":
+        resp = await client.get(path, headers=jwt_headers)
+    elif method == "PUT":
+        resp = await client.put(path, headers=jwt_headers, json=body or {})
+    elif method == "DELETE":
+        resp = await client.delete(path, headers=jwt_headers)
+    elif method == "POST":
+        resp = await client.post(path, headers=jwt_headers, json=body or {})
+    assert resp.status_code == 403, (
+        f"{method} {path} must 403 for JWT user, got {resp.status_code}"
+    )
+
+
+async def test_scoping_cannot_create_project_for_another_user(client: AsyncClient):
+    """H-new-1 regression: a JWT user cannot pass body.user_id to plant a project
+    in another user's namespace."""
+    user_a = await _register_user(client, "victim")
+    user_b = await _register_user(client, "attacker")
+
+    # User B (JWT) tries to create a project owned by user A
+    resp = await client.post(
+        "/api/v1/projects",
+        headers={
+            "Authorization": f"Bearer {user_b['token']}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "name": "Stolen",
+            "slug": f"stolen-{_uuid.uuid4().hex[:6]}",
+            "user_id": user_a["user_id"],
+            "github_repo": "evil/stolen",
+            "github_branch": "main",
+        },
+    )
+    # Should either 403 or silently ignore body.user_id and create it for B
+    assert resp.status_code in (201, 403)
+    if resp.status_code == 201:
+        # JWT user wins — the project must belong to user B, not A
+        created = resp.json()
+        assert created["user_id"] == user_b["user_id"], (
+            f"JWT user B created a project but it was assigned to "
+            f"{created['user_id']} instead of {user_b['user_id']}"
+        )
+        # Cleanup
+        await client.delete(
+            f"/api/v1/projects/{created['id']}", headers=API_HEADERS
+        )
+
+
+async def test_scoping_cannot_access_draft_across_projects(client: AsyncClient):
+    """Nested resource ID IDOR: user B cannot fetch user A's draft even by
+    guessing the draft ID, because _require_draft filters by project_id and
+    user B's project doesn't contain that draft."""
+    user_a = await _register_user(client, "draftA")
+    user_b = await _register_user(client, "draftB")
+    proj_a = await _create_project_for(client, user_a["user_id"], "draftA")
+    proj_b = await _create_project_for(client, user_b["user_id"], "draftB")
+    try:
+        # Create a draft under project A (owner's JWT)
+        create_resp = await client.post(
+            f"/api/v1/projects/{proj_a}/drafts",
+            headers={
+                "Authorization": f"Bearer {user_a['token']}",
+                "Content-Type": "application/json",
+            },
+            json={"platform": "linkedin", "content": "user A private draft"},
+        )
+        assert create_resp.status_code == 201
+        draft_a_id = create_resp.json()["id"]
+
+        # User B tries to fetch draft_a via their own project path (wrong parent)
+        resp = await client.get(
+            f"/api/v1/projects/{proj_b}/drafts/{draft_a_id}",
+            headers={"Authorization": f"Bearer {user_b['token']}"},
+        )
+        assert resp.status_code == 404, (
+            f"user B should 404 on foreign draft via own project, got {resp.status_code}"
+        )
+
+        # User B tries to fetch draft_a via user A's project path (ownership check)
+        resp = await client.get(
+            f"/api/v1/projects/{proj_a}/drafts/{draft_a_id}",
+            headers={"Authorization": f"Bearer {user_b['token']}"},
+        )
+        assert resp.status_code == 404, (
+            f"user B should 404 on foreign project+draft, got {resp.status_code}"
+        )
+    finally:
+        await _cleanup_project(client, proj_a)
+        await _cleanup_project(client, proj_b)

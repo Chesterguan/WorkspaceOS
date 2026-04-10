@@ -10,9 +10,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.ai_feedback import AIFeedback
-from app.models.project import Project
 from app.models.sync import SyncRun
 from app.schemas.ai_feedback import AIFeedbackCreate, AIFeedbackResponse, FeedbackSummaryResponse
 from app.services.agentic_generation import agentic_generate_draft
@@ -21,14 +20,6 @@ from app.services.extraction_service import extract_sync_themes
 from app.services.feedback_service import get_preference_summary, record_feedback
 
 router = APIRouter(prefix="/projects", tags=["agentic"])
-
-
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
 
 
 class AgenticGenerateBody(BaseModel):
@@ -53,12 +44,13 @@ async def generate_agentic(
     body: AgenticGenerateBody,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> AgenticGenerateResponse:
     """
     Run multi-round agentic draft generation with AI self-review.
     Returns the final content, the persisted draft ID, and a trace of each round.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     try:
         content, draft_id, loop_trace = await agentic_generate_draft(
@@ -98,12 +90,13 @@ async def extract_themes(
     sync_run_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ExtractionResponse:
     """
     Extract structured themes from a sync run's commits and releases using AI.
     Stores results on sync_runs.themes_extracted and creates memory entries.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     # Verify the sync run belongs to this project
     sync_result = await db.execute(
@@ -149,12 +142,13 @@ async def consolidate_project_memory(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ConsolidationResponse:
     """
     Synthesise all memory entries for the project into a single consolidated
     summary entry that improves future AI generation quality.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     try:
         entry = await consolidate_memory(project_id=project_id, db=db)
@@ -184,9 +178,10 @@ async def submit_feedback(
     body: AIFeedbackCreate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> AIFeedback:
     """Record human feedback on an AI-generated draft."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     try:
         feedback = await record_feedback(
@@ -215,12 +210,13 @@ async def feedback_summary(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> FeedbackSummaryResponse:
     """
     Return aggregated feedback statistics and a prose preference summary
     for the project, suitable for display or prompt injection.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     # Aggregate raw counts
     result = await db.execute(

@@ -1,17 +1,17 @@
 """
 GitHub repo selector router.
-Allows browsing the demo user's GitHub repos and importing selected ones as projects.
+Lists and imports the authenticated user's GitHub repos as projects.
 """
 import re
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, verify_api_key
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.github import GitHubRepoResponse, RepoImportRequest, RepoImportResponse
@@ -90,16 +90,28 @@ async def import_repos(
     body: RepoImportRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> RepoImportResponse:
     """
     Create projects from a list of selected GitHub repos.
+
+    Ownership resolution (first match wins):
+      1. JWT user from ``Authorization: Bearer`` header
+      2. Explicit ``body.user_id``
+      3. First user in the DB (admin / script / seed mode)
+
     Derives the slug from the repo name. Skips repos whose slug already exists
     for this user. Returns lists of created and skipped slugs.
-
-    Body: {"repos": [{"full_name": "owner/repo", "default_branch": "main"}]}
     """
-    # Resolve user_id: parse the provided value or fall back to the first user in the DB
-    if body.user_id is not None:
+    if jwt_user_id is not None:
+        try:
+            user_id = uuid.UUID(jwt_user_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user id in token",
+            )
+    elif body.user_id is not None:
         try:
             user_id = uuid.UUID(body.user_id)
         except ValueError:

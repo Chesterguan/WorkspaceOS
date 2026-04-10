@@ -7,23 +7,14 @@ from sqlalchemy import cast, select
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_TYPE
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.memory import MemoryEntry
-from app.models.project import Project
 from app.schemas.files import FileListItem, FileListResponse, FileUploadResponse, ImportUrlRequest
 from app.services import file_ingest_service
 
 router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
-
-
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
 
 
 @router.post("/upload", response_model=FileUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -33,13 +24,14 @@ async def upload_file(
     tags: Optional[str] = Form(default=None),
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> MemoryEntry:
     """Upload a file and ingest it into the project's memory.
 
     Accepts multipart form data with a file and optional comma-separated tags.
     Max file size: 10 MB.
     """
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     content_bytes = await file.read()
     if len(content_bytes) > MAX_UPLOAD_BYTES:
@@ -80,9 +72,10 @@ async def import_url(
     body: ImportUrlRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> MemoryEntry:
     """Import content from a URL into the project's memory."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     try:
         return await file_ingest_service.ingest_url(
@@ -106,9 +99,10 @@ async def list_files(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> dict:
     """List ingested files/URLs for a project. Optional ?tag=X filter."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     query = (
         select(MemoryEntry)
@@ -167,9 +161,10 @@ async def delete_file(
     memory_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
     """Delete a file/URL memory entry."""
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
 
     result = await db.execute(
         select(MemoryEntry).where(

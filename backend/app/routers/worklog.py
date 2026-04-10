@@ -7,7 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_optional_user_id, verify_api_key
+from app.dependencies import (
+    get_db,
+    get_optional_user_id,
+    parse_jwt_user_uuid,
+    verify_api_key,
+)
+from app.models.project import Project
 from app.models.worklog import WorkLog
 from app.schemas.worklog import (
     ExportDocxResponse,
@@ -48,6 +54,8 @@ async def generate_worklog(
             detail="period_end must be >= period_start",
         )
 
+    await _verify_owns_all_projects(body.project_ids, jwt_user_id, db)
+
     period_data = await gather_period_data(
         body.project_ids, body.period_start, body.period_end, db,
     )
@@ -74,7 +82,7 @@ async def generate_worklog(
         title += f" +{len(project_names) - 3} more"
 
     log = WorkLog(
-        user_id=uuid.UUID(jwt_user_id) if jwt_user_id else None,
+        user_id=parse_jwt_user_uuid(jwt_user_id) if jwt_user_id else None,
         title=title,
         period_type=body.period_type,
         period_start=body.period_start,
@@ -103,8 +111,9 @@ async def list_worklogs(
     count_query = select(func.count()).select_from(WorkLog)
 
     if jwt_user_id:
-        query = query.where(WorkLog.user_id == uuid.UUID(jwt_user_id))
-        count_query = count_query.where(WorkLog.user_id == uuid.UUID(jwt_user_id))
+        owner_uuid = parse_jwt_user_uuid(jwt_user_id)
+        query = query.where(WorkLog.user_id == owner_uuid)
+        count_query = count_query.where(WorkLog.user_id == owner_uuid)
 
     if period_type:
         query = query.where(WorkLog.period_type == period_type)
@@ -120,17 +129,57 @@ async def list_worklogs(
     return WorkLogListResponse(items=items, total=total)
 
 
+async def _verify_owns_all_projects(
+    project_ids: list,
+    jwt_user_id: Optional[str],
+    db: AsyncSession,
+) -> None:
+    """Raise 404 if the JWT user doesn't own every project in ``project_ids``.
+
+    No-op in API-key (admin) mode. Used before any worklog operation that reads
+    from the `projects` table via raw SQL — the service layer has no user scope.
+    """
+    if not jwt_user_id or not project_ids:
+        return
+    owner_uuid = parse_jwt_user_uuid(jwt_user_id)
+    owned_rows = await db.execute(
+        select(Project.id).where(
+            Project.id.in_(project_ids),
+            Project.user_id == owner_uuid,
+        )
+    )
+    owned_ids = {row[0] for row in owned_rows.all()}
+    missing = [pid for pid in project_ids if pid not in owned_ids]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project(s) not found or not accessible: {missing}",
+        )
+
+
+async def _fetch_owned_worklog(
+    worklog_id: uuid.UUID,
+    db: AsyncSession,
+    jwt_user_id: Optional[str],
+) -> WorkLog:
+    query = select(WorkLog).where(WorkLog.id == worklog_id)
+    if jwt_user_id:
+        query = query.where(WorkLog.user_id == parse_jwt_user_uuid(jwt_user_id))
+    result = await db.execute(query)
+    log = result.scalar_one_or_none()
+    if log is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work log not found")
+    return log
+
+
 @router.get("/{worklog_id}", response_model=WorkLogResponse)
 async def get_worklog(
     worklog_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> WorkLog:
-    result = await db.execute(select(WorkLog).where(WorkLog.id == worklog_id))
-    log = result.scalar_one_or_none()
-    if log is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work log not found")
-    return log
+    return await _fetch_owned_worklog(worklog_id, db, jwt_user_id)
 
 
 @router.put("/{worklog_id}", response_model=WorkLogResponse)
@@ -139,11 +188,9 @@ async def update_worklog(
     body: UpdateWorkLogRequest,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> WorkLog:
-    result = await db.execute(select(WorkLog).where(WorkLog.id == worklog_id))
-    log = result.scalar_one_or_none()
-    if log is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work log not found")
+    log = await _fetch_owned_worklog(worklog_id, db, jwt_user_id)
 
     if body.title is not None:
         log.title = body.title
@@ -162,11 +209,9 @@ async def delete_worklog(
     worklog_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
-    result = await db.execute(select(WorkLog).where(WorkLog.id == worklog_id))
-    log = result.scalar_one_or_none()
-    if log is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work log not found")
+    log = await _fetch_owned_worklog(worklog_id, db, jwt_user_id)
     await db.delete(log)
     await db.flush()
 
@@ -176,12 +221,15 @@ async def export_worklog_docx(
     worklog_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> ExportDocxResponse:
     """Re-gather period data and export the work log as a DOCX file (base64)."""
-    result = await db.execute(select(WorkLog).where(WorkLog.id == worklog_id))
-    log = result.scalar_one_or_none()
-    if log is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work log not found")
+    log = await _fetch_owned_worklog(worklog_id, db, jwt_user_id)
+
+    # Projects in a saved log can drift: re-verify ownership before re-querying
+    # the underlying commits/drafts/papers, otherwise a user who lost access
+    # to a project after the log was created could still pull its current data.
+    await _verify_owns_all_projects(log.project_ids or [], jwt_user_id, db)
 
     period_data = await gather_period_data(
         log.project_ids, log.period_start, log.period_end, db,

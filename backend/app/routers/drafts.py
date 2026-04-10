@@ -2,24 +2,14 @@ import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, verify_api_key
+from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
 from app.models.draft import Draft
-from app.models.project import Project
 from app.schemas.draft import DraftCreate, DraftResponse, DraftUpdate
 from app.services import draft_service
 
 router = APIRouter(prefix="/projects/{project_id}/drafts", tags=["drafts"])
-
-
-async def _require_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
 
 
 async def _require_draft(
@@ -37,8 +27,9 @@ async def create_draft(
     body: DraftCreate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Draft:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     return await draft_service.create_draft(project_id, body, db)
 
 
@@ -48,8 +39,9 @@ async def list_drafts(
     platform: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> List[Draft]:
-    await _require_project(project_id, db)
+    await require_owned_project(project_id, db, jwt_user_id)
     return await draft_service.list_drafts(project_id, db, platform=platform)
 
 
@@ -59,7 +51,9 @@ async def get_draft(
     draft_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Draft:
+    await require_owned_project(project_id, db, jwt_user_id)
     return await _require_draft(project_id, draft_id, db)
 
 
@@ -70,7 +64,9 @@ async def update_draft(
     body: DraftUpdate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Draft:
+    await require_owned_project(project_id, db, jwt_user_id)
     draft = await _require_draft(project_id, draft_id, db)
     return await draft_service.update_draft(draft, body, db)
 
@@ -81,7 +77,9 @@ async def delete_draft(
     draft_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> None:
+    await require_owned_project(project_id, db, jwt_user_id)
     draft = await _require_draft(project_id, draft_id, db)
     await draft_service.delete_draft(draft, db)
 
@@ -93,8 +91,10 @@ async def create_new_version(
     body: DraftUpdate,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Draft:
     """Create a new version of a draft. The body should contain the revised content."""
+    await require_owned_project(project_id, db, jwt_user_id)
     await _require_draft(project_id, draft_id, db)
     if not body.content:
         raise HTTPException(
@@ -115,7 +115,9 @@ async def get_version_chain(
     draft_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> List[Draft]:
     """Return all versions in the chain for a given draft."""
+    await require_owned_project(project_id, db, jwt_user_id)
     await _require_draft(project_id, draft_id, db)
     return await draft_service.get_version_chain(draft_id, db)
