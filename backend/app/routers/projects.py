@@ -23,8 +23,14 @@ from app.schemas.project import (
     ProjectUpdate,
 )
 from app.services import repo_cache
+from app.services.activity_service import log_event
 
 logger = logging.getLogger(__name__)
+
+# Fields whose change is worth surfacing on the activity feed — everything
+# else (status flips, local_path retargets) is plumbing the user doesn't
+# want cluttering their timeline.
+_PROJECT_NOTEWORTHY_FIELDS = {"name", "description", "focus_notes", "github_repo"}
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -192,11 +198,25 @@ async def update_project(
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changed = body.model_dump(exclude_unset=True)
+    for field, value in changed.items():
         setattr(project, field, value)
 
     await db.flush()
     await db.refresh(project)
+
+    # Emit only when a field a human cares about changed — a silent
+    # status/local_path update shouldn't pollute the feed.
+    noteworthy = set(changed.keys()) & _PROJECT_NOTEWORTHY_FIELDS
+    if noteworthy:
+        await log_event(
+            db, project.id, "project.edited",
+            f"Project edited: {', '.join(sorted(noteworthy))}",
+            user_id=uuid.UUID(user_id) if user_id else None,
+            source="user" if user_id else "system",
+            details={"changed_fields": sorted(noteworthy)},
+        )
+
     return project
 
 

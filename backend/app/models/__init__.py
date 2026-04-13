@@ -15,6 +15,7 @@ from app.models.workspace import WorkspaceSnapshot
 from app.models.app_settings import AppSetting
 from app.models.ai_usage import AIUsageLog
 from app.models.worklog import WorkLog
+from app.models.activity import ActivityEvent
 
 __all__ = [
     "User",
@@ -36,4 +37,5 @@ __all__ = [
     "AppSetting",
     "AIUsageLog",
     "WorkLog",
+    "ActivityEvent",
 ]

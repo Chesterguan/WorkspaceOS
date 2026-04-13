@@ -567,6 +567,39 @@ export const research = {
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
 
+// ─── Activity feed ───────────────────────────────────────────────────────────
+
+export interface ActivityEvent {
+  id: string;
+  project_id: string;
+  user_id: string | null;
+  event_type: string;
+  summary: string;
+  details: Record<string, unknown> | null;
+  source: string;
+  created_at: string;
+}
+
+export interface ActivityFeedResponse {
+  items: ActivityEvent[];
+  next_cursor: string | null;
+}
+
+export const activity = {
+  list(
+    projectId: string,
+    opts?: { limit?: number; cursor?: string | null },
+  ): Promise<ActivityFeedResponse> {
+    const params = new URLSearchParams();
+    if (opts?.limit !== undefined) params.set('limit', String(opts.limit));
+    if (opts?.cursor) params.set('cursor', opts.cursor);
+    const qs = params.toString();
+    return apiFetch<ActivityFeedResponse>(
+      `/projects/${projectId}/activity${qs ? `?${qs}` : ''}`,
+    );
+  },
+};
+
 export const workspace = {
   scan(
     projectId: string,

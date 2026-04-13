@@ -23,6 +23,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { PlatformBadge } from "@/components/PlatformBadge";
+import { ActivityFeed } from "@/components/ActivityFeed";
 
 export default function OverviewPage() {
   const { project } = useProjectContext();
@@ -172,6 +173,23 @@ export default function OverviewPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <Separator />
+
+      {/* Activity feed — per-project audit surface: sync runs, worklog
+          generations, wiki refreshes, ingests, edits. New emit sites
+          (MCP / email / calendar) will land here automatically. */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">Activity</h2>
+          <span className="text-[11px] text-muted-foreground">
+            what's happened with this project
+          </span>
+        </div>
+        <div className="rounded-lg border border-border p-2">
+          <ActivityFeed projectId={project.id} />
+        </div>
       </div>
 
       <DraftGeneratePanel

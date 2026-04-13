@@ -245,6 +245,29 @@ async def run_sync(project_id: uuid.UUID, db: AsyncSession) -> SyncRun:
 
     # Fire-and-forget theme extraction after a successful sync.
     if sync_run.status == "completed":
+        # Log the sync to the project activity feed. Uses its own session
+        # because the request session was just committed above — reusing it
+        # would require a fresh transaction for one row, and log_event
+        # swallows errors anyway.
+        try:
+            from app.database import AsyncSessionLocal
+            from app.services.activity_service import log_event
+            async with AsyncSessionLocal() as log_db:
+                await log_event(
+                    log_db,
+                    project_id,
+                    "sync.completed",
+                    f"Synced {sync_run.commits_fetched or 0} commits from GitHub",
+                    source="sync",
+                    details={
+                        "sync_run_id": str(sync_run.id),
+                        "commits_fetched": sync_run.commits_fetched or 0,
+                    },
+                )
+                await log_db.commit()
+        except Exception:
+            logger.exception("Activity logging failed for sync %s (non-blocking)", sync_run.id)
+
         # Update project wiki summary
         try:
             from app.services.memory_service import upsert_wiki_summary

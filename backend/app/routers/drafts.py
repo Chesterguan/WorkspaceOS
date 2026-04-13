@@ -4,10 +4,17 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_optional_user_id, require_owned_project, verify_api_key
+from app.dependencies import (
+    get_db,
+    get_optional_user_id,
+    parse_jwt_user_uuid,
+    require_owned_project,
+    verify_api_key,
+)
 from app.models.draft import Draft
 from app.schemas.draft import DraftCreate, DraftResponse, DraftUpdate
 from app.services import draft_service
+from app.services.activity_service import log_event
 
 router = APIRouter(prefix="/projects/{project_id}/drafts", tags=["drafts"])
 
@@ -30,7 +37,19 @@ async def create_draft(
     jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> Draft:
     await require_owned_project(project_id, db, jwt_user_id)
-    return await draft_service.create_draft(project_id, body, db)
+    draft = await draft_service.create_draft(project_id, body, db)
+    await log_event(
+        db, project_id, "draft.created",
+        f"New {draft.platform} draft: {(draft.title or '(untitled)')[:80]}",
+        user_id=parse_jwt_user_uuid(jwt_user_id) if jwt_user_id else None,
+        source="user" if jwt_user_id else "system",
+        details={
+            "draft_id": str(draft.id),
+            "platform": draft.platform,
+            "title": draft.title,
+        },
+    )
+    return draft
 
 
 @router.get("", response_model=List[DraftResponse])

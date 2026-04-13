@@ -384,6 +384,23 @@ async def perform_scan(
     db.add(snapshot)
     await db.flush()
     await db.refresh(snapshot)
+
+    # Activity feed emit — uses a local import to avoid a circular with
+    # activity_service (which has no module-level deps on the scanner).
+    from app.services.activity_service import log_event
+    scanned_branch = snapshot.git_branch or "unknown"
+    await log_event(
+        db,
+        project_id,
+        "workspace.scanned",
+        f"Workspace scanned on branch {scanned_branch}",
+        source="user",
+        details={
+            "snapshot_id": str(snapshot.id),
+            "branch": snapshot.git_branch,
+            "local_path": snapshot.local_path,
+        },
+    )
     return snapshot
 
 

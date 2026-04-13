@@ -22,6 +22,7 @@ from app.schemas.worklog import (
     WorkLogListResponse,
     WorkLogResponse,
 )
+from app.services.activity_service import log_event
 from app.services.worklog_service import (
     export_to_docx,
     gather_period_data,
@@ -94,6 +95,28 @@ async def generate_worklog(
     db.add(log)
     await db.flush()
     await db.refresh(log)
+
+    # One activity event per project the worklog covers — the feed is
+    # per-project, so a multi-project report surfaces on each project's
+    # page. Tolerates logging failure via log_event's internal swallow.
+    emitter_uid = parse_jwt_user_uuid(jwt_user_id) if jwt_user_id else None
+    for pid in body.project_ids:
+        await log_event(
+            db,
+            pid,
+            "worklog.generated",
+            f"{body.period_type.capitalize()} work log: "
+            f"{body.period_start} → {body.period_end}",
+            user_id=emitter_uid,
+            source="user" if emitter_uid else "system",
+            details={
+                "worklog_id": str(log.id),
+                "period_type": body.period_type,
+                "period_start": str(body.period_start),
+                "period_end": str(body.period_end),
+            },
+        )
+
     return log
 
 

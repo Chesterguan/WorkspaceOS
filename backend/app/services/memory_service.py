@@ -109,6 +109,27 @@ async def add_entry(
     db.add(entry)
     await db.flush()
     await db.refresh(entry)
+
+    # Activity feed: every memory write is user-visible except the wiki
+    # summary (which fires its own "wiki.refreshed" event via
+    # upsert_wiki_summary — skipping here avoids a duplicate line in the
+    # feed for the same operation).
+    if entry_type != "wiki_summary":
+        from app.services.activity_service import log_event
+        preview = (content or "").strip().replace("\n", " ")[:120]
+        await log_event(
+            db,
+            project_id,
+            "memory.added",
+            f"[{entry_type}] {preview}" if preview else f"New {entry_type} entry",
+            source="ingest" if source_ref and source_ref != "manual" else "user",
+            details={
+                "memory_entry_id": str(entry.id),
+                "entry_type": entry_type,
+                "source_ref": source_ref,
+            },
+        )
+
     return entry
 
 
@@ -505,6 +526,13 @@ async def upsert_wiki_summary(
         await db.flush()
         await db.refresh(existing_entry)
         logger.info("Wiki: updated summary for project %s", project_id)
+        from app.services.activity_service import log_event
+        await log_event(
+            db, project_id, "wiki.refreshed",
+            "Project wiki summary updated",
+            source="sync",
+            details={"memory_entry_id": str(existing_entry.id)},
+        )
         return existing_entry
     else:
         entry = await add_entry(
@@ -518,4 +546,11 @@ async def upsert_wiki_summary(
         await db.flush()
         await db.refresh(entry)
         logger.info("Wiki: created summary for project %s", project_id)
+        from app.services.activity_service import log_event
+        await log_event(
+            db, project_id, "wiki.refreshed",
+            "Project wiki summary created",
+            source="sync",
+            details={"memory_entry_id": str(entry.id)},
+        )
         return entry
