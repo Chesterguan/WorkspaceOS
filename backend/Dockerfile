@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
-# Install system deps needed by asyncpg (C extensions)
+# Install system deps needed by asyncpg (C extensions), git for the repo-cache
+# service (clone/fetch remote-only projects), and ca-certificates for HTTPS.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
@@ -9,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-latex-extra \
     texlive-fonts-recommended \
     postgresql-client \
+    git \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

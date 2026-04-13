@@ -1,3 +1,4 @@
+import os
 import uuid
 from typing import Optional
 
@@ -24,30 +25,50 @@ async def scan_workspace(
     jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> WorkspaceSnapshotResponse:
     """
-    Trigger a local workspace scan for the project.
+    Trigger a workspace scan for the project.
 
-    Uses `local_path` from the request body if provided; otherwise falls back
-    to the path stored on the project record.  Raises 422 if neither is set.
-    Body is optional — sending no body or an empty body is allowed.
+    Path resolution, in order:
+      1. `body.local_path` if the caller pinned one explicitly.
+      2. `project.local_path` if it exists on disk (locally-mounted repo).
+      3. A persistent shallow clone of `project.github_repo` at `body.branch`
+         (or `project.github_branch`) via repo_cache — the remote-only path.
+
+    Raises 422 only when none of the above is achievable (no path, no remote).
     """
     project = await require_owned_project(project_id, db, jwt_user_id)
 
-    local_path = (body.local_path if body else None) or project.local_path
-    if not local_path:
+    requested_path = body.local_path if body else None
+    requested_branch = body.branch if body else None
+    local_path: Optional[str] = requested_path or project.local_path
+
+    usable_local = bool(local_path) and os.path.isdir(local_path)
+    if not usable_local and not project.github_repo:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                "No local_path provided. Either pass 'local_path' in the request body "
-                "or set it on the project record first."
+                "Cannot scan: no valid local_path and no github_repo to clone. "
+                "Either pass a 'local_path' that exists on disk, set one on the "
+                "project, or connect a GitHub repo."
             ),
         )
 
-    # Persist the path on the project if it wasn't already stored
-    if not project.local_path and local_path:
-        project.local_path = local_path
+    # Only persist an explicit mounted path — never persist the remote-cache
+    # fallback directory, because it's branch-scoped and internal.
+    if requested_path and usable_local and not project.local_path:
+        project.local_path = requested_path
         await db.flush()
 
-    snapshot = await workspace_scanner.perform_scan(project_id, local_path, db)
+    # If the stored/requested path exists, pass it through (fast path); else
+    # pass None so the scanner triggers the repo_cache fallback.
+    scanner_path: Optional[str] = local_path if usable_local else None
+
+    snapshot = await workspace_scanner.perform_scan(
+        project_id,
+        scanner_path,
+        db,
+        project=project,
+        branch=requested_branch,
+    )
     return snapshot
 
 

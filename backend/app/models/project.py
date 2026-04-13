@@ -27,6 +27,10 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # User-pinned context the AI must respect on every prompt touching this
+    # project — commitments, deadlines, "this week's focus". Never
+    # overwritten by AI; opposite discipline from the auto-generated wiki.
+    focus_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     github_repo: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     github_full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     github_branch: Mapped[str] = mapped_column(String(100), nullable=False, default="main")

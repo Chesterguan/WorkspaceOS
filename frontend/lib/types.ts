@@ -18,6 +18,8 @@ export interface Project {
   name: string;
   slug: string;
   description: string | null;
+  /** User-pinned context the AI must respect (commitments, deadlines, focus). */
+  focus_notes: string | null;
   github_repo: string | null;
   github_branch: string;
   status: string;
@@ -31,6 +33,7 @@ export interface ProjectCreate {
   name: string;
   slug: string;
   description?: string;
+  focus_notes?: string;
   github_repo?: string;
   github_branch?: string;
 }
@@ -39,6 +42,7 @@ export interface ProjectUpdate {
   name?: string;
   slug?: string;
   description?: string;
+  focus_notes?: string;
   github_repo?: string;
   github_branch?: string;
   status?: string;

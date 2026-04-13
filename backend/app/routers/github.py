@@ -2,22 +2,35 @@
 GitHub repo selector router.
 Lists and imports the authenticated user's GitHub repos as projects.
 """
+import os
 import re
+import time
 import uuid
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_db, get_optional_user_id, verify_api_key
+from app.dependencies import (
+    get_db,
+    get_optional_user_id,
+    require_owned_project,
+    verify_api_key,
+)
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.github import GitHubRepoResponse, RepoImportRequest, RepoImportResponse
 from app.services.github_client import GitHubClient
 
 router = APIRouter(prefix="/github", tags=["github"])
+
+# In-memory cache for the branches endpoint: { (user_id, repo) -> (expires_at, list) }
+# Branches are listed relatively often from the UI; caching for 5 minutes keeps
+# the GitHub API rate limit happy without serving stale data for long.
+_BRANCHES_CACHE_TTL_SEC = 300
+_branches_cache: Dict[Tuple[str, str], Tuple[float, List[dict]]] = {}
 
 
 def _repo_name_to_slug(name: str) -> str:
@@ -154,6 +167,14 @@ async def import_repos(
             skipped.append(slug)
             continue
 
+        # Only wire up a local_path when the repo actually exists at the
+        # Docker volume mount — otherwise leave it NULL so the workspace
+        # scanner falls back to the remote repo_cache path. Previously this
+        # hard-coded a fake path like /projects/<name>, which broke every
+        # feature that expected a real directory.
+        candidate_local = f"/projects/{repo_name}"
+        local_path = candidate_local if os.path.isdir(candidate_local) else None
+
         project = Project(
             user_id=user_id,
             name=repo_name,
@@ -162,8 +183,7 @@ async def import_repos(
             github_repo=repo_item.full_name,
             github_branch=repo_item.default_branch,
             github_full_name=repo_item.full_name,
-            # Map to the Docker volume mount where /Volumes/extraSupply/Projects is /projects
-            local_path=f"/projects/{repo_name}",
+            local_path=local_path,
             status="active",
         )
         db.add(project)
@@ -171,3 +191,92 @@ async def import_repos(
         created.append(slug)
 
     return RepoImportResponse(created=created, skipped=skipped)
+
+
+@router.get(
+    "/projects/{project_id}/branches",
+    summary="List branches of the GitHub repo linked to a project",
+)
+async def list_project_branches(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> List[dict]:
+    """
+    Return the list of branches for `project.github_repo` via the GitHub REST
+    API. Each item is { name, is_default, commit_sha }. Results are cached in
+    memory for 5 minutes per (user, repo) to avoid hammering GitHub every time
+    the branch picker is opened.
+    """
+    project = await require_owned_project(project_id, db, jwt_user_id)
+
+    if not project.github_repo:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Project has no github_repo set; cannot list branches.",
+        )
+    if not settings.github_token:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No GitHub token configured.",
+        )
+
+    cache_key = (str(project.user_id), project.github_repo)
+    now = time.monotonic()
+    cached = _branches_cache.get(cache_key)
+    if cached is not None and cached[0] > now:
+        return cached[1]
+
+    default_branch = project.github_branch or "main"
+    branches: List[dict] = []
+
+    import httpx
+    url = f"https://api.github.com/repos/{project.github_repo}/branches"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            page = 1
+            while True:
+                resp = await client.get(
+                    url,
+                    params={"per_page": 100, "page": page},
+                    headers={
+                        "Authorization": f"Bearer {settings.github_token}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                )
+                if resp.status_code == 404:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"GitHub repo '{project.github_repo}' not found.",
+                    )
+                if resp.status_code == 401:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="GitHub token is invalid or expired.",
+                    )
+                resp.raise_for_status()
+                rows = resp.json()
+                for row in rows:
+                    name = row.get("name", "")
+                    branches.append({
+                        "name": name,
+                        "is_default": name == default_branch,
+                        "commit_sha": (row.get("commit") or {}).get("sha", ""),
+                    })
+                # GitHub returns fewer than 100 on the last page
+                if len(rows) < 100:
+                    break
+                page += 1
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to fetch branches from GitHub: {exc}",
+        )
+
+    # Sort: default first, then alphabetical
+    branches.sort(key=lambda b: (not b["is_default"], b["name"]))
+
+    _branches_cache[cache_key] = (now + _BRANCHES_CACHE_TTL_SEC, branches)
+    return branches

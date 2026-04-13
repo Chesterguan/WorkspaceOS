@@ -272,19 +272,50 @@ def scan_local_workspace(local_path: str) -> Dict[str, str]:
 
 async def perform_scan(
     project_id: uuid.UUID,
-    local_path: str,
+    local_path: Optional[str],
     db: AsyncSession,
+    project: Optional["Project"] = None,  # noqa: F821
+    branch: Optional[str] = None,
 ) -> WorkspaceSnapshot:
     """
     Run a full workspace scan, summarise with the local AI model, and persist
     the result as a WorkspaceSnapshot.
 
+    Resolution order for the scanned directory:
+      1. `local_path` if it already exists on disk (fast path for
+         locally-mounted projects).
+      2. Otherwise, if `project` has a `github_repo`, fall back to a
+         persistent shallow clone via `repo_cache` — targets `branch` if
+         supplied, else `project.github_branch`. This is what lets
+         remote-only projects be scanned at all.
+
     The scan itself is CPU/IO-bound (subprocess calls), so it runs in the
     default executor to avoid blocking the event loop.
     """
+    effective_path = local_path
+    if not effective_path or not os.path.isdir(effective_path):
+        if project is None or not getattr(project, "github_repo", None):
+            raise ValueError(
+                "No usable local_path and no github_repo to clone from; "
+                "cannot scan this project."
+            )
+        # Lazy imports keep the test-time surface area of this module small
+        # and avoid a circular with app.config (which settings_service touches).
+        from app.config import settings
+        from app.services import repo_cache
+
+        target_branch = branch or project.github_branch or "main"
+        logger.info(
+            "Falling back to repo_cache clone for project %s branch %s",
+            project.slug, target_branch,
+        )
+        effective_path = await repo_cache.get_or_clone_branch(
+            project, target_branch, settings.github_token
+        )
+
     loop = asyncio.get_event_loop()
     raw_data: Dict[str, str] = await loop.run_in_executor(
-        None, scan_local_workspace, local_path
+        None, scan_local_workspace, effective_path
     )
 
     # Build a compact text representation for summarisation
@@ -329,7 +360,7 @@ async def perform_scan(
     except Exception:
         logger.exception(
             "Local AI summarisation failed for workspace %s; storing raw data only",
-            local_path,
+            effective_path,
         )
         # Fallback: compose a minimal summary from available data
         parts: List[str] = []
@@ -343,7 +374,7 @@ async def perform_scan(
 
     snapshot = WorkspaceSnapshot(
         project_id=project_id,
-        local_path=local_path,
+        local_path=effective_path,
         summary=summary,
         raw_data=raw_data,
         git_branch=raw_data.get("git_branch") or None,

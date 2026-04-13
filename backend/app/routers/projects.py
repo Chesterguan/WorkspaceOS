@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import List, Optional
 
@@ -21,6 +22,9 @@ from app.schemas.project import (
     ProjectStatsResponse,
     ProjectUpdate,
 )
+from app.services import repo_cache
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -210,5 +214,23 @@ async def delete_project(
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    # Snapshot the fields repo_cache needs BEFORE delete — once the row is
+    # gone the ORM object is detached and attribute access gets dicey.
+    cache_proxy = type(
+        "CacheTarget", (),
+        {"user_id": project.user_id, "slug": project.slug},
+    )()
+
     await db.delete(project)
     await db.flush()
+
+    # Best-effort filesystem cleanup of the persistent repo-cache clones for
+    # this project. Failures are logged but never block the delete.
+    try:
+        await repo_cache.remove_repo_cache(cache_proxy)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "repo_cache cleanup failed for deleted project %s: %s",
+            project_id, exc,
+        )

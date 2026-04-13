@@ -6,8 +6,13 @@ from pydantic import BaseModel
 
 
 class WorkspaceScanRequest(BaseModel):
-    # If provided, overrides the project's stored local_path for this scan
+    # If provided, overrides the project's stored local_path for this scan.
     local_path: Optional[str] = None
+    # Which git branch to scan. Only meaningful for the repo-cache fallback
+    # path (remote-only projects). When omitted, defaults to the project's
+    # tracked `github_branch`. Ignored when `local_path` points to a real
+    # directory — that scan always reflects whatever is checked out there.
+    branch: Optional[str] = None
 
 
 class WorkspaceSnapshotResponse(BaseModel):

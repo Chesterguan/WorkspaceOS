@@ -365,6 +365,12 @@ export const memory = {
 
 // ─── GitHub ──────────────────────────────────────────────────────────────────
 
+export interface GitHubBranch {
+  name: string;
+  is_default: boolean;
+  commit_sha: string;
+}
+
 export const github = {
   listRepos(): Promise<GitHubRepo[]> {
     return apiFetch<GitHubRepo[]>('/github/repos');
@@ -375,6 +381,10 @@ export const github = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  listBranches(projectId: string): Promise<GitHubBranch[]> {
+    return apiFetch<GitHubBranch[]>(`/github/projects/${projectId}/branches`);
   },
 };
 
@@ -558,9 +568,16 @@ export const research = {
 // ─── Workspace ────────────────────────────────────────────────────────────────
 
 export const workspace = {
-  scan(projectId: string, localPath?: string): Promise<WorkspaceSnapshot> {
+  scan(
+    projectId: string,
+    opts?: { localPath?: string; branch?: string },
+  ): Promise<WorkspaceSnapshot> {
     return apiFetch<WorkspaceSnapshot>(`/projects/${projectId}/workspace/scan`, {
-      method: 'POST', body: JSON.stringify({ local_path: localPath }),
+      method: 'POST',
+      body: JSON.stringify({
+        local_path: opts?.localPath,
+        branch: opts?.branch,
+      }),
     });
   },
   context(projectId: string): Promise<WorkspaceContext> {
