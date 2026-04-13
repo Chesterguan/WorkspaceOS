@@ -391,6 +391,20 @@ async def upsert_wiki_summary(
 
     context_parts: List[str] = []
 
+    # User-pinned focus first — authoritative, the AI should let it shape what
+    # the wiki emphasises (current priorities, deadlines, open questions).
+    # Fetched inline rather than via the ORM to avoid pulling the whole
+    # Project row just for one column.
+    focus_row = await db.execute(
+        text("SELECT focus_notes FROM projects WHERE id = :pid"),
+        {"pid": str(project_id)},
+    )
+    focus_value = focus_row.scalar_one_or_none()
+    if focus_value and focus_value.strip():
+        context_parts.append(
+            "## Current User Focus (authoritative)\n" + focus_value.strip()
+        )
+
     try:
         narrative = await get_or_create(project_id, db)
         ctx = build_context_block(narrative)

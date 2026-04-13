@@ -26,12 +26,32 @@ async def gather_period_data(
     """Query commits, papers, drafts, and syncs for the given projects + date range."""
     pid_list = [str(p) for p in project_ids]
 
-    # Project names
+    # Project names + pinned focus_notes in one query.
     rows = await db.execute(
-        text("SELECT id, name FROM projects WHERE id = ANY(:ids)"),
+        text("SELECT id, name, focus_notes FROM projects WHERE id = ANY(:ids)"),
         {"ids": pid_list},
     )
-    project_names = {str(r[0]): r[1] for r in rows.fetchall()}
+    project_names: Dict[str, str] = {}
+    focus_notes: Dict[str, Optional[str]] = {}
+    for r in rows.fetchall():
+        project_names[str(r[0])] = r[1]
+        focus_notes[str(r[0])] = r[2]
+
+    # Latest wiki_summary per project — the evolving "what is this project"
+    # narrative already maintained by memory_service.upsert_wiki_summary.
+    # One entry per project by construction, but DISTINCT ON guards against
+    # duplicates if that invariant ever slips.
+    rows = await db.execute(
+        text("""
+            SELECT DISTINCT ON (project_id) project_id, content
+            FROM memory_entries
+            WHERE project_id = ANY(:ids)
+              AND entry_type = 'wiki_summary'
+            ORDER BY project_id, created_at DESC
+        """),
+        {"ids": pid_list},
+    )
+    wiki_by_project: Dict[str, str] = {str(r[0]): r[1] for r in rows.fetchall()}
 
     # Total commits per project
     rows = await db.execute(
@@ -111,6 +131,19 @@ async def gather_period_data(
         for r in rows.fetchall()
     ]
 
+    # project_context: per-project narrative baseline the LLM should treat as
+    # authoritative (user-pinned focus + AI-maintained wiki). Empty when a
+    # project has no pinned notes and no wiki yet — prompt section still
+    # renders but stays terse.
+    project_context: Dict[str, Dict[str, Optional[str]]] = {
+        pid: {
+            "name": project_names.get(pid, pid),
+            "focus": focus_notes.get(pid),
+            "wiki": wiki_by_project.get(pid),
+        }
+        for pid in pid_list
+    }
+
     return {
         "project_names": project_names,
         "commits_by_project": commits_by_project,
@@ -118,6 +151,7 @@ async def gather_period_data(
         "papers": papers,
         "drafts_by_status": drafts_by_status,
         "syncs": syncs,
+        "project_context": project_context,
         "period_start": str(start_date),
         "period_end": str(end_date),
     }
@@ -127,28 +161,68 @@ async def gather_period_data(
 # Report generation
 # ---------------------------------------------------------------------------
 
+# All three templates share one discipline: treat the Project Context section
+# (user-pinned focus + evolving wiki summary) as the narrative baseline, then
+# use the metrics that follow as evidence of progress within that narrative.
+# Without this nudge the LLM re-describes each project from scratch every
+# report, producing bullet-list reports that read like incident logs.
+_CONTEXT_DIRECTIVE = (
+    "The 'Project Context' section is your ground truth: the 'Current focus' "
+    "is what the user explicitly wants tracked this period — call out progress "
+    "against it. The wiki summary tells you what each project IS; do not "
+    "re-explain it. Frame the metrics below as a slice of that ongoing story."
+)
+
 _TEMPLATES = {
     "weekly": (
         "You are a concise technical writer producing a weekly progress report for a "
         "software engineering supervisor. Keep it to roughly 1 page. Use markdown. "
         "Include sections: Summary, Key Accomplishments, Commits Overview, Issues & Blockers, "
-        "Next Week Goals. Use bullet points. Include a markdown table summarising commits per project."
+        "Next Week Goals. Use bullet points. Include a markdown table summarising commits per project. "
+        + _CONTEXT_DIRECTIVE
     ),
     "monthly": (
         "You are a technical writer producing a detailed monthly progress report for a "
         "software engineering supervisor. Use markdown. Include sections: Executive Summary, "
         "Project Highlights (per project), Metrics (commits, papers, drafts — use a markdown table), "
         "Key Achievements, Challenges & Mitigations, Goals Review, Next Month Plan. "
-        "Be thorough with metrics and concrete examples."
+        "Be thorough with metrics and concrete examples. "
+        + _CONTEXT_DIRECTIVE
     ),
     "quarterly": (
         "You are a strategic technical writer producing a quarterly review for senior leadership. "
         "Use markdown. Include sections: Quarter Overview, Strategic Accomplishments, "
         "Project Summaries (per project with metrics table), Research Output, "
         "Key Metrics & Trends, Challenges Faced, Lessons Learned, Next Quarter Objectives. "
-        "Focus on impact and trends rather than low-level details."
+        "Focus on impact and trends rather than low-level details. "
+        + _CONTEXT_DIRECTIVE
     ),
 }
+
+# Cap the wiki-per-project slice to keep the prompt under control when the
+# report covers many projects. Tuned to leave room for focus + metrics in a
+# typical 8k-token budget.
+_WIKI_CHARS_PER_PROJECT = 1500
+
+
+def _build_context_block(project_context: Dict[str, Dict[str, Optional[str]]]) -> str:
+    """Render per-project focus + wiki as a markdown section for the prompt."""
+    if not project_context:
+        return ""
+    parts: List[str] = ["## Project Context"]
+    for ctx in project_context.values():
+        parts.append(f"### {ctx.get('name') or 'Unnamed project'}")
+        focus = (ctx.get("focus") or "").strip()
+        parts.append(f"**Current focus (user-pinned):** {focus or '—'}")
+        wiki = (ctx.get("wiki") or "").strip()
+        if wiki:
+            if len(wiki) > _WIKI_CHARS_PER_PROJECT:
+                wiki = wiki[:_WIKI_CHARS_PER_PROJECT] + "\n… (truncated)"
+            parts.append("**Project wiki summary:**")
+            parts.append(wiki)
+        else:
+            parts.append("**Project wiki summary:** (no wiki generated yet)")
+    return "\n".join(parts)
 
 
 async def generate_report(
@@ -160,15 +234,29 @@ async def generate_report(
     """Call cloud AI to generate the progress report markdown."""
     system_prompt = _TEMPLATES.get(period_type, _TEMPLATES["weekly"])
 
-    user_parts = [
+    user_parts: List[str] = [
         f"Period: {period_data['period_start']} to {period_data['period_end']}",
         f"Projects: {', '.join(period_data['project_names'].values())}",
-        f"\nCommits by project: {period_data['commits_by_project']}",
+    ]
+
+    # Project Context goes first so the LLM anchors on the narrative before
+    # seeing the metrics. Rendered only when we actually have context to
+    # show — prevents a lonely "## Project Context" header over nothing.
+    context_block = _build_context_block(period_data.get("project_context") or {})
+    if context_block:
+        user_parts.append("")
+        user_parts.append(context_block)
+
+    user_parts.extend([
+        "",
+        "## Period Metrics",
+        f"Commits by project: {period_data['commits_by_project']}",
         f"Weekly commit breakdown: {period_data['weekly_commits']}",
         f"Papers published: {period_data['papers']}",
         f"Drafts by status: {period_data['drafts_by_status']}",
         f"Sync runs: {period_data['syncs']}",
-    ]
+    ])
+
     if goals:
         user_parts.append(f"\nGoals status: {goals}")
     if additional_instructions:
