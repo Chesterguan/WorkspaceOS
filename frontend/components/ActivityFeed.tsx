@@ -43,6 +43,7 @@ const EVENT_ICONS: Record<string, { icon: typeof GitBranch; color: string }> = {
   "ingest.email":             { icon: Mail,         color: "text-sky-400" },
   "ingest.outlook_calendar":  { icon: CalendarDays, color: "text-blue-400" },
   "ingest.outlook_mail":      { icon: Mail,         color: "text-blue-400" },
+  "ingest.mac_outlook":       { icon: HardDrive,    color: "text-emerald-400" },
 };
 
 const DEFAULT_ICON = { icon: ActivityIcon, color: "text-muted-foreground/70" };

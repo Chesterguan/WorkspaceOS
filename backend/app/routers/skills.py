@@ -22,9 +22,11 @@ from app.dependencies import (
     parse_jwt_user_uuid,
     verify_api_key,
 )
+from app.schemas.local_ingest import LocalIngestRequest, LocalIngestResponse
 from app.services import (
     google_calendar_service,
     google_oauth_service,
+    local_ingest_service,
     microsoft_oauth_service,
     outlook_calendar_service,
     outlook_mail_service,
@@ -168,3 +170,33 @@ async def outlook_mail_sync(
         raise HTTPException(status_code=code, detail=message)
     await db.commit()
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Local ingest — generic sink for host-side bridges (Mac Outlook AppleScript
+# today; anything that can POST JSON tomorrow).
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/local-ingest/items",
+    response_model=LocalIngestResponse,
+    summary="Ingest items from a host-side bridge (e.g. Mac Outlook)",
+)
+async def local_ingest_items(
+    body: LocalIngestRequest,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> LocalIngestResponse:
+    """
+    Accept a batched payload of calendar events / emails / (future) anything
+    from the user's Mac, classify each into a project, and write to memory.
+
+    Auth is the standard JWT + API key pair — the bridge script obtains a
+    JWT at install time via /auth/login and stores it in a 0600 config
+    file in the user's home dir. Items are attributed to the JWT user.
+    """
+    user_id = _require_user(jwt_user_id)
+    summary = await local_ingest_service.ingest_items(user_id, body.items, db)
+    await db.commit()
+    return LocalIngestResponse(**summary)
