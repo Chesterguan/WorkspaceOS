@@ -618,6 +618,41 @@ export const workspace = {
   },
 };
 
+// ─── Google OAuth + Skills ───────────────────────────────────────────────────
+
+export interface CalendarSyncResponse {
+  fetched: number;
+  created: number;
+  skipped: number;
+  inbox: number;
+  by_project: Record<string, number>;
+}
+
+export const google = {
+  getAuthUrl(): Promise<{ url: string }> {
+    return apiFetch<{ url: string }>('/google/auth');
+  },
+  getStatus(): Promise<{ connected: boolean }> {
+    return apiFetch<{ connected: boolean }>('/google/status');
+  },
+  disconnect(): Promise<{ disconnected: boolean }> {
+    return apiFetch<{ disconnected: boolean }>('/google/disconnect', { method: 'POST' });
+  },
+};
+
+export const skills = {
+  calendarStatus(): Promise<{ skill: string; connected: boolean }> {
+    return apiFetch<{ skill: string; connected: boolean }>(
+      '/skills/google-calendar/status',
+    );
+  },
+  syncCalendar(): Promise<CalendarSyncResponse> {
+    return apiFetch<CalendarSyncResponse>('/skills/google-calendar/sync', {
+      method: 'POST',
+    });
+  },
+};
+
 // ─── LinkedIn OAuth ───────────────────────────────────────────────────────────
 
 export const linkedin = {

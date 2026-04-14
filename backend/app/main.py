@@ -19,6 +19,8 @@ from app.routers import ai, auth, drafts, files as files_router, memory, narrati
 from app.routers import agentic, blog, chat, github, linkedin, posting, publish, workspace
 from app.routers import paper, research, settings as settings_router, worklog as worklog_router
 from app.routers import activity as activity_router
+from app.routers import google_oauth as google_oauth_router
+from app.routers import skills as skills_router
 from app.routers.paper import portfolio_paper_router
 from app.routers.publish import blog_publish_router
 from app.routers.chat import starters_router as chat_starters_router
@@ -223,6 +225,8 @@ app.include_router(paper.router, prefix=API_PREFIX)
 app.include_router(portfolio_paper_router, prefix=API_PREFIX)
 app.include_router(worklog_router.router, prefix=API_PREFIX)
 app.include_router(activity_router.router, prefix=API_PREFIX)
+app.include_router(google_oauth_router.router, prefix=API_PREFIX)
+app.include_router(skills_router.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["health"])

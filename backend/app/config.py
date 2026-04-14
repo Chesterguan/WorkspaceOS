@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     linkedin_client_secret: str = ""
     linkedin_redirect_uri: str = "http://localhost:8989/api/v1/linkedin/callback"
 
+    # Google OAuth 2.0 (Gmail + Calendar — currently Calendar only in use)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8989/api/v1/google/callback"
+
     # Dev.to (Forem) API
     devto_api_key: str = ""
 

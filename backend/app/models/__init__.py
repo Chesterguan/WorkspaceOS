@@ -16,6 +16,7 @@ from app.models.app_settings import AppSetting
 from app.models.ai_usage import AIUsageLog
 from app.models.worklog import WorkLog
 from app.models.activity import ActivityEvent
+from app.models.user_oauth_token import UserOAuthToken
 
 __all__ = [
     "User",
@@ -38,4 +39,5 @@ __all__ = [
     "AIUsageLog",
     "WorkLog",
     "ActivityEvent",
+    "UserOAuthToken",
 ]
