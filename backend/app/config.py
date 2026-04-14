@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8989/api/v1/google/callback"
 
+    # Microsoft Graph OAuth 2.0 (Outlook Calendar + Mail; Teams in future commit).
+    # Uses tenant="common" so both personal @outlook.com and work/school
+    # @company.com accounts can authenticate through the same registration.
+    ms_client_id: str = ""
+    ms_client_secret: str = ""
+    ms_redirect_uri: str = "http://localhost:8989/api/v1/microsoft/callback"
+
     # Dev.to (Forem) API
     devto_api_key: str = ""
 

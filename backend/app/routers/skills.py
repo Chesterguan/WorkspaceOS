@@ -22,7 +22,13 @@ from app.dependencies import (
     parse_jwt_user_uuid,
     verify_api_key,
 )
-from app.services import google_calendar_service, google_oauth_service
+from app.services import (
+    google_calendar_service,
+    google_oauth_service,
+    microsoft_oauth_service,
+    outlook_calendar_service,
+    outlook_mail_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,5 +85,86 @@ async def google_calendar_sync(
         )
         raise HTTPException(status_code=code, detail=message)
     # ingest_recent only staged writes via db.flush(); make them durable.
+    await db.commit()
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# Outlook Calendar (Microsoft Graph)
+# ---------------------------------------------------------------------------
+
+@router.get("/outlook-calendar/status", summary="Outlook Calendar skill status")
+async def outlook_calendar_status(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
+    user_id = _require_user(jwt_user_id)
+    connected = await microsoft_oauth_service.is_connected(user_id, db)
+    return {"skill": "outlook-calendar", "connected": connected}
+
+
+@router.post(
+    "/outlook-calendar/sync",
+    summary="Ingest recent Outlook calendar events now",
+)
+async def outlook_calendar_sync(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
+    """Window and classification behaviour mirror the Google Calendar path.
+    Uses the same MemoryEntry / activity-feed sinks so the result shape is
+    identical and the UI can share handling."""
+    user_id = _require_user(jwt_user_id)
+    try:
+        summary = await outlook_calendar_service.ingest_recent(user_id, db)
+    except RuntimeError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_409_CONFLICT
+            if "not connected" in message.lower()
+            else status.HTTP_502_BAD_GATEWAY
+        )
+        raise HTTPException(status_code=code, detail=message)
+    await db.commit()
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# Outlook Mail (Microsoft Graph)
+# ---------------------------------------------------------------------------
+
+@router.get("/outlook-mail/status", summary="Outlook Mail skill status")
+async def outlook_mail_status(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
+    user_id = _require_user(jwt_user_id)
+    connected = await microsoft_oauth_service.is_connected(user_id, db)
+    return {"skill": "outlook-mail", "connected": connected}
+
+
+@router.post(
+    "/outlook-mail/sync",
+    summary="Ingest recent Outlook messages now",
+)
+async def outlook_mail_sync(
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
+    user_id = _require_user(jwt_user_id)
+    try:
+        summary = await outlook_mail_service.ingest_recent(user_id, db)
+    except RuntimeError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_409_CONFLICT
+            if "not connected" in message.lower()
+            else status.HTTP_502_BAD_GATEWAY
+        )
+        raise HTTPException(status_code=code, detail=message)
     await db.commit()
     return summary

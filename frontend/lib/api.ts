@@ -640,7 +640,20 @@ export const google = {
   },
 };
 
+export const microsoft = {
+  getAuthUrl(): Promise<{ url: string }> {
+    return apiFetch<{ url: string }>('/microsoft/auth');
+  },
+  getStatus(): Promise<{ connected: boolean }> {
+    return apiFetch<{ connected: boolean }>('/microsoft/status');
+  },
+  disconnect(): Promise<{ disconnected: boolean }> {
+    return apiFetch<{ disconnected: boolean }>('/microsoft/disconnect', { method: 'POST' });
+  },
+};
+
 export const skills = {
+  // Google Calendar
   calendarStatus(): Promise<{ skill: string; connected: boolean }> {
     return apiFetch<{ skill: string; connected: boolean }>(
       '/skills/google-calendar/status',
@@ -648,6 +661,28 @@ export const skills = {
   },
   syncCalendar(): Promise<CalendarSyncResponse> {
     return apiFetch<CalendarSyncResponse>('/skills/google-calendar/sync', {
+      method: 'POST',
+    });
+  },
+  // Outlook Calendar
+  outlookCalendarStatus(): Promise<{ skill: string; connected: boolean }> {
+    return apiFetch<{ skill: string; connected: boolean }>(
+      '/skills/outlook-calendar/status',
+    );
+  },
+  syncOutlookCalendar(): Promise<CalendarSyncResponse> {
+    return apiFetch<CalendarSyncResponse>('/skills/outlook-calendar/sync', {
+      method: 'POST',
+    });
+  },
+  // Outlook Mail — same result shape (fetched/created/skipped/inbox)
+  outlookMailStatus(): Promise<{ skill: string; connected: boolean }> {
+    return apiFetch<{ skill: string; connected: boolean }>(
+      '/skills/outlook-mail/status',
+    );
+  },
+  syncOutlookMail(): Promise<CalendarSyncResponse> {
+    return apiFetch<CalendarSyncResponse>('/skills/outlook-mail/sync', {
       method: 'POST',
     });
   },

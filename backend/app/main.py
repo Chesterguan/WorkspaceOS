@@ -20,6 +20,7 @@ from app.routers import agentic, blog, chat, github, linkedin, posting, publish,
 from app.routers import paper, research, settings as settings_router, worklog as worklog_router
 from app.routers import activity as activity_router
 from app.routers import google_oauth as google_oauth_router
+from app.routers import microsoft_oauth as microsoft_oauth_router
 from app.routers import skills as skills_router
 from app.routers.paper import portfolio_paper_router
 from app.routers.publish import blog_publish_router
@@ -226,6 +227,7 @@ app.include_router(portfolio_paper_router, prefix=API_PREFIX)
 app.include_router(worklog_router.router, prefix=API_PREFIX)
 app.include_router(activity_router.router, prefix=API_PREFIX)
 app.include_router(google_oauth_router.router, prefix=API_PREFIX)
+app.include_router(microsoft_oauth_router.router, prefix=API_PREFIX)
 app.include_router(skills_router.router, prefix=API_PREFIX)
 
 

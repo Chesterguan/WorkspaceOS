@@ -39,8 +39,10 @@ const EVENT_ICONS: Record<string, { icon: typeof GitBranch; color: string }> = {
   "draft.published":     { icon: Upload,    color: "text-emerald-400" },
   "project.edited":      { icon: Pencil,      color: "text-muted-foreground" },
   "workspace.scanned":   { icon: HardDrive,   color: "text-blue-400" },
-  "ingest.calendar":     { icon: CalendarDays, color: "text-indigo-400" },
-  "ingest.email":        { icon: Mail,        color: "text-sky-400" },
+  "ingest.calendar":          { icon: CalendarDays, color: "text-indigo-400" },
+  "ingest.email":             { icon: Mail,         color: "text-sky-400" },
+  "ingest.outlook_calendar":  { icon: CalendarDays, color: "text-blue-400" },
+  "ingest.outlook_mail":      { icon: Mail,         color: "text-blue-400" },
 };
 
 const DEFAULT_ICON = { icon: ActivityIcon, color: "text-muted-foreground/70" };
