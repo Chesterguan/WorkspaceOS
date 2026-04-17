@@ -47,9 +47,18 @@ CONFIG_PATH = HOME / ".projectscribe-bridge.json"
 LOG_PATH = HOME / "Library" / "Logs" / "projectscribe-bridge.log"
 APPLESCRIPT_PATH = Path(__file__).resolve().parent / "sync.applescript"
 
-OSASCRIPT_TIMEOUT_SEC = 180
-HTTP_TIMEOUT_SEC = 60
-BATCH_SIZE = 50  # cap per POST — keeps payloads under the 200-item server cap
+# macOS Mail + Calendar can be slow to enumerate on first run after
+# reboot (cold IMAP caches, iCloud sync warmup). Observed: ~6min for
+# ~100 items across 4 accounts + many calendars. 10min is the ceiling;
+# anything slower is a stuck app and we want osascript killed so the
+# next launchd tick can try fresh.
+OSASCRIPT_TIMEOUT_SEC = 600
+# Server-side classifier runs one AI call per item (~1-3s each), so a
+# full batch can take minutes. Keep the client timeout generous and the
+# batch small enough that we get incremental progress signals in the log
+# rather than a single all-or-nothing wait.
+HTTP_TIMEOUT_SEC = 300
+BATCH_SIZE = 10
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +185,15 @@ def _post_batch(
             payload = json.loads(resp.read().decode("utf-8"))
             return resp.status, payload
     except urllib.error.HTTPError as exc:
+        # Surface server-side validation details; the body is usually JSON
+        # with a `detail` array (FastAPI's 422 format).
+        try:
+            body_text = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body_text = ""
+        if body_text:
+            log.error("POST %s → %d. Response body: %s",
+                      url, exc.code, body_text[:2000])
         return exc.code, None
     except urllib.error.URLError as exc:
         log.error("POST failed (network): %s", exc)

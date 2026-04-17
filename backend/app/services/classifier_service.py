@@ -117,19 +117,34 @@ def _extract_json(text: str) -> Optional[dict]:
         return None
 
 
+async def build_catalogue_for_user(
+    user_id: uuid.UUID, db: AsyncSession,
+) -> List[dict]:
+    """Public wrapper around the internal catalogue builder. Callers that
+    classify many items in a row (ingest loops) should build once and pass
+    it in via `catalogue=` to avoid N duplicate `projects` + `wiki_summary`
+    queries per batch."""
+    return await _build_project_catalogue(user_id, db)
+
+
 async def classify_into_project(
     content: str,
     user_id: uuid.UUID,
     db: AsyncSession,
     *,
     threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    catalogue: Optional[List[dict]] = None,
 ) -> Classification:
     """
     Classify `content` into one of user_id's projects. Returns a
     Classification. On low confidence OR AI failure, returns an Inbox
     fallback so the caller can always count on a valid project_id.
+
+    Pass `catalogue=` to skip the per-call DB rebuild — use this when
+    classifying many items in a row.
     """
-    catalogue = await _build_project_catalogue(user_id, db)
+    if catalogue is None:
+        catalogue = await _build_project_catalogue(user_id, db)
 
     # No projects (new user): everything goes to Inbox.
     if not catalogue:

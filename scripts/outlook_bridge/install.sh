@@ -2,30 +2,55 @@
 # ProjectScribe Outlook Bridge — installer
 #
 # Prompts for backend URL + login, obtains a JWT via /auth/login, writes
-# a 0600 config file at ~/.projectscribe-bridge.json, generates a launchd
-# plist that fires bridge.py every 30 minutes, loads it.
+# a 0600 config file at ~/.projectscribe-bridge.json, copies the bridge
+# into a stable user-owned location, and generates a launchd plist that
+# fires it every 30 minutes.
 #
-# Safe to re-run — overwrites the config + plist in place.
+# Why the copy? If ProjectScribe lives on an external volume
+# (`/Volumes/...`), launchd's python3 is denied access by macOS TCC — we
+# saw this first-hand: ~150 logged failures with "Operation not
+# permitted". Copying bridge.py + sync.applescript into
+# ~/Library/Application Support/ sidesteps TCC entirely because anything
+# under $HOME/Library is readable by user processes by default.
+#
+# Safe to re-run — overwrites the config + plist + installed files.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BRIDGE_PY="$SCRIPT_DIR/bridge.py"
+SRC_BRIDGE_PY="$SCRIPT_DIR/bridge.py"
+SRC_APPLESCRIPT="$SCRIPT_DIR/sync.applescript"
 
-if [[ ! -f "$BRIDGE_PY" ]]; then
-  echo "ERR: bridge.py not found next to this installer at $BRIDGE_PY" >&2
+if [[ ! -f "$SRC_BRIDGE_PY" || ! -f "$SRC_APPLESCRIPT" ]]; then
+  echo "ERR: bridge.py or sync.applescript missing in $SCRIPT_DIR" >&2
   exit 1
 fi
+
+# Installed location — stable, user-owned, no TCC issues
+INSTALL_DIR="$HOME/Library/Application Support/projectscribe-bridge"
+INSTALLED_BRIDGE_PY="$INSTALL_DIR/bridge.py"
+INSTALLED_APPLESCRIPT="$INSTALL_DIR/sync.applescript"
 
 CONFIG_PATH="$HOME/.projectscribe-bridge.json"
 PLIST_LABEL="com.projectscribe.outlookbridge"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 LOG_PATH="$HOME/Library/Logs/projectscribe-bridge.log"
-INTERVAL_SEC=1800  # 30 min
+INTERVAL_SEC=21600  # 6 hours
+
+# Resolve an absolute python3 path up-front. Baking the resolved path
+# into the plist makes failures obvious (`file not found`) instead of
+# silent misbehaviour if $PATH differs under launchd.
+PYTHON3="$(command -v python3 || true)"
+if [[ -z "$PYTHON3" ]]; then
+  echo "ERR: python3 not found on PATH" >&2
+  exit 1
+fi
 
 echo "=============================================="
 echo " ProjectScribe Outlook Bridge — installer"
 echo "=============================================="
+echo "  python3: $PYTHON3"
+echo "  install dir: $INSTALL_DIR"
 echo
 
 # ── Prompt for backend + creds ────────────────────────────────────────────
@@ -47,10 +72,8 @@ echo
 
 echo
 echo "→ Logging in to $API_BASE …"
-# Use /usr/bin/python3 (ships with macOS) for the HTTP call rather than
-# curl, so we have the same stdlib-only dependency footprint as bridge.py.
 LOGIN_JSON="$(
-  /usr/bin/python3 - <<PY
+  "$PYTHON3" - <<PY
 import json, sys, urllib.request, urllib.error
 payload = json.dumps({"email": "$EMAIL", "password": "$PASSWORD"}).encode()
 req = urllib.request.Request(
@@ -71,10 +94,10 @@ PY
 )" || { echo "  login failed (see error above)"; exit 1; }
 
 ACCESS_TOKEN="$(
-  /usr/bin/python3 -c 'import sys,json; print(json.loads(sys.stdin.read()).get("access_token",""))' <<<"$LOGIN_JSON"
+  "$PYTHON3" -c 'import sys,json; print(json.loads(sys.stdin.read()).get("access_token",""))' <<<"$LOGIN_JSON"
 )"
 REFRESH_TOKEN="$(
-  /usr/bin/python3 -c 'import sys,json; print(json.loads(sys.stdin.read()).get("refresh_token",""))' <<<"$LOGIN_JSON"
+  "$PYTHON3" -c 'import sys,json; print(json.loads(sys.stdin.read()).get("refresh_token",""))' <<<"$LOGIN_JSON"
 )"
 
 if [[ -z "$ACCESS_TOKEN" ]]; then
@@ -82,6 +105,15 @@ if [[ -z "$ACCESS_TOKEN" ]]; then
   exit 1
 fi
 echo "  ok"
+
+# ── Copy bridge files into a TCC-friendly location ───────────────────────
+
+echo "→ Installing bridge into $INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+cp "$SRC_BRIDGE_PY" "$INSTALLED_BRIDGE_PY"
+cp "$SRC_APPLESCRIPT" "$INSTALLED_APPLESCRIPT"
+chmod 755 "$INSTALLED_BRIDGE_PY"
+chmod 644 "$INSTALLED_APPLESCRIPT"
 
 # ── Write config (0600) ───────────────────────────────────────────────────
 
@@ -110,8 +142,8 @@ cat > "$PLIST_PATH" <<EOF
   <string>$PLIST_LABEL</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
-    <string>$BRIDGE_PY</string>
+    <string>$PYTHON3</string>
+    <string>$INSTALLED_BRIDGE_PY</string>
   </array>
   <key>StartInterval</key>
   <integer>$INTERVAL_SEC</integer>
@@ -133,6 +165,9 @@ launchctl bootout "gui/$UID/$PLIST_LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$UID" "$PLIST_PATH"
 
 echo
-echo "Installed. The bridge will run immediately and then every $((INTERVAL_SEC / 60)) minutes."
+echo "Installed. The bridge will run immediately and then every $((INTERVAL_SEC / 3600))h."
 echo "Logs:   tail -f $LOG_PATH"
 echo "Uninstall:  ./uninstall.sh"
+echo
+echo "Note: to update the bridge after editing files in the repo, just"
+echo "re-run install.sh — it copies the fresh versions into place."

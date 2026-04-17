@@ -123,6 +123,10 @@ async def ingest_items(
         )
         already = {r[0] for r in rows.fetchall()}
 
+    # Build once, reuse across every classification call in this batch.
+    # Avoids re-running 2 DB queries per item (N=batch size → 2N queries).
+    catalogue = await classifier_service.build_catalogue_for_user(user_id, db)
+
     for item in items:
         if not item.external_id:
             continue
@@ -134,7 +138,7 @@ async def ingest_items(
         content = _render_item(item)
         try:
             classification = await classifier_service.classify_into_project(
-                content=content, user_id=user_id, db=db,
+                content=content, user_id=user_id, db=db, catalogue=catalogue,
             )
         except Exception as exc:
             logger.warning(

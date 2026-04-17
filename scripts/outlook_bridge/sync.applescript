@@ -1,224 +1,250 @@
 -- sync.applescript
 --
--- Queries Outlook for Mac for recent/upcoming calendar events and recent
--- Inbox messages. Writes newline-delimited JSON (one item per line) to
--- stdout — one record per event or message.
+-- Reads from macOS native Mail + Calendar apps. Emits NDJSON on stdout.
 --
--- Each line has shape (calendar):
---   {"kind":"calendar","external_id":"...","subject":"...","start":"...","end":"...","location":"...","organizer":"...","attendees":[...],"body":"..."}
--- Or (mail):
---   {"kind":"mail","external_id":"...","subject":"...","sender":"...","to":[...],"cc":[...],"received_at":"...","body":"..."}
+-- CRASH-SAFE CONSTRAINTS (learned the hard way on a 4-account Mail setup):
 --
--- Error handling: any property access that fails (missing, permission
--- denied) is caught per-item — one broken row does not poison the batch.
--- Overall errors are written to stderr so the Python bridge can surface
--- them without parsing a malformed stdout.
+--   * NEVER query `inbox` (the unified smart mailbox). It evaluates the
+--     `whose` clause across every account, forcing metadata rehydration
+--     of tens of thousands of messages — Mail.app balloons to multi-GB
+--     and the machine swap-thrashes. We enumerate each account's own
+--     Inbox mailbox separately and cap per account.
+--
+--   * NEVER request `content of msg`. Pulling bodies forces Mail to
+--     decode MIME + inline images for every filtered message; a handful
+--     of HTML newsletters can blow RAM by hundreds of MB. We send only
+--     subject / sender / date — the classifier works fine on that.
+--
+--   * NEVER wrap the tell blocks in `with timeout`. When an AppleEvent
+--     is interrupted by the timeout, subsequent property reads on the
+--     same reference silently return empty strings. The hang-safety is
+--     enforced at a higher layer: bridge.py runs osascript with
+--     OSASCRIPT_TIMEOUT_SEC and SIGKILLs the whole process if needed.
+--
+--   * Iterate `repeat with i from 1 to n` + `item i of list`, not
+--     `repeat with x in list`. The latter strips application context
+--     for references that came out of a `whose`-filtered query.
+--
+--   * Do all JSON rendering AFTER the tell block exits. Calling `my
+--     handler(...)` from inside a tell block and passing string args
+--     corrupts the args — the handler sees empty strings. So each
+--     branch collects raw tuples (a list of string lists), and the tail
+--     of the run handler maps them to JSON using the local helpers.
 
 on run argv
     set pastDays to 7
     set futureDays to 14
     set mailDays to 3
-    set mailMax to 50
+    set mailPerAccountMax to 25    -- hard cap per mail account
+    set eventsPerCalendarMax to 50 -- hard cap per calendar
 
     set startDate to (current date) - (pastDays * days)
     set endDate to (current date) + (futureDays * days)
     set mailSince to (current date) - (mailDays * days)
 
+    -- Raw tuples: each entry is a list of strings in a fixed positional
+    -- schema, handled by the renderer below. Keeping these plain strings
+    -- (not records or refs) means they survive the tell → script-context
+    -- boundary without losing content.
+    set calendarRows to {}   -- {uid, subject, startISO, endISO, location}
+    set mailRows to {}       -- {id, subject, receivedISO, sender, account}
+
+    -- ── Calendar events (Apple Calendar) ───────────────────────────────
+    try
+        tell application "Calendar"
+            set allCalendars to every calendar
+            repeat with cal in allCalendars
+                try
+                    set calName to name of cal
+                on error
+                    set calName to "(unknown)"
+                end try
+                try
+                    set calEvents to (every event of cal whose start date is greater than or equal to startDate and start date is less than or equal to endDate)
+                    set evCount to count of calEvents
+                    if evCount > eventsPerCalendarMax then
+                        log "calendar '" & calName & "' skipped: " & evCount & " events in window (> cap)"
+                    else
+                        repeat with i from 1 to evCount
+                            try
+                                set ev to item i of calEvents
+                                set evUid to ""
+                                try
+                                    set evUid to (uid of ev) as text
+                                end try
+                                set evSubject to ""
+                                try
+                                    set evSubject to (summary of ev) as text
+                                end try
+                                if evUid is not "" and evSubject is not "" then
+                                    set evStart to ""
+                                    try
+                                        set evStart to (start date of ev) as text
+                                    end try
+                                    set evEnd to ""
+                                    try
+                                        set evEnd to (end date of ev) as text
+                                    end try
+                                    set evLocation to ""
+                                    try
+                                        set evLocation to (location of ev) as text
+                                    end try
+                                    -- Skipping `description of ev` by
+                                    -- design — meeting invite bodies
+                                    -- are HTML blobs and reading them
+                                    -- per event was making runs time out.
+                                    set end of calendarRows to {evUid, evSubject, evStart, evEnd, evLocation}
+                                end if
+                            on error errMsg
+                                log "event skipped: " & errMsg
+                            end try
+                        end repeat
+                    end if
+                on error errMsg
+                    log "calendar '" & calName & "' query skipped: " & errMsg
+                end try
+            end repeat
+        end tell
+    on error errMsg
+        log "calendar block failed: " & errMsg
+    end try
+
+    -- ── Inbox messages (Apple Mail, per-account) ──────────────────────
+    try
+        tell application "Mail"
+            set allAccounts to every account
+            repeat with acct in allAccounts
+                try
+                    set acctName to name of acct
+                on error
+                    set acctName to "(unknown)"
+                end try
+                try
+                    -- Apple Mail's inbox name varies by account type:
+                    --   IMAP (iCloud)     → "INBOX" (all caps)
+                    --   Exchange/EWS      → "Inbox" (title case)
+                    --   some custom POP   → "inbox"
+                    -- We try each. Falling back to `first mailbox` is
+                    -- actively harmful: for Exchange accounts the first
+                    -- mailbox is usually "Conversation History", which
+                    -- is near-empty and not the inbox the user means.
+                    set inboxMbox to missing value
+                    try
+                        set inboxMbox to mailbox "INBOX" of acct
+                    on error
+                        try
+                            set inboxMbox to mailbox "Inbox" of acct
+                        on error
+                            try
+                                set inboxMbox to mailbox "inbox" of acct
+                            end try
+                        end try
+                    end try
+                    if inboxMbox is missing value then
+                        log "account '" & acctName & "' has no identifiable inbox mailbox — skipped"
+                    else
+                        set acctMsgs to (messages of inboxMbox whose date received is greater than or equal to mailSince)
+                        set msgCount to count of acctMsgs
+                        set startIdx to 1
+                        if msgCount > mailPerAccountMax then
+                            set startIdx to msgCount - mailPerAccountMax + 1
+                        end if
+                        repeat with i from startIdx to msgCount
+                            try
+                                set msg to item i of acctMsgs
+                                set msgId to ""
+                                try
+                                    set msgId to (id of msg) as text
+                                end try
+                                if msgId is not "" then
+                                    set msgSubject to ""
+                                    try
+                                        set msgSubject to (subject of msg) as text
+                                    end try
+                                    set msgReceived to ""
+                                    try
+                                        set msgReceived to (date received of msg) as text
+                                    end try
+                                    set senderText to ""
+                                    try
+                                        set senderText to (sender of msg) as text
+                                    end try
+                                    -- Deliberately NOT reading `content of msg`.
+                                    set end of mailRows to {msgId, msgSubject, msgReceived, senderText, acctName}
+                                end if
+                            on error errMsg
+                                log "mail item skipped: " & errMsg
+                            end try
+                        end repeat
+                    end if
+                on error errMsg
+                    log "mail account '" & acctName & "' skipped: " & errMsg
+                end try
+            end repeat
+        end tell
+    on error errMsg
+        log "mail block failed: " & errMsg
+    end try
+
+    -- ── Render NDJSON (outside any tell block) ────────────────────────
+    -- Use indexed iteration, not `repeat with row in list`. The latter
+    -- binds `row` as an ITEM REFERENCE; when we pass that ref to a
+    -- handler, `item 1 of row` inside the handler can't resolve it and
+    -- returns empty strings. Hard-won lesson.
     set outputLines to {}
-
-    -- ── Calendar events ────────────────────────────────────────────────
-    try
-        tell application "Microsoft Outlook"
-            set theEvents to (every calendar event whose start time ≥ startDate and start time ≤ endDate)
-        end tell
-        repeat with ev in theEvents
-            try
-                set evLine to my renderCalendar(ev)
-                if evLine is not missing value then
-                    set end of outputLines to evLine
-                end if
-            on error errMsg
-                log "calendar item skipped: " & errMsg
-            end try
-        end repeat
-    on error errMsg
-        log "calendar query failed: " & errMsg
-    end try
-
-    -- ── Inbox messages ─────────────────────────────────────────────────
-    try
-        tell application "Microsoft Outlook"
-            set inboxMsgs to (messages of inbox whose time received ≥ mailSince)
-        end tell
-        -- Cap to mailMax most recent (AppleScript lists are 1-indexed)
-        set msgCount to count of inboxMsgs
-        if msgCount > mailMax then
-            set inboxMsgs to items (msgCount - mailMax + 1) thru msgCount of inboxMsgs
-        end if
-        repeat with msg in inboxMsgs
-            try
-                set msgLine to my renderMail(msg)
-                if msgLine is not missing value then
-                    set end of outputLines to msgLine
-                end if
-            on error errMsg
-                log "mail item skipped: " & errMsg
-            end try
-        end repeat
-    on error errMsg
-        log "mail query failed: " & errMsg
-    end try
-
-    -- One NDJSON line per item
+    repeat with i from 1 to count of calendarRows
+        set end of outputLines to my renderCalendarRow(item i of calendarRows)
+    end repeat
+    repeat with i from 1 to count of mailRows
+        set end of outputLines to my renderMailRow(item i of mailRows)
+    end repeat
     set AppleScript's text item delimiters to linefeed
     return (outputLines as text)
 end run
 
 
 -- ─── Renderers ──────────────────────────────────────────────────────────
+-- Each expects a list of plain strings in the order shown above. Running
+-- after the tell blocks have exited means `my ...` handler calls don't
+-- go through the app bridge and string args arrive intact.
 
-on renderCalendar(ev)
-    tell application "Microsoft Outlook"
-        try
-            set evId to (id of ev) as text
-        on error
-            return missing value
-        end try
-        try
-            set evSubject to (subject of ev) as text
-        on error
-            set evSubject to ""
-        end try
-        try
-            set evStart to (start time of ev) as text
-        on error
-            set evStart to ""
-        end try
-        try
-            set evEnd to (end time of ev) as text
-        on error
-            set evEnd to ""
-        end try
-        try
-            set evLocation to (location of ev) as text
-        on error
-            set evLocation to ""
-        end try
-        try
-            set evBody to (content of ev) as text
-            if (length of evBody) > 2000 then
-                set evBody to text 1 thru 2000 of evBody
-            end if
-        on error
-            set evBody to ""
-        end try
-        -- Organizer + attendees: try to grab emails; skip silently on failure
-        set organizerEmail to ""
-        try
-            set organizerEmail to (email address of organizer of ev) as text
-        end try
-        set attendeeList to {}
-        try
-            set theAttendees to (every attendee of ev)
-            repeat with a in theAttendees
-                try
-                    set end of attendeeList to (email address of a) as text
-                end try
-            end repeat
-        end try
-    end tell
-
+on renderCalendarRow(row)
+    set evUid to item 1 of row
+    set evSubject to item 2 of row
+    set evStart to item 3 of row
+    set evEnd to item 4 of row
+    set evLocation to item 5 of row
     set jsonFields to {}
     set end of jsonFields to "\"kind\":\"calendar\""
-    set end of jsonFields to "\"external_id\":" & my jsonString(evId)
+    set end of jsonFields to "\"external_id\":" & my jsonString(evUid)
     set end of jsonFields to "\"subject\":" & my jsonString(evSubject)
     set end of jsonFields to "\"start\":" & my jsonString(evStart)
     set end of jsonFields to "\"end\":" & my jsonString(evEnd)
     if evLocation is not "" then set end of jsonFields to "\"location\":" & my jsonString(evLocation)
-    if organizerEmail is not "" then set end of jsonFields to "\"organizer\":" & my jsonString(organizerEmail)
-    if (count of attendeeList) > 0 then set end of jsonFields to "\"attendees\":" & my jsonStringArray(attendeeList)
-    if evBody is not "" then set end of jsonFields to "\"body\":" & my jsonString(evBody)
-
     set AppleScript's text item delimiters to ","
     return "{" & (jsonFields as text) & "}"
-end renderCalendar
+end renderCalendarRow
 
 
-on renderMail(msg)
-    tell application "Microsoft Outlook"
-        try
-            set msgId to (id of msg) as text
-        on error
-            return missing value
-        end try
-        try
-            set msgSubject to (subject of msg) as text
-        on error
-            set msgSubject to ""
-        end try
-        try
-            set msgReceived to (time received of msg) as text
-        on error
-            set msgReceived to ""
-        end try
-        set senderEmail to ""
-        try
-            set senderEmail to (email address of sender of msg) as text
-        end try
-        try
-            set msgBody to (plain text content of msg) as text
-        on error
-            try
-                set msgBody to (content of msg) as text
-            on error
-                set msgBody to ""
-            end try
-        end try
-        if (length of msgBody) > 1500 then
-            set msgBody to text 1 thru 1500 of msgBody
-        end if
-        set toList to {}
-        try
-            set toRecips to (every to recipient of msg)
-            repeat with r in toRecips
-                try
-                    set end of toList to (email address of r) as text
-                end try
-            end repeat
-        end try
-        set ccList to {}
-        try
-            set ccRecips to (every cc recipient of msg)
-            repeat with r in ccRecips
-                try
-                    set end of ccList to (email address of r) as text
-                end try
-            end repeat
-        end try
-    end tell
-
+on renderMailRow(row)
+    set msgId to item 1 of row
+    set msgSubject to item 2 of row
+    set msgReceived to item 3 of row
+    set senderText to item 4 of row
+    set acctName to item 5 of row
     set jsonFields to {}
     set end of jsonFields to "\"kind\":\"mail\""
     set end of jsonFields to "\"external_id\":" & my jsonString(msgId)
     set end of jsonFields to "\"subject\":" & my jsonString(msgSubject)
-    if senderEmail is not "" then set end of jsonFields to "\"sender\":" & my jsonString(senderEmail)
-    if (count of toList) > 0 then set end of jsonFields to "\"to\":" & my jsonStringArray(toList)
-    if (count of ccList) > 0 then set end of jsonFields to "\"cc\":" & my jsonStringArray(ccList)
+    if senderText is not "" then set end of jsonFields to "\"sender\":" & my jsonString(senderText)
     if msgReceived is not "" then set end of jsonFields to "\"received_at\":" & my jsonString(msgReceived)
-    if msgBody is not "" then set end of jsonFields to "\"body\":" & my jsonString(msgBody)
-
+    if acctName is not "" then set end of jsonFields to "\"account\":" & my jsonString(acctName)
     set AppleScript's text item delimiters to ","
     return "{" & (jsonFields as text) & "}"
-end renderMail
+end renderMailRow
 
-
--- ─── JSON escaping ──────────────────────────────────────────────────────
 
 on jsonString(s)
-    -- Escape \ then " then CR, LF, TAB so the output is a valid JSON
-    -- string literal. Any other control character gets passed through;
-    -- in practice Outlook's text fields don't contain raw \x00-\x1F
-    -- bytes other than CR/LF/TAB.
     set s to my replaceAll(s, "\\", "\\\\")
     set s to my replaceAll(s, "\"", "\\\"")
     set s to my replaceAll(s, return, "\\n")
@@ -228,21 +254,16 @@ on jsonString(s)
 end jsonString
 
 
-on jsonStringArray(lst)
-    set escaped to {}
-    repeat with v in lst
-        set end of escaped to my jsonString(v as text)
-    end repeat
-    set AppleScript's text item delimiters to ","
-    return "[" & (escaped as text) & "]"
-end jsonStringArray
-
-
 on replaceAll(s, findStr, replaceStr)
     set AppleScript's text item delimiters to findStr
     set parts to text items of s
     set AppleScript's text item delimiters to replaceStr
-    set result to parts as text
+    -- AppleScript gotcha: `parts as text` is a LAZY coercion bound to
+    -- the current text-item-delimiter state. If we reset delimiters
+    -- before returning, the caller's read re-evaluates against the
+    -- new (empty) delimiter and gets back an empty string. Force a
+    -- concrete value via concatenation before the reset.
+    set concrete to "" & (parts as text)
     set AppleScript's text item delimiters to ""
-    return result
+    return concrete
 end replaceAll

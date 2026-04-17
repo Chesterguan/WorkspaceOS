@@ -150,6 +150,8 @@ async def ingest_recent(user_id: uuid.UUID, db: AsyncSession) -> Dict[str, Any]:
         )
         already = {r[0] for r in rows.fetchall()}
 
+    catalogue = await classifier_service.build_catalogue_for_user(user_id, db)
+
     for event in events:
         event_id = event.get("id")
         if not event_id:
@@ -163,7 +165,7 @@ async def ingest_recent(user_id: uuid.UUID, db: AsyncSession) -> Dict[str, Any]:
 
         try:
             classification = await classifier_service.classify_into_project(
-                content=content, user_id=user_id, db=db,
+                content=content, user_id=user_id, db=db, catalogue=catalogue,
             )
         except Exception as exc:
             logger.warning("outlook calendar: classification crashed for %s: %s", event_id, exc)
