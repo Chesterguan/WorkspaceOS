@@ -88,14 +88,18 @@ export function ProjectCard({ project, lastSyncAt, draftCount }: ProjectCardProp
         />
 
         <CardHeader className="pb-3 relative z-10 pointer-events-none">
+          {/* Row 1: title (+ optional Demo badge) on the left, ⋯ menu on
+              the right. The repo badge used to sit here too but long
+              org/repo names pushed the ⋯ off the card edge, so it's
+              moved to its own row below. */}
           <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <h3 className="font-semibold text-base leading-tight group-hover:text-primary transition-colors truncate">
                 {project.name}
               </h3>
               {isDemo && (
                 <Badge
-                  className="text-[10px] px-1.5 py-0 bg-amber-500/15 text-amber-400 border-amber-500/30"
+                  className="text-[10px] px-1.5 py-0 bg-amber-500/15 text-amber-400 border-amber-500/30 shrink-0"
                   variant="outline"
                 >
                   Demo
@@ -103,58 +107,62 @@ export function ProjectCard({ project, lastSyncAt, draftCount }: ProjectCardProp
               )}
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
-              {project.github_repo && (
-                <Badge
-                  variant="outline"
-                  className="shrink-0 text-xs bg-secondary/50 font-mono"
+            <div
+              className="pointer-events-auto shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Project actions"
+                      title="Edit or delete"
+                      className="inline-flex items-center justify-center w-9 h-9 rounded-md border border-border/60 bg-secondary/30 text-foreground hover:bg-secondary hover:border-border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  }
                 >
-                  <GitBranch className="w-3 h-3 mr-1" />
-                  {project.github_repo}
-                </Badge>
-              )}
-
-              {!isDemo && (
-                <div
-                  className="pointer-events-auto"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                  }}
-                >
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <button
-                          type="button"
-                          aria-label="Project actions"
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
-                      }
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setEditOpen(true)}>
-                        <Pencil className="w-3.5 h-3.5 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setDeleteOpen(true)}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              )}
+                  <MoreHorizontal className="w-5 h-5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {!isDemo && (
+                    <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                      <Pencil className="w-3.5 h-3.5 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onClick={() => setDeleteOpen(true)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
+          {/* Row 2: repo badge gets its own line so long owner/repo names
+              truncate within the card instead of clipping the ⋯ menu. */}
+          {project.github_repo && (
+            <div className="flex mt-1.5">
+              <Badge
+                variant="outline"
+                className="max-w-full text-xs bg-secondary/50 font-mono"
+                title={project.github_repo}
+              >
+                <GitBranch className="w-3 h-3 mr-1 shrink-0" />
+                <span className="truncate">{project.github_repo}</span>
+              </Badge>
+            </div>
+          )}
+
           {project.description && (
-            <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+            <p className="text-sm text-muted-foreground line-clamp-2 mt-1.5">
               {project.description}
             </p>
           )}

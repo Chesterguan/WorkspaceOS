@@ -69,17 +69,21 @@ def _setup_logging() -> logging.Logger:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("projectscribe.bridge")
     logger.setLevel(logging.INFO)
-    # Avoid duplicate handlers if run repeatedly in the same process
-    if not logger.handlers:
-        fh = logging.FileHandler(LOG_PATH)
-        fh.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
-        )
-        logger.addHandler(fh)
-        # Also emit to stderr for `--verbose` runs / launchd log capture
-        sh = logging.StreamHandler(sys.stderr)
-        sh.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-        logger.addHandler(sh)
+    # Never bubble up to the root logger — harmless belt-and-braces so
+    # any library that logs to root doesn't clutter our file.
+    logger.propagate = False
+    # Avoid duplicate handlers if _setup_logging runs twice
+    if logger.handlers:
+        return logger
+    # Single FileHandler is enough: the launchd plist redirects both
+    # stdout and stderr to the same file, so if we also emitted to
+    # stderr every record would land in the file TWICE (confirmed —
+    # earlier iteration had a StreamHandler and the log showed each
+    # line duplicated). For interactive / --verbose runs, just
+    # `tail -f $LOG_PATH` in another terminal.
+    fh = logging.FileHandler(LOG_PATH)
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
+    logger.addHandler(fh)
     return logger
 
 
