@@ -40,7 +40,7 @@ async def _classify_extractable(ai: Any, user: str, ai_response: str) -> bool:
 import json
 import re
 from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from app.models.knowledge import NODE_TYPES, EDGE_TYPES
 
@@ -149,3 +149,31 @@ async def _extract_structured(
             edges.append({"from_idx": from_idx, "to_idx": to_idx, "edge_type": et})
 
     return ExtractionResult(nodes=nodes, edges_within_turn=edges)
+
+
+# ---------------------------------------------------------------------------
+# Dedup decision logic
+# ---------------------------------------------------------------------------
+
+# Similarity thresholds — can be moved to settings later if tuning is needed
+DEDUP_HIGH = 0.92  # at/above → merge
+DEDUP_LOW = 0.80   # at/above → create with linking edge
+
+
+@dataclass
+class DedupAction:
+    kind: str  # "merge" | "create_with_edge" | "create"
+    edge_type: Optional[str] = None
+
+
+def _decide_dedup_action(best_score: Optional[float], same_type: bool) -> DedupAction:
+    if best_score is None:
+        return DedupAction(kind="create")
+    if best_score >= DEDUP_HIGH:
+        return DedupAction(kind="merge")
+    if best_score >= DEDUP_LOW:
+        return DedupAction(
+            kind="create_with_edge",
+            edge_type="refines" if same_type else "related_to",
+        )
+    return DedupAction(kind="create")
