@@ -18,6 +18,7 @@ from app.models.blog import BlogPost
 from app.models.chat import ChatMessage
 from app.models.draft import Draft
 from app.models.project import Project
+from app.services import knowledge_extractor
 from app.services.ai_client import get_cloud_client
 from app.services.advisors import ADVISOR_REGISTRY, get_advisor, route_to_advisors
 from app.services.memory_service import search_memory
@@ -360,45 +361,6 @@ async def _build_chat_context(
 
 
 # ---------------------------------------------------------------------------
-# Background knowledge extraction helper
-# ---------------------------------------------------------------------------
-
-async def _bg_extract_from_turn(
-    user_id: uuid.UUID,
-    project_id: uuid.UUID,
-    user_msg_id: uuid.UUID,
-    user_msg_content: str,
-    ai_msg_id: uuid.UUID,
-    ai_msg_content: str,
-    conversation_kind: str,
-) -> None:
-    """Background entry point for knowledge extraction. Owns its own DB session.
-
-    Builds lightweight transient ChatMessage objects (not session-attached) since
-    extract_from_chat_turn only reads .id and .content.
-    """
-    try:
-        from app.services import knowledge_extractor  # local import avoids circular risk
-        async with AsyncSessionLocal() as bg_db:
-            user_msg = ChatMessage(
-                id=user_msg_id, project_id=project_id, role="user", content=user_msg_content
-            )
-            ai_msg = ChatMessage(
-                id=ai_msg_id, project_id=project_id, role="assistant", content=ai_msg_content
-            )
-            await knowledge_extractor.extract_from_chat_turn(
-                user_id=user_id,
-                project_id=project_id,
-                user_message=user_msg,
-                ai_message=ai_msg,
-                conversation_kind=conversation_kind,
-                db=bg_db,
-            )
-    except Exception:
-        logger.exception("background knowledge extraction (chat) failed")
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -532,7 +494,7 @@ async def send_message(
 
     if owner_user_id is not None:
         for ai_msg in advisor_messages:
-            asyncio.create_task(_bg_extract_from_turn(
+            asyncio.create_task(knowledge_extractor.bg_extract_from_turn(
                 user_id=owner_user_id,
                 project_id=project_id,
                 user_msg_id=user_msg.id,

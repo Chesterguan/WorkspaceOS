@@ -332,3 +332,41 @@ async def extract_from_chat_turn(
             await db.rollback()
         except Exception:
             logger.exception("rollback also failed; abandoning session")
+
+
+# ---------------------------------------------------------------------------
+# Public fire-and-forget entry point (shared by chat_service + research_service)
+# ---------------------------------------------------------------------------
+
+async def bg_extract_from_turn(
+    user_id: _uuid_module.UUID,
+    project_id: _uuid_module.UUID,
+    user_msg_id: _uuid_module.UUID,
+    user_msg_content: str,
+    ai_msg_id: _uuid_module.UUID,
+    ai_msg_content: str,
+    conversation_kind: str,
+) -> None:
+    """Public fire-and-forget entry point. Owns its own DB session.
+
+    Builds lightweight transient ChatMessage instances (not session-attached) since
+    extract_from_chat_turn only reads .id and .content from them.
+    """
+    try:
+        from app.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as bg_db:
+            user_msg = ChatMessage(
+                id=user_msg_id, project_id=project_id,
+                role="user", content=user_msg_content,
+            )
+            ai_msg = ChatMessage(
+                id=ai_msg_id, project_id=project_id,
+                role="assistant", content=ai_msg_content,
+            )
+            await extract_from_chat_turn(
+                user_id=user_id, project_id=project_id,
+                user_message=user_msg, ai_message=ai_msg,
+                conversation_kind=conversation_kind, db=bg_db,
+            )
+    except Exception:
+        logger.exception("background knowledge extraction (%s) failed", conversation_kind)
