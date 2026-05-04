@@ -177,3 +177,155 @@ def _decide_dedup_action(best_score: Optional[float], same_type: bool) -> DedupA
             edge_type="refines" if same_type else "related_to",
         )
     return DedupAction(kind="create")
+
+
+# ---------------------------------------------------------------------------
+# Persistence orchestrator
+# ---------------------------------------------------------------------------
+
+import uuid as _uuid_module
+from typing import Tuple
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.knowledge import KnowledgeEdge, KnowledgeNode
+from app.models.chat import ChatMessage
+from app.services.ai_client import get_cloud_client
+
+
+async def _embed(text_to_embed: str) -> List[float]:
+    """Wrap ai_client embed for easier mocking in tests."""
+    ai = get_cloud_client()
+    return await ai.embed(text_to_embed)
+
+
+async def _find_nearest(
+    db: AsyncSession,
+    user_id: _uuid_module.UUID,
+    embedding: List[float],
+    node_type: str,
+    k: int = 3,
+) -> List[Tuple[KnowledgeNode, float]]:
+    """Return up to k existing nodes for this user ranked by cosine similarity.
+    Same node_type gets a small bias boost in the final sort."""
+    if not embedding:
+        return []
+    sql = text("""
+        SELECT id, 1 - (embedding <=> CAST(:emb AS vector)) AS sim
+        FROM knowledge_nodes
+        WHERE user_id = :uid AND embedding IS NOT NULL AND archived = false
+        ORDER BY embedding <=> CAST(:emb AS vector)
+        LIMIT :k
+    """)
+    rows = (await db.execute(sql, {"emb": str(embedding), "uid": str(user_id), "k": k})).all()
+    if not rows:
+        return []
+    ids = [r.id for r in rows]
+    nodes = {n.id: n for n in (
+        await db.execute(select(KnowledgeNode).where(KnowledgeNode.id.in_(ids)))
+    ).scalars().all()}
+    out: List[Tuple[KnowledgeNode, float]] = []
+    for r in rows:
+        node = nodes.get(r.id)
+        if node is not None:
+            out.append((node, float(r.sim)))
+    out.sort(key=lambda x: (x[1] + (0.02 if x[0].node_type == node_type else 0.0)), reverse=True)
+    return out
+
+
+def _make_source_ref(ai_message: ChatMessage) -> dict:
+    return {
+        "kind": "chat_message",
+        "id": str(ai_message.id),
+        "excerpt": (ai_message.content or "")[:200],
+    }
+
+
+async def extract_from_chat_turn(
+    user_id: _uuid_module.UUID,
+    project_id: Optional[_uuid_module.UUID],
+    user_message: ChatMessage,
+    ai_message: ChatMessage,
+    conversation_kind: str,
+    db: AsyncSession,
+) -> None:
+    """End-to-end per-turn extraction. Best-effort; logs and returns on any failure."""
+    ai = get_cloud_client()
+
+    if not await _classify_extractable(ai, user_message.content or "", ai_message.content or ""):
+        return
+
+    result = await _extract_structured(
+        ai, user_message.content or "", ai_message.content or "",
+        conversation_kind, recent_turns=[],
+    )
+    if not result.nodes:
+        return
+
+    persisted: List[Optional[KnowledgeNode]] = []  # index-aligned with result.nodes (None for merged)
+    for extracted in result.nodes:
+        try:
+            embed_text = f"{extracted.title}\n\n{extracted.content}"
+            embedding = await _embed(embed_text)
+        except Exception:
+            logger.exception("embed failed; skipping node")
+            persisted.append(None)
+            continue
+
+        neighbors = await _find_nearest(db, user_id, embedding, extracted.node_type)
+        best = neighbors[0] if neighbors else None
+        action = _decide_dedup_action(
+            best_score=best[1] if best else None,
+            same_type=(best is not None and best[0].node_type == extracted.node_type),
+        )
+
+        if action.kind == "merge" and best is not None:
+            existing = best[0]
+            existing.source_refs = (existing.source_refs or []) + [_make_source_ref(ai_message)]
+            meta = dict(existing.metadata_ or {})
+            meta["reinforcement_count"] = int(meta.get("reinforcement_count", 1)) + 1
+            existing.metadata_ = meta
+            persisted.append(existing)
+            continue
+
+        node = KnowledgeNode(
+            user_id=user_id, project_id=project_id,
+            node_type=extracted.node_type, title=extracted.title,
+            content=extracted.content, embedding=embedding,
+            source_refs=[_make_source_ref(ai_message)],
+            metadata_={
+                "confidence": extracted.confidence,
+                "extraction_model": "gemini_flash",
+                "conversation_kind": conversation_kind,
+            },
+            created_by="auto_extractor",
+        )
+        db.add(node)
+        await db.flush()  # populate node.id
+
+        if action.kind == "create_with_edge" and best is not None and action.edge_type:
+            db.add(KnowledgeEdge(
+                user_id=user_id, source_node_id=node.id,
+                target_node_id=best[0].id, edge_type=action.edge_type, weight=0.5,
+                source_refs=[_make_source_ref(ai_message)],
+                created_by="auto_extractor",
+            ))
+        persisted.append(node)
+
+    # Within-turn edges from extractor JSON
+    for edge in result.edges_within_turn:
+        src = persisted[edge["from_idx"]]
+        tgt = persisted[edge["to_idx"]]
+        if src is None or tgt is None or src.id == tgt.id:
+            continue
+        db.add(KnowledgeEdge(
+            user_id=user_id, source_node_id=src.id, target_node_id=tgt.id,
+            edge_type=edge["edge_type"], weight=1.0,
+            source_refs=[_make_source_ref(ai_message)], created_by="auto_extractor",
+        ))
+
+    try:
+        await db.commit()
+    except Exception:
+        logger.exception("knowledge extractor commit failed; rolling back")
+        await db.rollback()
