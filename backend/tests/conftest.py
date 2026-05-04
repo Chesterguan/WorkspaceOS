@@ -50,7 +50,12 @@ async def db_session():
     the outer transaction rather than just the SAVEPOINT, making the teardown
     rollback a no-op.  Row cleanup is instead driven by sample_user teardown,
     which deletes the user row and lets FK CASCADE handle everything downstream.
+
+    pool_dispose=True: after SUT code commits its own transaction the asyncpg
+    pool can hold connections in a half-open state.  Disposing after each
+    function-scoped session guarantees the next test starts with a fresh pool.
     """
+    from app.database import engine
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -59,6 +64,13 @@ async def db_session():
                 await session.rollback()
             except Exception:
                 pass
+    # Dispose pool connections so the next function-scoped test starts fresh.
+    # This is safe: dispose() closes idle connections; active ones are returned
+    # to a new pool on their next checkin.
+    try:
+        await engine.dispose()
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture

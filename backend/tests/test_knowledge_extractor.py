@@ -186,3 +186,22 @@ async def test_extract_persists_nodes_and_within_turn_edges(db_session, sample_u
     )).scalars().all()
     assert len(edges) == 1
     assert edges[0].edge_type == "rejects"
+
+
+@pytest.mark.asyncio
+async def test_promote_manual_creates_node_with_user_supplied_fields(db_session, sample_user, sample_project):
+    from app.services.knowledge_extractor import promote_manual
+    from app.schemas.knowledge import SourceRef
+
+    with patch("app.services.knowledge_extractor._embed", new=AsyncMock(return_value=[0.0]*768)):
+        node = await promote_manual(
+            user_id=sample_user.id, project_id=sample_project.id,
+            source=SourceRef(kind="manual", note="from chat msg X"),
+            suggested_type="decision",
+            title="Manual decision",
+            content="We decided to do thing.",
+            db=db_session,
+        )
+    assert node.node_type == "decision"
+    assert node.title == "Manual decision"
+    assert node.created_by == "manual_promote"

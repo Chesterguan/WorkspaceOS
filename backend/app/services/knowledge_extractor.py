@@ -338,6 +338,46 @@ async def extract_from_chat_turn(
 # Public fire-and-forget entry point (shared by chat_service + research_service)
 # ---------------------------------------------------------------------------
 
+from app.schemas.knowledge import SourceRef
+
+
+async def promote_manual(
+    user_id: _uuid_module.UUID,
+    project_id: Optional[_uuid_module.UUID],
+    source: SourceRef,
+    suggested_type: Optional[str],
+    title: Optional[str],
+    content: Optional[str],
+    db: AsyncSession,
+) -> KnowledgeNode:
+    """Manual promotion. If title/content missing, the caller must supply them — no inference here in v1."""
+    if not title or not content:
+        raise ValueError("title and content required for manual promotion")
+    nt = suggested_type or "insight"
+    if nt not in NODE_TYPES:
+        raise ValueError(f"node_type must be one of {sorted(NODE_TYPES)}")
+
+    embedding: List[float]
+    try:
+        embedding = await _embed(f"{title}\n\n{content}")
+    except Exception:
+        logger.exception("embed failed during manual promote; storing without")
+        embedding = []
+
+    node = KnowledgeNode(
+        user_id=user_id, project_id=project_id, node_type=nt,
+        title=title.strip()[:160], content=content.strip(),
+        embedding=embedding or None,
+        source_refs=[source.model_dump(exclude_none=True)],
+        metadata_={"extraction_model": "manual"},
+        created_by="manual_promote",
+    )
+    db.add(node)
+    await db.commit()
+    await db.refresh(node)
+    return node
+
+
 async def bg_extract_from_turn(
     user_id: _uuid_module.UUID,
     project_id: _uuid_module.UUID,
