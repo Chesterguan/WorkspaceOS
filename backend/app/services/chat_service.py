@@ -13,6 +13,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import AsyncSessionLocal
 from app.models.blog import BlogPost
 from app.models.chat import ChatMessage
 from app.models.draft import Draft
@@ -359,6 +360,45 @@ async def _build_chat_context(
 
 
 # ---------------------------------------------------------------------------
+# Background knowledge extraction helper
+# ---------------------------------------------------------------------------
+
+async def _bg_extract_from_turn(
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    user_msg_id: uuid.UUID,
+    user_msg_content: str,
+    ai_msg_id: uuid.UUID,
+    ai_msg_content: str,
+    conversation_kind: str,
+) -> None:
+    """Background entry point for knowledge extraction. Owns its own DB session.
+
+    Builds lightweight transient ChatMessage objects (not session-attached) since
+    extract_from_chat_turn only reads .id and .content.
+    """
+    try:
+        from app.services import knowledge_extractor  # local import avoids circular risk
+        async with AsyncSessionLocal() as bg_db:
+            user_msg = ChatMessage(
+                id=user_msg_id, project_id=project_id, role="user", content=user_msg_content
+            )
+            ai_msg = ChatMessage(
+                id=ai_msg_id, project_id=project_id, role="assistant", content=ai_msg_content
+            )
+            await knowledge_extractor.extract_from_chat_turn(
+                user_id=user_id,
+                project_id=project_id,
+                user_message=user_msg,
+                ai_message=ai_msg,
+                conversation_kind=conversation_kind,
+                db=bg_db,
+            )
+    except Exception:
+        logger.exception("background knowledge extraction (chat) failed")
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -480,6 +520,27 @@ async def send_message(
     await db.flush()
     for msg in advisor_messages:
         await db.refresh(msg)
+
+    # Fire-and-forget knowledge extraction per advisor reply.
+    # We resolve user_id from the Project row; if unavailable we skip silently.
+    try:
+        project = await db.get(Project, project_id)
+        owner_user_id = project.user_id if project else None
+    except Exception:
+        logger.exception("could not resolve project owner for knowledge extraction")
+        owner_user_id = None
+
+    if owner_user_id is not None:
+        for ai_msg in advisor_messages:
+            asyncio.create_task(_bg_extract_from_turn(
+                user_id=owner_user_id,
+                project_id=project_id,
+                user_msg_id=user_msg.id,
+                user_msg_content=user_msg.content,
+                ai_msg_id=ai_msg.id,
+                ai_msg_content=ai_msg.content,
+                conversation_kind="cofounder",
+            ))
 
     return list(advisor_messages), routed_ids, roundtable_group
 
