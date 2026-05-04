@@ -63,7 +63,7 @@ def upgrade() -> None:
 
     # tsvector trigger (mirrors memory_entries pattern)
     op.execute("""
-        CREATE FUNCTION knowledge_nodes_tsv_trigger() RETURNS trigger AS $$
+        CREATE OR REPLACE FUNCTION knowledge_nodes_tsv_trigger() RETURNS trigger AS $$
         BEGIN
           NEW.search_vector :=
             setweight(to_tsvector('english', coalesce(NEW.title,'')), 'A') ||
@@ -82,10 +82,9 @@ def upgrade() -> None:
     op.create_index("ix_knowledge_nodes_user_id", "knowledge_nodes", ["user_id"])
     op.create_index("ix_knowledge_nodes_project_id", "knowledge_nodes", ["project_id"])
     op.create_index("ix_knowledge_nodes_node_type", "knowledge_nodes", ["node_type"])
-    op.create_index(
-        "ix_knowledge_nodes_user_archived_created",
-        "knowledge_nodes",
-        ["user_id", "archived", sa.text("created_at DESC")],
+    op.execute(
+        "CREATE INDEX ix_knowledge_nodes_user_archived_created "
+        "ON knowledge_nodes (user_id, archived, created_at DESC)"
     )
     op.execute(
         "CREATE INDEX ix_knowledge_nodes_search_vector "
