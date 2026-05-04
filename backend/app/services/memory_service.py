@@ -25,25 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Reranker (lazy-loaded singleton)
-# ---------------------------------------------------------------------------
-_reranker = None  # None = not tried, False = tried and failed
-
-
-def _get_reranker():
-    global _reranker
-    if _reranker is None:
-        try:
-            from flashrank import Ranker
-            _reranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2")
-            logger.info("FlashRank reranker loaded")
-        except Exception:
-            logger.warning("FlashRank reranker unavailable", exc_info=True)
-            _reranker = False  # sentinel to stop retrying
-    return _reranker if _reranker is not False else None
-
-
-# ---------------------------------------------------------------------------
 # Contextual retrieval: generate context on write
 # ---------------------------------------------------------------------------
 async def _generate_context_description(content: str, entry_type: str) -> str:
@@ -203,17 +184,24 @@ def reciprocal_rank_fusion(
     ranked_lists: List[List[MemoryEntry]],
     k: int = 60,
 ) -> List[MemoryEntry]:
-    """Fuse multiple ranked result lists using RRF. Returns deduplicated, re-ranked list."""
-    scores: Dict[uuid.UUID, float] = {}
+    """Fuse multiple ranked result lists using RRF. Returns deduplicated, re-ranked list.
+
+    Thin wrapper around _hybrid_search.reciprocal_rank_fusion_ids preserving
+    MemoryEntry-typed signature for any external callers.
+    """
+    from app.services._hybrid_search import reciprocal_rank_fusion_ids
+
     entry_map: Dict[uuid.UUID, MemoryEntry] = {}
-
+    id_lists: List[List[uuid.UUID]] = []
     for ranked_list in ranked_lists:
-        for rank, entry in enumerate(ranked_list):
-            scores[entry.id] = scores.get(entry.id, 0) + 1.0 / (rank + k)
+        ids = []
+        for entry in ranked_list:
             entry_map[entry.id] = entry
+            ids.append(entry.id)
+        id_lists.append(ids)
 
-    sorted_ids = sorted(scores.keys(), key=lambda eid: scores[eid], reverse=True)
-    return [entry_map[eid] for eid in sorted_ids]
+    fused_ids = reciprocal_rank_fusion_ids(id_lists, k=k)
+    return [entry_map[eid] for eid in fused_ids if eid in entry_map]
 
 
 # ---------------------------------------------------------------------------
@@ -224,30 +212,18 @@ async def rerank_results(
     entries: List[MemoryEntry],
     top_k: int = 5,
 ) -> List[MemoryEntry]:
-    """Rerank memory entries using FlashRank cross-encoder."""
+    """Rerank memory entries using FlashRank cross-encoder.
+
+    Thin wrapper around _hybrid_search.rerank_passages preserving MemoryEntry-typed
+    signature.
+    """
     if not entries:
         return entries
-
-    reranker = _get_reranker()
-    if reranker is None:
-        return entries[:top_k]
-
-    from flashrank import RerankRequest
-
+    from app.services._hybrid_search import rerank_passages
     passages = [{"id": str(e.id), "text": e.content} for e in entries]
-    request = RerankRequest(query=query, passages=passages)
-
-    loop = asyncio.get_running_loop()
-    reranked = await loop.run_in_executor(None, reranker.rerank, request)
-
+    new_id_order = await rerank_passages(query, passages, top_k=top_k)
     entry_map = {str(e.id): e for e in entries}
-    result = []
-    for r in reranked[:top_k]:
-        # FlashRank returns dicts in some versions, objects in others
-        rid = r["id"] if isinstance(r, dict) else getattr(r, "id", None)
-        if rid and rid in entry_map:
-            result.append(entry_map[rid])
-    return result
+    return [entry_map[rid] for rid in new_id_order if rid in entry_map]
 
 
 # ---------------------------------------------------------------------------
