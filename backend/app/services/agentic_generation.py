@@ -144,6 +144,25 @@ async def agentic_generate_draft(
         else "No relevant memory entries."
     )
 
+    # -- Knowledge layer (decisions, claims, rejections, etc.) --
+    try:
+        from app.services.knowledge_service import search_knowledge
+        kn_query = ((narrative.one_liner or "") + " " + (project.name or "")).strip()
+        kn_query = kn_query or "project knowledge"
+        hits = await search_knowledge(
+            user_id=project.user_id, query=kn_query, db=db,
+            project_id=project_id, limit=10,
+        )
+        if hits:
+            lines = [
+                f"- [{h.node.node_type}] {h.node.title} — {h.node.content[:300]}"
+                for h in hits
+            ]
+            knowledge_context = "## Project knowledge\n" + "\n".join(lines)
+            memory_context = knowledge_context + "\n\n" + memory_context
+    except Exception:
+        logger.exception("knowledge enrichment of agentic draft failed (non-fatal)")
+
     preference_summary = await get_preference_summary(project_id, db)
 
     readme_result = await db.execute(

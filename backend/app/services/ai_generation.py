@@ -2,6 +2,7 @@
 AI generation service: builds context from DB, renders prompts, calls the AI,
 and persists the resulting draft.
 """
+import logging
 import uuid
 from typing import List, Optional, Tuple
 
@@ -19,6 +20,8 @@ from app.schemas.draft import DraftCreate
 from app.services.repo_context import get_generation_context
 from app.utils.context import build_changes_summary
 from app.utils.prompts import get_template
+
+logger = logging.getLogger(__name__)
 
 
 async def _load_project(project_id: uuid.UUID, db: AsyncSession) -> Project:
@@ -108,6 +111,25 @@ async def generate_draft(
     # Use the one_liner as the memory search query for relevance
     memory_query = narrative.one_liner or project.name
     memory_context = await _build_memory_context(project_id, memory_query, db)
+
+    # -- Knowledge layer (decisions, claims, rejections, etc.) --
+    try:
+        from app.services.knowledge_service import search_knowledge
+        kn_query = ((narrative.one_liner or "") + " " + (project.name or "")).strip()
+        kn_query = kn_query or "project knowledge"
+        hits = await search_knowledge(
+            user_id=project.user_id, query=kn_query, db=db,
+            project_id=project_id, limit=10,
+        )
+        if hits:
+            lines = [
+                f"- [{h.node.node_type}] {h.node.title} — {h.node.content[:300]}"
+                for h in hits
+            ]
+            knowledge_context = "## Project knowledge\n" + "\n".join(lines)
+            memory_context = knowledge_context + "\n\n" + memory_context
+    except Exception:
+        logger.exception("knowledge enrichment of draft generation failed (non-fatal)")
 
     # Fetch LIVE repo context from GitHub (the key missing piece)
     repo_context = ""
