@@ -131,6 +131,26 @@ async def gather_period_data(
         for r in rows.fetchall()
     ]
 
+    # Knowledge nodes created in this period (decisions/questions/blockers/etc).
+    rows = await db.execute(
+        text("""
+            SELECT project_id, node_type, title, content, created_at
+            FROM knowledge_nodes
+            WHERE project_id = ANY(:ids)
+              AND archived = false
+              AND created_at >= :start AND created_at <= :end
+            ORDER BY created_at
+        """),
+        {"ids": pid_list, "start": start_date, "end": end_date},
+    )
+    knowledge_by_project: Dict[str, Dict[str, list]] = {}
+    for r in rows.fetchall():
+        pid = str(r[0])
+        bucket = knowledge_by_project.setdefault(pid, {})
+        bucket.setdefault(r[1], []).append({
+            "title": r[2], "content": r[3], "created_at": str(r[4]),
+        })
+
     # project_context: per-project narrative baseline the LLM should treat as
     # authoritative (user-pinned focus + AI-maintained wiki). Empty when a
     # project has no pinned notes and no wiki yet — prompt section still
@@ -152,6 +172,7 @@ async def gather_period_data(
         "drafts_by_status": drafts_by_status,
         "syncs": syncs,
         "project_context": project_context,
+        "knowledge_by_project": knowledge_by_project,
         "period_start": str(start_date),
         "period_end": str(end_date),
     }
@@ -177,15 +198,21 @@ _TEMPLATES = {
     "weekly": (
         "You are a concise technical writer producing a weekly progress report for a "
         "software engineering supervisor. Keep it to roughly 1 page. Use markdown. "
-        "Include sections: Summary, Key Accomplishments, Commits Overview, Issues & Blockers, "
-        "Next Week Goals. Use bullet points. Include a markdown table summarising commits per project. "
+        "Include sections: Summary, Key Accomplishments, Knowledge & Decisions, "
+        "Commits Overview, Issues & Blockers, Next Week Goals. "
+        "If a Knowledge Captured section is provided, the Knowledge & Decisions section should "
+        "summarise the most important items (do not list all). "
+        "Use bullet points. Include a markdown table summarising commits per project. "
         + _CONTEXT_DIRECTIVE
     ),
     "monthly": (
         "You are a technical writer producing a detailed monthly progress report for a "
         "software engineering supervisor. Use markdown. Include sections: Executive Summary, "
-        "Project Highlights (per project), Metrics (commits, papers, drafts — use a markdown table), "
+        "Project Highlights (per project), Knowledge & Decisions, "
+        "Metrics (commits, papers, drafts — use a markdown table), "
         "Key Achievements, Challenges & Mitigations, Goals Review, Next Month Plan. "
+        "If a Knowledge Captured section is provided, the Knowledge & Decisions section should "
+        "summarise the most important items (do not list all). "
         "Be thorough with metrics and concrete examples. "
         + _CONTEXT_DIRECTIVE
     ),
@@ -246,6 +273,28 @@ async def generate_report(
     if context_block:
         user_parts.append("")
         user_parts.append(context_block)
+
+    # Render knowledge nodes — group by node_type globally, then by project.
+    knowledge_by_project = period_data.get("knowledge_by_project") or {}
+    if knowledge_by_project:
+        kn_lines: List[str] = ["## Knowledge Captured This Period"]
+        # Group by node_type across projects so the supervisor sees patterns.
+        by_type: Dict[str, List[str]] = {}
+        for pid, types_dict in knowledge_by_project.items():
+            project_label = period_data["project_names"].get(pid, pid)
+            for ntype, items in types_dict.items():
+                bucket = by_type.setdefault(ntype, [])
+                for it in items:
+                    bucket.append(f"- ({project_label}) **{it['title']}** — {it['content'][:300]}")
+        type_order = ["decision", "rejection", "question", "blocker",
+                      "claim", "hypothesis", "insight"]
+        for ntype in type_order:
+            items = by_type.get(ntype)
+            if items:
+                kn_lines.append(f"### {ntype.title()}s")
+                kn_lines.extend(items)
+        if len(kn_lines) > 1:
+            user_parts.append("\n".join(kn_lines))
 
     user_parts.extend([
         "",
