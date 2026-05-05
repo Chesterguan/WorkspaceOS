@@ -228,6 +228,40 @@ async def _build_paper_context(
     except Exception:
         logger.exception("paper_service: failed to load workspace for project %s", project_id)
 
+    # -- Project knowledge (decisions/claims/insights/hypotheses) --
+    try:
+        from app.services.knowledge_service import search_knowledge
+        proj_result = await db.execute(select(Project).where(Project.id == project_id))
+        proj = proj_result.scalar_one_or_none()
+        owner_user_id = proj.user_id if proj else None
+        if owner_user_id is not None:
+            # Build a query from narrative one-liner + angles for relevance ranking
+            query_parts: List[str] = []
+            if narrative_ctx.get("one_liner"):
+                query_parts.append(narrative_ctx["one_liner"])
+            for angle in (narrative_ctx.get("preferred_angles") or [])[:3]:
+                if angle:
+                    query_parts.append(str(angle))
+            kn_query = " ".join(query_parts) or "project knowledge"
+
+            hits = await search_knowledge(
+                user_id=owner_user_id, query=kn_query, db=db,
+                project_id=project_id, limit=15,
+                node_types=["claim", "insight", "hypothesis", "decision"],
+            )
+            if hits:
+                k_lines = [
+                    f"- [{h.node.node_type}] {h.node.title} — {h.node.content}"
+                    for h in hits
+                ]
+                sections.append("## Project Knowledge (prior decisions / claims / insights)\n"
+                                + "\n".join(k_lines))
+    except Exception:
+        logger.exception(
+            "paper_service: knowledge enrichment failed for project %s (non-fatal)",
+            project_id,
+        )
+
     # -- Literature (Semantic Scholar) --
     try:
         # Extract keywords from narrative for lit search
