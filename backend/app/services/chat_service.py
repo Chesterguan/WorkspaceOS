@@ -258,6 +258,29 @@ async def _build_chat_context(
         except Exception:
             logger.exception("Memory search failed for project %s", project_id)
 
+    # -- Knowledge graph --
+    if include_memory:
+        try:
+            from app.services.knowledge_service import search_knowledge
+            proj_result = await db.execute(
+                sa_select(Project).where(Project.id == project_id)
+            )
+            project = proj_result.scalar_one_or_none()
+            owner_user_id = project.user_id if project else None
+            if owner_user_id is not None:
+                hits = await search_knowledge(
+                    user_id=owner_user_id, query=user_message, db=db,
+                    project_id=project_id, limit=5,
+                )
+                if hits:
+                    k_lines = [
+                        f"- [{h.node.node_type}] {h.node.title} — {h.node.content[:200]}"
+                        for h in hits
+                    ]
+                    sections.append("## Relevant Knowledge\n" + "\n".join(k_lines))
+        except Exception:
+            logger.exception("knowledge search failed for project %s (non-fatal)", project_id)
+
     # -- Recent drafts --
     try:
         draft_result = await db.execute(
