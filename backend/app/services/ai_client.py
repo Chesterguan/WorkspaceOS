@@ -126,9 +126,13 @@ class GeminiClient(AIClient):
 
     async def embed(self, text: str) -> List[float]:
         truncated = text[:8000]
+        # gemini-embedding-001 returns 3072 dims natively; use Matryoshka
+        # truncation via the OpenAI-compat `dimensions` parameter so output
+        # matches the pgvector(768) column without zero-padding corruption.
         payload = {
             "model": settings.gemini_embed_model,
             "input": truncated,
+            "dimensions": 768,
         }
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -141,8 +145,6 @@ class GeminiClient(AIClient):
                 headers=headers,
             )
             response.raise_for_status()
-        # Gemini text-embedding-004 returns 768 dims — return as-is so it
-        # matches the pgvector column dimension without zero-padding corruption.
         return response.json()["data"][0]["embedding"]
 
 
