@@ -108,3 +108,14 @@ async def sample_project(db_session, sample_user):
     await db_session.commit()
     await db_session.refresh(p)
     return p
+
+
+@pytest_asyncio.fixture
+async def jwt_headers(sample_user):
+    """Headers carrying a Bearer JWT for the sample user.
+
+    For tests against user-scoped endpoints (e.g. /api/v1/knowledge/*).
+    """
+    from app.services.auth_service import create_access_token
+    token = create_access_token(user_id=str(sample_user.id), email=sample_user.email)
+    return {"Authorization": f"Bearer {token}"}

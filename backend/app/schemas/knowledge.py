@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.knowledge import EDGE_TYPES, NODE_TYPES
 
@@ -22,15 +22,50 @@ class KnowledgeNodeOut(BaseModel):
     title: str
     content: str
     source_refs: List[SourceRef]
-    metadata_: dict = Field(alias="metadata", default_factory=dict)
+    # The ORM column is named metadata_ in Python (maps to "metadata" in DB).
+    # SQLAlchemy Base also has a .metadata attribute (MetaData()), so we MUST
+    # read metadata_ (underscore) from the ORM object and serialize it as
+    # "metadata" in JSON output via serialization_alias.
+    metadata_: dict = Field(default_factory=dict, serialization_alias="metadata")
     archived: bool
     created_by: str
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        # Ensure serialization_alias is used when rendering JSON responses.
+        "by_alias": True,
+    }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_orm_metadata(cls, data: Any) -> Any:
+        """When building from an ORM object, copy metadata_ into the field.
+
+        Pydantic from_attributes reads attribute names from the model instance.
+        KnowledgeNode.metadata_ holds the user-defined dict; KnowledgeNode.metadata
+        (inherited from Base) is the SQLAlchemy MetaData object and must be ignored.
+        """
+        if hasattr(data, "metadata_") and not isinstance(data, dict):
+            # It's an ORM object — return a plain dict so all fields are resolved
+            # from attributes directly, bypassing the Base.metadata collision.
+            return {
+                "id": data.id,
+                "user_id": data.user_id,
+                "project_id": data.project_id,
+                "node_type": data.node_type,
+                "title": data.title,
+                "content": data.content,
+                "source_refs": data.source_refs,
+                "metadata_": data.metadata_ or {},
+                "archived": data.archived,
+                "created_by": data.created_by,
+                "created_at": data.created_at,
+                "updated_at": data.updated_at,
+            }
+        return data
 
 
 class KnowledgeEdgeOut(BaseModel):
@@ -41,8 +76,7 @@ class KnowledgeEdgeOut(BaseModel):
     weight: float
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class NodeCreateRequest(BaseModel):
