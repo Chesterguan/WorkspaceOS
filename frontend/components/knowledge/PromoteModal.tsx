@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { knowledge } from '@/lib/api';
 import type { NodeType, SourceRef } from '@/lib/types';
 import { NODE_TYPE_LABELS } from '@/lib/knowledge-style';
@@ -28,15 +28,31 @@ export function PromoteModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset form whenever the modal opens with a new source/excerpt
+  // Reset form only on the open false→true transition, not on every
+  // defaultExcerpt change while the modal is already open. Without this,
+  // clicking into the Title input (which clears the text selection →
+  // defaultExcerpt becomes '') would wipe whatever the user had typed.
+  const prevOpen = useRef(false);
+
   useEffect(() => {
-    if (open) {
+    if (open && !prevOpen.current) {
       setType('insight');
       setTitle((defaultExcerpt ?? '').slice(0, 80).replace(/\s+/g, ' ').trim());
       setContent(defaultExcerpt ?? '');
       setError(null);
     }
+    prevOpen.current = open;
   }, [open, defaultExcerpt]);
+
+  // Close on Escape — WAI-ARIA modal contract (aria-modal="true" implies this)
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { knowledge } from '@/lib/api';
 import type { KnowledgeNode } from '@/lib/types';
 import { NODE_COLORS, NODE_TYPE_LABELS } from '@/lib/knowledge-style';
@@ -19,6 +20,9 @@ export function NodeDetailPanel({ node, onClose, onChanged }: Props) {
     try {
       await knowledge.updateNode(node.id, { archived: !node.archived });
       onChanged();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Archive failed';
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -30,6 +34,9 @@ export function NodeDetailPanel({ node, onClose, onChanged }: Props) {
     try {
       await knowledge.deleteNode(node.id);
       onChanged();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Delete failed';
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
