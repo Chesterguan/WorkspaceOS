@@ -7,6 +7,7 @@ import { Rail } from '@/components/bench/Rail';
 import { ProjectFilter } from '@/components/bench/ProjectFilter';
 import { useBenchState } from '@/lib/bench/useBenchState';
 import { SURFACE_INDEX } from '@/lib/bench/surfaces';
+import { RoundtableSurface } from '@/components/bench/surfaces/RoundtableSurface';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -39,8 +40,17 @@ function BenchContent() {
               onNewProject={() => { /* Task 12 */ }}
             />
           </header>
-          <div className="flex-1 p-6 text-sm text-muted-foreground">
-            (surface body — Task 6 onwards)
+          <div className="flex-1 min-h-0 flex flex-col">
+            {state.surface === 'r' && (
+              <RoundtableSurface
+                projectId={state.projectId}
+                mode={state.mode}
+                onModeChange={(m) => update({ mode: m })}
+              />
+            )}
+            {state.surface !== 'r' && (
+              <div className="p-6 text-sm text-muted-foreground">(surface body — Task 7+)</div>
+            )}
           </div>
         </>
       }
