@@ -10,6 +10,8 @@ import { SURFACE_INDEX } from '@/lib/bench/surfaces';
 import { RoundtableSurface } from '@/components/bench/surfaces/RoundtableSurface';
 import { DraftsSurface } from '@/components/bench/surfaces/DraftsSurface';
 import { PapersSurface } from '@/components/bench/surfaces/PapersSurface';
+import { KnowledgeSurface } from '@/components/bench/surfaces/KnowledgeSurface';
+import { WorklogSurface } from '@/components/bench/surfaces/WorklogSurface';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -52,9 +54,8 @@ function BenchContent() {
             )}
             {state.surface === 'd' && <DraftsSurface projectId={state.projectId} />}
             {state.surface === 'p' && <PapersSurface projectId={state.projectId} />}
-            {state.surface !== 'r' && state.surface !== 'd' && state.surface !== 'p' && (
-              <div className="p-6 text-sm text-muted-foreground">(surface body — Task 8+)</div>
-            )}
+            {state.surface === 'k' && <KnowledgeSurface projectId={state.projectId} />}
+            {state.surface === 'w' && <WorklogSurface projectId={state.projectId} />}
           </div>
         </>
       }
