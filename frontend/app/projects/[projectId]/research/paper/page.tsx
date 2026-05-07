@@ -55,6 +55,8 @@ import { PAPER_TYPE_LABELS } from "@/lib/paper-utils";
 import { useElapsedTimer } from "@/lib/hooks/useElapsedTimer";
 import { usePassSimulation } from "@/lib/hooks/usePassSimulation";
 import { usePaperExport } from "@/lib/hooks/usePaperExport";
+import { useTextSelection } from "@/lib/hooks/useTextSelection";
+import { SelectionPromoteOverlay } from "@/components/knowledge/SelectionPromoteOverlay";
 import type {
   PaperGenerateRequest,
   PaperGenerateResponse,
@@ -128,6 +130,10 @@ export default function PaperPage({ params }: PaperPageProps) {
   const [showDiff, setShowDiff] = useState(false);
 
   const elapsedLabel = useElapsedTimer(isGenerating);
+
+  // Selection-based knowledge promote
+  const paperContentRef = useRef<HTMLDivElement | null>(null);
+  const { text: selectedText, rect: selectionRect } = useTextSelection(paperContentRef, 10);
 
   // Auto-suggest titles on page load
   const hasSuggestedRef = useRef(false);
@@ -824,6 +830,7 @@ export default function PaperPage({ params }: PaperPageProps) {
 
                     {/* Rendered markdown */}
                     <div
+                      ref={paperContentRef}
                       className="prose-paper text-sm leading-8 text-foreground/90"
                       dangerouslySetInnerHTML={{
                         __html: `<p>${paperMarkdownToHtml(
@@ -833,6 +840,13 @@ export default function PaperPage({ params }: PaperPageProps) {
                               : ""),
                         )}</p>`,
                       }}
+                    />
+                    <SelectionPromoteOverlay
+                      text={selectedText}
+                      rect={selectionRect}
+                      sourceKind="paper"
+                      sourceId={result?.blog_post_id ?? undefined}
+                      projectId={projectId}
                     />
 
                     {/* ── Visual content toolbar ── */}
