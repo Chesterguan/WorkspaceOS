@@ -5,6 +5,7 @@ import { formatDistanceToNow } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ADVISORS } from "@/lib/advisors";
 import type { ChatMessage as ChatMessageType } from "@/lib/types";
+import { PromoteButton } from "@/components/knowledge/PromoteButton";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -64,6 +65,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
         <span className="text-xs text-muted-foreground/60">
           {formatDistanceToNow(message.created_at)}
         </span>
+        {!isUser && (
+          <PromoteButton
+            source={{
+              kind: 'chat_message',
+              id: message.id,
+              excerpt: message.content.slice(0, 200),
+            }}
+            projectId={message.project_id}
+            defaultExcerpt={message.content.slice(0, 600)}
+            className="opacity-40 hover:opacity-100 transition w-5 h-5 inline-flex items-center justify-center rounded text-muted-foreground hover:bg-muted"
+          />
+        )}
       </div>
 
       {/* Bubble */}
