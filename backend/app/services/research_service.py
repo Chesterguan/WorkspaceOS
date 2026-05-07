@@ -478,25 +478,32 @@ async def send_research_message(
     for msg in reviewer_messages:
         await db.refresh(msg)
 
-    # Fire-and-forget knowledge extraction per reviewer reply.
+    # Commit so background extraction tasks see the just-persisted messages
+    # and so concurrent extraction tasks see each other's writes (the per-user
+    # lock plus a committed view together prevent dedup races).
     try:
-        project = await db.get(Project, project_id)
-        owner_user_id = project.user_id if project else None
+        await db.commit()
     except Exception:
-        logger.exception("could not resolve project owner for knowledge extraction")
-        owner_user_id = None
+        logger.exception("commit before bg extraction failed; skipping extraction")
+    else:
+        try:
+            project = await db.get(Project, project_id)
+            owner_user_id = project.user_id if project else None
+        except Exception:
+            logger.exception("could not resolve project owner for knowledge extraction")
+            owner_user_id = None
 
-    if owner_user_id is not None:
-        for ai_msg in reviewer_messages:
-            asyncio.create_task(knowledge_extractor.bg_extract_from_turn(
-                user_id=owner_user_id,
-                project_id=project_id,
-                user_msg_id=user_msg.id,
-                user_msg_content=user_msg.content,
-                ai_msg_id=ai_msg.id,
-                ai_msg_content=ai_msg.content,
-                conversation_kind="research",
-            ))
+        if owner_user_id is not None:
+            for ai_msg in reviewer_messages:
+                asyncio.create_task(knowledge_extractor.bg_extract_from_turn(
+                    user_id=owner_user_id,
+                    project_id=project_id,
+                    user_msg_id=user_msg.id,
+                    user_msg_content=user_msg.content,
+                    ai_msg_id=ai_msg.id,
+                    ai_msg_content=ai_msg.content,
+                    conversation_kind="research",
+                ))
 
     return list(reviewer_messages), routed_ids, roundtable_group
 

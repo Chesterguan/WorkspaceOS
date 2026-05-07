@@ -103,6 +103,12 @@ def test_dedup_above_high_threshold_merges():
     assert action.kind == "merge"
 
 
+def test_dedup_high_score_but_different_type_creates_with_related_edge():
+    action = _decide_dedup_action(best_score=0.95, same_type=False)
+    assert action.kind == "create_with_edge"
+    assert action.edge_type == "related_to"
+
+
 def test_dedup_mid_threshold_creates_with_refines_edge_when_same_type():
     action = _decide_dedup_action(best_score=0.85, same_type=True)
     assert action.kind == "create_with_edge"

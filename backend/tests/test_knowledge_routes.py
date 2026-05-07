@@ -120,6 +120,37 @@ async def test_api_key_only_returns_400_user_scoped(client):
 
 
 @pytest.mark.asyncio
+async def test_create_node_with_other_users_project_returns_404(
+    client, jwt_headers, db_session,
+):
+    # Make a second user with a project, then try to create a node
+    # owned by jwt_headers' user but pointing at the second user's project.
+    import uuid as _u
+    from app.models.user import User
+    from app.models.project import Project
+    other = User(email=f"other+{_u.uuid4().hex[:8]}@test")
+    db_session.add(other)
+    await db_session.commit()
+    proj = Project(name="OtherProj", slug=f"otherproj-{_u.uuid4().hex[:8]}", user_id=other.id)
+    db_session.add(proj)
+    await db_session.commit()
+
+    body = {
+        "node_type": "decision",
+        "title": "test",
+        "content": "test",
+        "project_id": str(proj.id),
+    }
+    r = await client.post("/api/v1/knowledge/nodes", json=body, headers=jwt_headers)
+    assert r.status_code == 404
+
+    # cleanup
+    from sqlalchemy import delete
+    await db_session.execute(delete(User).where(User.id == other.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_get_graph_returns_neighbors(client, jwt_headers):
     """Create A → supports → B, fetch graph rooted at A, expect both."""
     r = await client.post("/api/v1/knowledge/nodes",

@@ -1343,17 +1343,23 @@ async def edit_paper(
             f"## Paper headings (numbered list, in order)\n"
             f"{_extract_headings(previous_content)}\n"
         )
-        decision = await planner.complete_json(
-            system=_PLANNER_INSERT_DECIDE_SYSTEM,
-            user=decide_user,
-            action="freeform_decide",
-        )
+        try:
+            decision = await planner.complete_json(
+                system=_PLANNER_INSERT_DECIDE_SYSTEM,
+                user=decide_user,
+                action="freeform_decide",
+            )
+        except Exception:
+            logger.exception(
+                "edit_paper: planner LLM call failed; defaulting to global edit"
+            )
+            decision = {}
         scope = decision.get("scope", "global")
         target_section = decision.get("target_section", "").strip()
         agent_log.add(
             "gemini_planner", "freeform_decide",
             f"Decided scope={scope}, target_section={target_section!r}: "
-            f"{decision.get('rationale', '')}",
+            f"{decision.get('rationale', '') or '(planner failed → global fallback)'}",
         )
 
         if scope == "section" and target_section:

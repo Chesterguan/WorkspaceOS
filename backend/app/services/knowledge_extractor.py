@@ -170,7 +170,12 @@ def _decide_dedup_action(best_score: Optional[float], same_type: bool) -> DedupA
     if best_score is None:
         return DedupAction(kind="create")
     if best_score >= DEDUP_HIGH:
-        return DedupAction(kind="merge")
+        # Only merge when types match. Cross-type merges silently mutate node
+        # type semantics (a "decision" being absorbed by a "claim", etc).
+        if same_type:
+            return DedupAction(kind="merge")
+        # Same content, different type — link them instead of merging.
+        return DedupAction(kind="create_with_edge", edge_type="related_to")
     if best_score >= DEDUP_LOW:
         return DedupAction(
             kind="create_with_edge",
@@ -186,6 +191,7 @@ def _decide_dedup_action(best_score: Optional[float], same_type: bool) -> DedupA
 import uuid as _uuid_module
 from typing import Tuple
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge import KnowledgeEdge, KnowledgeNode
@@ -305,12 +311,20 @@ async def extract_from_chat_turn(
             await db.flush()  # populate node.id
 
             if action.kind == "create_with_edge" and best is not None and action.edge_type:
-                db.add(KnowledgeEdge(
-                    user_id=user_id, source_node_id=node.id,
-                    target_node_id=best[0].id, edge_type=action.edge_type, weight=0.5,
-                    source_refs=[_make_source_ref(ai_message)],
-                    created_by="auto_extractor",
-                ))
+                # Use a savepoint so a duplicate-edge IntegrityError drops only
+                # this edge without rolling back the whole extraction turn.
+                async with db.begin_nested() as sp:
+                    try:
+                        db.add(KnowledgeEdge(
+                            user_id=user_id, source_node_id=node.id,
+                            target_node_id=best[0].id, edge_type=action.edge_type, weight=0.5,
+                            source_refs=[_make_source_ref(ai_message)],
+                            created_by="auto_extractor",
+                        ))
+                        await db.flush()
+                    except IntegrityError:
+                        await sp.rollback()
+                        logger.debug("knowledge edge create failed (likely duplicate); skipping")
             persisted.append(node)
 
         # Within-turn edges from extractor JSON
@@ -319,11 +333,19 @@ async def extract_from_chat_turn(
             tgt = persisted[edge["to_idx"]]
             if src is None or tgt is None or src.id == tgt.id:
                 continue
-            db.add(KnowledgeEdge(
-                user_id=user_id, source_node_id=src.id, target_node_id=tgt.id,
-                edge_type=edge["edge_type"], weight=1.0,
-                source_refs=[_make_source_ref(ai_message)], created_by="auto_extractor",
-            ))
+            # Use a savepoint so a duplicate-edge IntegrityError drops only
+            # this edge without rolling back the whole extraction turn.
+            async with db.begin_nested() as sp:
+                try:
+                    db.add(KnowledgeEdge(
+                        user_id=user_id, source_node_id=src.id, target_node_id=tgt.id,
+                        edge_type=edge["edge_type"], weight=1.0,
+                        source_refs=[_make_source_ref(ai_message)], created_by="auto_extractor",
+                    ))
+                    await db.flush()
+                except IntegrityError:
+                    await sp.rollback()
+                    logger.debug("knowledge edge create failed (likely duplicate); skipping")
 
         await db.commit()
     except Exception:

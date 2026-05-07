@@ -31,6 +31,25 @@ def _resolve_user_id(auth_user_id: Optional[str]) -> uuid.UUID:
         raise HTTPException(status_code=400, detail="invalid user id from token")
 
 
+async def _validate_project_ownership(
+    project_id: Optional[uuid.UUID],
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Raise 404 if project_id is set but doesn't belong to user_id."""
+    if project_id is None:
+        return
+    from app.models.project import Project
+    owns = (await db.execute(
+        select(Project.id).where(
+            Project.id == project_id,
+            Project.user_id == user_id,
+        )
+    )).scalar_one_or_none()
+    if owns is None:
+        raise HTTPException(404, "project not found")
+
+
 @router.get("/nodes", response_model=List[KnowledgeNodeOut])
 async def list_nodes(
     project_id: Optional[uuid.UUID] = Query(default=None),
@@ -65,6 +84,7 @@ async def create_node(
     db: AsyncSession = Depends(get_db),
 ):
     user_id = _resolve_user_id(auth_user_id)
+    await _validate_project_ownership(body.project_id, user_id, db)
     src = body.source_refs[0] if body.source_refs else SourceRef(kind="manual")
     node = await knowledge_extractor.promote_manual(
         user_id=user_id, project_id=body.project_id, source=src,
@@ -82,6 +102,9 @@ async def update_node(
     db: AsyncSession = Depends(get_db),
 ):
     user_id = _resolve_user_id(auth_user_id)
+    updates = body.model_dump(exclude_unset=True)
+    if "project_id" in updates:
+        await _validate_project_ownership(updates["project_id"], user_id, db)
     node = (await db.execute(
         select(KnowledgeNode).where(
             KnowledgeNode.id == node_id, KnowledgeNode.user_id == user_id,
@@ -89,7 +112,7 @@ async def update_node(
     )).scalar_one_or_none()
     if node is None:
         raise HTTPException(404, "node not found")
-    for field, val in body.model_dump(exclude_unset=True).items():
+    for field, val in updates.items():
         setattr(node, field, val)
     await db.commit()
     await db.refresh(node)
@@ -146,6 +169,8 @@ async def list_edges_for_nodes(
         node_ids = [uuid.UUID(s) for s in ids.split(",") if s.strip()]
     except ValueError:
         raise HTTPException(400, "ids must be comma-separated UUIDs")
+    if len(node_ids) > 500:
+        raise HTTPException(400, "too many ids (max 500)")
     if not node_ids:
         return []
     edges = (await db.execute(
@@ -169,6 +194,7 @@ async def promote(
     user_id = _resolve_user_id(auth_user_id)
     if not body.title or not body.content:
         raise HTTPException(400, "title and content required")
+    await _validate_project_ownership(body.project_id, user_id, db)
     node = await knowledge_extractor.promote_manual(
         user_id=user_id, project_id=body.project_id, source=body.source,
         suggested_type=body.suggested_type, title=body.title, content=body.content, db=db,
