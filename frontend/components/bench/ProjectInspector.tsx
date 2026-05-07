@@ -2,15 +2,16 @@
 
 import { X } from 'lucide-react';
 import { useProject } from '@/lib/hooks/useProjects';
-import type { ReactNode } from 'react';
+import { InspectorOverview } from './inspector/InspectorOverview';
+import { InspectorNarrative } from './inspector/InspectorNarrative';
+import { InspectorQuickLinks } from './inspector/InspectorQuickLinks';
 
 interface Props {
   projectId: string;
   onClose: () => void;
-  children?: ReactNode;
 }
 
-export function ProjectInspector({ projectId, onClose, children }: Props) {
+export function ProjectInspector({ projectId, onClose }: Props) {
   const { data: project } = useProject(projectId);
 
   return (
@@ -28,10 +29,10 @@ export function ProjectInspector({ projectId, onClose, children }: Props) {
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 text-xs">
-        {children ?? (
-          <div className="text-muted-foreground">(sections will appear in Task 10)</div>
-        )}
+      <div className="flex-1 overflow-y-auto p-3 text-xs space-y-4">
+        <InspectorOverview projectId={projectId} />
+        <InspectorNarrative projectId={projectId} />
+        <InspectorQuickLinks projectId={projectId} />
       </div>
     </div>
   );
