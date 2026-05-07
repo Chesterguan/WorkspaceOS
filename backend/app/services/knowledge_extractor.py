@@ -378,6 +378,27 @@ async def promote_manual(
     return node
 
 
+# Per-user serialization for fire-and-forget extractions.
+# Roundtable dispatches N advisor messages in parallel; without serialization
+# all N extractions run concurrently, each opening its own session and seeing
+# an empty knowledge_nodes table for that user, so dedup misses overlapping
+# nodes and the DB ends up with N duplicates of the same insight. Serializing
+# per-user lets each task see the previous task's committed nodes.
+import asyncio as _asyncio
+
+_user_locks: dict = {}
+_user_locks_guard = _asyncio.Lock()
+
+
+async def _get_user_lock(user_id: _uuid_module.UUID) -> _asyncio.Lock:
+    async with _user_locks_guard:
+        lock = _user_locks.get(user_id)
+        if lock is None:
+            lock = _asyncio.Lock()
+            _user_locks[user_id] = lock
+        return lock
+
+
 async def bg_extract_from_turn(
     user_id: _uuid_module.UUID,
     project_id: _uuid_module.UUID,
@@ -391,22 +412,28 @@ async def bg_extract_from_turn(
 
     Builds lightweight transient ChatMessage instances (not session-attached) since
     extract_from_chat_turn only reads .id and .content from them.
+
+    Serializes per-user so concurrent advisor extractions see each other's
+    committed nodes when running their dedup lookup (prevents duplicate-node
+    explosion on roundtable replies).
     """
     try:
-        from app.database import AsyncSessionLocal
-        async with AsyncSessionLocal() as bg_db:
-            user_msg = ChatMessage(
-                id=user_msg_id, project_id=project_id,
-                role="user", content=user_msg_content,
-            )
-            ai_msg = ChatMessage(
-                id=ai_msg_id, project_id=project_id,
-                role="assistant", content=ai_msg_content,
-            )
-            await extract_from_chat_turn(
-                user_id=user_id, project_id=project_id,
-                user_message=user_msg, ai_message=ai_msg,
-                conversation_kind=conversation_kind, db=bg_db,
-            )
+        lock = await _get_user_lock(user_id)
+        async with lock:
+            from app.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as bg_db:
+                user_msg = ChatMessage(
+                    id=user_msg_id, project_id=project_id,
+                    role="user", content=user_msg_content,
+                )
+                ai_msg = ChatMessage(
+                    id=ai_msg_id, project_id=project_id,
+                    role="assistant", content=ai_msg_content,
+                )
+                await extract_from_chat_turn(
+                    user_id=user_id, project_id=project_id,
+                    user_message=user_msg, ai_message=ai_msg,
+                    conversation_kind=conversation_kind, db=bg_db,
+                )
     except Exception:
         logger.exception("background knowledge extraction (%s) failed", conversation_kind)
