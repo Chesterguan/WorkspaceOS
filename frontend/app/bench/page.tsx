@@ -6,6 +6,7 @@ import { CommandPalette } from '@/components/bench/CommandPalette';
 import { BenchLayout } from '@/components/bench/BenchLayout';
 import { Rail } from '@/components/bench/Rail';
 import { ProjectFilter } from '@/components/bench/ProjectFilter';
+import { NewProjectModal } from '@/components/bench/NewProjectModal';
 import { useBenchState } from '@/lib/bench/useBenchState';
 import { SURFACE_INDEX } from '@/lib/bench/surfaces';
 import { RoundtableSurface } from '@/components/bench/surfaces/RoundtableSurface';
@@ -26,6 +27,7 @@ function BenchContent() {
   const surface = SURFACE_INDEX[state.surface];
 
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -64,7 +66,7 @@ function BenchContent() {
             <ProjectFilter
               projectId={state.projectId}
               onChange={(id) => update({ projectId: id })}
-              onNewProject={() => { /* Task 12 */ }}
+              onNewProject={() => setNewProjectOpen(true)}
             />
           </header>
           <div className="flex-1 min-h-0 flex flex-col">
@@ -91,7 +93,12 @@ function BenchContent() {
       onClose={() => setPaletteOpen(false)}
       onProjectSelect={(id) => update({ projectId: id })}
       onOverlayOpen={(id) => update({ overlay: id })}
-      onNewProject={() => { /* Task 12 */ }}
+      onNewProject={() => setNewProjectOpen(true)}
+    />
+    <NewProjectModal
+      open={newProjectOpen}
+      onClose={() => setNewProjectOpen(false)}
+      onCreated={(id) => update({ projectId: id, inspectorOpen: true })}
     />
     </>
   );
