@@ -881,3 +881,77 @@ export interface WorkspaceContext {
   file_tree?: string | null;
   key_files?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Knowledge Layer
+// ---------------------------------------------------------------------------
+
+export type NodeType =
+  | 'claim' | 'decision' | 'question' | 'hypothesis'
+  | 'rejection' | 'blocker' | 'insight';
+
+export type EdgeType =
+  | 'supports' | 'contradicts' | 'refines' | 'follows_up'
+  | 'depends_on' | 'derives_from' | 'rejects' | 'related_to';
+
+export interface SourceRef {
+  kind: string;
+  id?: string;
+  excerpt?: string;
+  note?: string;
+  from?: string;
+}
+
+export interface KnowledgeNode {
+  id: string;
+  user_id: string;
+  project_id: string | null;
+  node_type: NodeType;
+  title: string;
+  content: string;
+  source_refs: SourceRef[];
+  metadata: Record<string, unknown>;
+  archived: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeEdge {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  edge_type: EdgeType;
+  weight: number;
+  created_at: string;
+}
+
+export interface KnowledgeGraph {
+  nodes: KnowledgeNode[];
+  edges: KnowledgeEdge[];
+}
+
+export interface PromoteNodeRequest {
+  project_id?: string | null;
+  source: SourceRef;
+  suggested_type?: NodeType;
+  title: string;
+  content: string;
+}
+
+export interface CreateNodeRequest {
+  project_id?: string | null;
+  node_type: NodeType;
+  title: string;
+  content: string;
+  source_refs?: SourceRef[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateNodeRequest {
+  title?: string;
+  content?: string;
+  node_type?: NodeType;
+  archived?: boolean;
+  project_id?: string | null;
+}

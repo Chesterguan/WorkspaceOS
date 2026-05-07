@@ -82,6 +82,13 @@ import type {
   GenerateWorkLogRequest,
   WorkLogListResponse,
   ExportDocxResponse,
+  KnowledgeNode,
+  KnowledgeEdge,
+  KnowledgeGraph,
+  NodeType,
+  CreateNodeRequest,
+  UpdateNodeRequest,
+  PromoteNodeRequest,
 } from './types';
 
 import { safeGetItem } from './utils';
@@ -986,6 +993,65 @@ export const worklog = {
   },
   exportDocx(id: string): Promise<ExportDocxResponse> {
     return apiFetch<ExportDocxResponse>(`/worklog/${id}/export-docx`, { method: 'POST' });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Knowledge layer
+// ---------------------------------------------------------------------------
+
+export const knowledge = {
+  listNodes(params: {
+    projectId?: string;
+    nodeType?: NodeType;
+    includeArchived?: boolean;
+    limit?: number;
+  } = {}): Promise<KnowledgeNode[]> {
+    const qs = new URLSearchParams();
+    if (params.projectId) qs.set('project_id', params.projectId);
+    if (params.nodeType) qs.set('node_type', params.nodeType);
+    if (params.includeArchived) qs.set('include_archived', 'true');
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    const q = qs.toString();
+    return apiFetch<KnowledgeNode[]>(`/knowledge/nodes${q ? `?${q}` : ''}`);
+  },
+
+  createNode(body: CreateNodeRequest): Promise<KnowledgeNode> {
+    return apiFetch<KnowledgeNode>('/knowledge/nodes', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  updateNode(id: string, body: UpdateNodeRequest): Promise<KnowledgeNode> {
+    return apiFetch<KnowledgeNode>(`/knowledge/nodes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  deleteNode(id: string): Promise<void> {
+    return apiFetch<void>(`/knowledge/nodes/${id}`, { method: 'DELETE' });
+  },
+
+  getGraph(rootId: string, depth = 1): Promise<KnowledgeGraph> {
+    return apiFetch<KnowledgeGraph>(
+      `/knowledge/graph?root=${rootId}&depth=${depth}`,
+    );
+  },
+
+  listEdgesForNodes(nodeIds: string[]): Promise<KnowledgeEdge[]> {
+    if (!nodeIds.length) return Promise.resolve([]);
+    return apiFetch<KnowledgeEdge[]>(
+      `/knowledge/edges?ids=${encodeURIComponent(nodeIds.join(','))}`,
+    );
+  },
+
+  promote(body: PromoteNodeRequest): Promise<KnowledgeNode> {
+    return apiFetch<KnowledgeNode>('/knowledge/promote', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   },
 };
 
