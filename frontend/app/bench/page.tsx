@@ -8,6 +8,8 @@ import { ProjectFilter } from '@/components/bench/ProjectFilter';
 import { useBenchState } from '@/lib/bench/useBenchState';
 import { SURFACE_INDEX } from '@/lib/bench/surfaces';
 import { RoundtableSurface } from '@/components/bench/surfaces/RoundtableSurface';
+import { DraftsSurface } from '@/components/bench/surfaces/DraftsSurface';
+import { PapersSurface } from '@/components/bench/surfaces/PapersSurface';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -48,8 +50,10 @@ function BenchContent() {
                 onModeChange={(m) => update({ mode: m })}
               />
             )}
-            {state.surface !== 'r' && (
-              <div className="p-6 text-sm text-muted-foreground">(surface body — Task 7+)</div>
+            {state.surface === 'd' && <DraftsSurface projectId={state.projectId} />}
+            {state.surface === 'p' && <PapersSurface projectId={state.projectId} />}
+            {state.surface !== 'r' && state.surface !== 'd' && state.surface !== 'p' && (
+              <div className="p-6 text-sm text-muted-foreground">(surface body — Task 8+)</div>
             )}
           </div>
         </>
