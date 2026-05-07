@@ -146,6 +146,12 @@ _PAPER_TYPE_HINTS: Dict[str, str] = {
         "Include: Abstract, Introduction, Related Work, Methodology, "
         "Experiments/Evaluation, Discussion, Conclusion, References."
     ),
+    "workshop": (
+        "a peer-reviewed workshop paper (typical length: 4-6 pages). "
+        "Include: Abstract, Introduction, Related Work, Method, Preliminary Results, "
+        "Discussion, Conclusion, References. "
+        "Workshop papers emphasize novelty and ongoing work over completeness."
+    ),
     "journal": (
         "a full journal article (typical length: 15-25 pages). "
         "Include: Abstract, Introduction, Background, Methodology, "
@@ -162,6 +168,32 @@ _PAPER_TYPE_HINTS: Dict[str, str] = {
         "Include: Executive Summary, Problem Statement, Solution Overview, "
         "Technical Approach, Evidence and Results, Call to Action, References. "
         "Avoid jargon. Lead with value, not with methodology."
+    ),
+    "extended_abstract": (
+        "an extended abstract for a conference (typical length: 2-4 pages). "
+        "Include: Abstract (1 paragraph), Introduction & Motivation, Approach (concise), "
+        "Preliminary Results, Future Work, References. "
+        "Be terse — every sentence earns its place."
+    ),
+    "grant_proposal": (
+        "a research grant proposal (typical length: 12-15 pages, follows NIH/NSF format). "
+        "Include: Project Summary / Specific Aims (1 page), Significance, Innovation, "
+        "Approach (with timeline), Preliminary Data, Broader Impacts, References. "
+        "Frame everything around what will be DONE in the project, not what has been done. "
+        "Aims should be testable, time-bound, and independent of each other."
+    ),
+    "phd_proposal": (
+        "a PhD thesis proposal (typical length: 20-40 pages). "
+        "Include: Abstract, Motivation, Research Questions, Background and Related Work, "
+        "Preliminary Work, Proposed Research (3-4 chapters / aims), Timeline, "
+        "Expected Contributions, References. "
+        "Frame as a research plan: what's done, what's proposed, why each piece matters."
+    ),
+    "book_chapter": (
+        "a book chapter aimed at a graduate-level audience (typical length: 20-30 pages). "
+        "Include: Introduction, Background, Core Concepts (multiple subsections), "
+        "Worked Examples, Open Problems, Summary, References. "
+        "Tutorial in tone — the reader is learning the topic for the first time."
     ),
 }
 

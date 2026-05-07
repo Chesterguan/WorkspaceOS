@@ -514,7 +514,7 @@ export interface ReviewerInfo {
 
 export interface PaperGenerateRequest {
   title: string;
-  paper_type: 'conference' | 'journal' | 'technical_report' | 'white_paper';
+  paper_type: 'conference' | 'workshop' | 'journal' | 'technical_report' | 'white_paper' | 'extended_abstract' | 'grant_proposal' | 'phd_proposal' | 'book_chapter';
   target_venue?: string;
   additional_instructions?: string;
 }
@@ -640,7 +640,7 @@ export interface DiffLine {
 // ─── Title Suggestions ───────────────────────────────────────────
 
 export interface SuggestTitlesRequest {
-  paper_type: 'conference' | 'journal' | 'technical_report' | 'white_paper';
+  paper_type: 'conference' | 'workshop' | 'journal' | 'technical_report' | 'white_paper' | 'extended_abstract' | 'grant_proposal' | 'phd_proposal' | 'book_chapter';
   target_venue?: string;
 }
 
@@ -696,7 +696,7 @@ export interface GenerateFigureResponse {
 export interface PortfolioPaperGenerateRequest {
   project_ids: string[];
   title: string;
-  paper_type: 'conference' | 'journal' | 'technical_report' | 'white_paper';
+  paper_type: 'conference' | 'workshop' | 'journal' | 'technical_report' | 'white_paper' | 'extended_abstract' | 'grant_proposal' | 'phd_proposal' | 'book_chapter';
   target_venue?: string;
   additional_instructions?: string;
 }

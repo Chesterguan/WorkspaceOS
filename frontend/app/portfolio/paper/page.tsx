@@ -591,9 +591,14 @@ export default function PortfolioPaperPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="conference">Conference Paper</SelectItem>
+                      <SelectItem value="workshop">Workshop Paper</SelectItem>
                       <SelectItem value="journal">Journal Article</SelectItem>
                       <SelectItem value="technical_report">Technical Report</SelectItem>
                       <SelectItem value="white_paper">White Paper</SelectItem>
+                      <SelectItem value="extended_abstract">Extended Abstract</SelectItem>
+                      <SelectItem value="grant_proposal">Grant Proposal</SelectItem>
+                      <SelectItem value="phd_proposal">PhD Proposal</SelectItem>
+                      <SelectItem value="book_chapter">Book Chapter</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

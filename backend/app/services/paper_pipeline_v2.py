@@ -53,6 +53,19 @@ def _safe_score(value: Any) -> int:
     except (ValueError, TypeError):
         return 0
 
+
+def _count_top_level_sections(text: str) -> int:
+    """Count '## N.' or '### N.' headings — used to detect section drops."""
+    import re
+    return len(re.findall(r"^#{2,3}\s+\d+\.", text, flags=re.MULTILINE))
+
+
+def _extract_headings(text: str) -> str:
+    """Pull '##/### N. Title' lines into a bullet list for the planner prompt."""
+    import re
+    headings = re.findall(r"^#{2,3}\s+(.+)$", text, flags=re.MULTILINE)
+    return "\n".join(f"- {h.strip()}" for h in headings) or "(no headings detected)"
+
 # ---------------------------------------------------------------------------
 # Prompt constants — system prompts for each agent role
 # ---------------------------------------------------------------------------
@@ -102,6 +115,14 @@ _PLANNER_BACKTRACK_SYSTEM = (
     "with a brief inline clarification."
 )
 
+_PLANNER_INSERT_DECIDE_SYSTEM = (
+    "You are a paper-editing dispatcher. Given a user instruction and the paper's "
+    "section headings, decide whether the change is local to one section or truly global. "
+    "Most insertion-style instructions ('add a paragraph about X', 'mention Y') are LOCAL — "
+    "find the most appropriate existing section and route there. "
+    "Only choose 'global' for cross-cutting concerns like length, tone, or paper-wide style."
+)
+
 _WRITER_SECTION_SYSTEM = (
     "You are an academic paper writer. Your job is to write ONE section of a "
     "research paper.\n\n"
@@ -125,6 +146,24 @@ _WRITER_REVISE_SYSTEM = (
     "- Keep the same citation markers and terminology as the original.\n"
     "- Stay within the page budget.\n"
     "- Output ONLY the revised section content (with its heading). No preamble."
+)
+
+_WRITER_FULL_REVISE_SYSTEM = (
+    "You are an academic paper writer revising a complete multi-section paper "
+    "based on roundtable reviewer feedback.\n\n"
+    "Hard rules — NEVER violate:\n"
+    "1. Return EVERY section that was in the input paper, in the SAME order.\n"
+    "2. Do NOT drop, merge, or reorder sections. The Abstract MUST stay at the top, "
+    "the References MUST stay at the bottom.\n"
+    "3. Preserve every section heading exactly (including its number prefix).\n"
+    "4. Preserve every [N] citation marker. Do not renumber citations.\n"
+    "5. Preserve all figure/table captions and inline references to them.\n\n"
+    "What to change:\n"
+    "- Address every critical issue raised by the reviewers.\n"
+    "- Address as many suggestions as fit within the existing section budgets.\n"
+    "- Improve clarity, rigor, and consistency without restructuring.\n\n"
+    "Output ONLY the complete revised paper. No preamble, no meta-commentary, "
+    "no summary of what you changed. Begin with the very first heading."
 )
 
 _CRITIC_SECTION_SYSTEM = (
@@ -151,16 +190,19 @@ _CRITIC_SECTION_SYSTEM = (
 )
 
 _EDITOR_COHERENCE_SYSTEM = (
-    "You are a senior academic editor performing a coherence pass on a full "
-    "research paper.\n\n"
-    "Your job:\n"
+    "You are an academic editor performing a coherence pass on a complete paper.\n\n"
+    "Hard rules — NEVER violate:\n"
+    "1. Return EVERY section that was in the input paper, in the SAME order.\n"
+    "2. Do NOT drop, merge, split, or reorder sections.\n"
+    "3. Preserve every section heading exactly (including its number prefix).\n"
+    "4. Preserve every [N] citation marker. Do not renumber citations.\n"
+    "5. The Abstract stays at the top; References stay at the bottom.\n\n"
+    "Your job — within those hard rules:\n"
     "1. Smooth transitions between sections.\n"
-    "2. Normalize terminology and notation across the paper.\n"
-    "3. Fix any inconsistencies in claims, figures, or table references.\n"
-    "4. Ensure the abstract (if present) accurately reflects the paper's content.\n"
-    "5. Verify section numbering is correct and sequential.\n\n"
-    "Output the COMPLETE paper with your edits applied. Do not summarize — "
-    "output the full text."
+    "2. Normalize terminology and notation across sections.\n"
+    "3. Fix internal inconsistencies (e.g., a claim in section 3 contradicting one in section 5).\n"
+    "4. Tighten prose without dropping content.\n\n"
+    "Output ONLY the complete polished paper. No preamble, no summary."
 )
 
 _EDITOR_CONDENSE_SYSTEM = (
@@ -582,7 +624,7 @@ async def _phase_roundtable_review(
             "Return the COMPLETE revised paper."
         )
         paper = await writer.complete(
-            system=_WRITER_REVISE_SYSTEM,
+            system=_WRITER_FULL_REVISE_SYSTEM,
             user=revision_user,
             action="roundtable_revision",
             section=f"round_{round_num}",
@@ -594,6 +636,16 @@ async def _phase_roundtable_review(
                 f"All reviewers scored >= {MIN_SCORE_FOR_PASS}, skipping additional rounds",
             )
             break
+
+    # --- Section-count guardrail: warn if revision dropped sections ---
+    expected = len(sections)
+    got = _count_top_level_sections(paper)
+    if got < expected:
+        agent_log.add(
+            "system", "section_count_warning",
+            f"Section count dropped: expected {expected}, got {got}. "
+            "This indicates a revision step removed sections.",
+        )
 
     return paper, all_reviews
 
@@ -1269,25 +1321,68 @@ async def edit_paper(
         sections_modified = [target_section]
 
     else:
-        # --- Free-form edit ---
+        # --- Free-form edit: planner first decides target section, editor then applies ---
         agent_log.add(
             "system", "edit_type",
             f"Free-form edit: {instruction[:100]}",
         )
 
-        freeform_user = (
-            f"## Full Paper\n{previous_content}\n\n"
+        planner = agents["gemini_planner"]
+        decide_user = (
+            "Decide where in this paper the user's instruction belongs.\n\n"
+            "Output ONLY a JSON object (no markdown fences, no prose):\n"
+            "{\n"
+            '  "scope": "section" or "global",\n'
+            '  "target_section": "<number or heading match, only if scope=section>",\n'
+            '  "rationale": "<one sentence>"\n'
+            "}\n\n"
+            "Use 'section' when the instruction adds/modifies content that belongs in ONE existing section. "
+            "Use 'global' only when the instruction truly affects the whole paper (e.g., 'reduce length', "
+            "'change tone', 'add inline citations everywhere').\n\n"
             f"## Instruction\n{instruction}\n\n"
-            f"{venue_text}\n\n"
-            "Apply the instruction to the whole paper. "
-            "Output the COMPLETE paper with your edits applied."
+            f"## Paper headings (numbered list, in order)\n"
+            f"{_extract_headings(previous_content)}\n"
         )
+        decision = await planner.complete_json(
+            system=_PLANNER_INSERT_DECIDE_SYSTEM,
+            user=decide_user,
+            action="freeform_decide",
+        )
+        scope = decision.get("scope", "global")
+        target_section = decision.get("target_section", "").strip()
+        agent_log.add(
+            "gemini_planner", "freeform_decide",
+            f"Decided scope={scope}, target_section={target_section!r}: "
+            f"{decision.get('rationale', '')}",
+        )
+
+        if scope == "section" and target_section:
+            freeform_user = (
+                f"## Full Paper\n{previous_content}\n\n"
+                f"## Instruction\nApply this change to section '{target_section}': "
+                f"{instruction}\n\n"
+                f"{venue_text}\n\n"
+                "Hard rules: return the COMPLETE paper. ALL sections in order, "
+                "headings preserved, citations preserved. Make the change ONLY in the "
+                f"target section ('{target_section}'). All other sections unchanged."
+            )
+            sections_modified = [target_section]
+        else:
+            freeform_user = (
+                f"## Full Paper\n{previous_content}\n\n"
+                f"## Instruction\n{instruction}\n\n"
+                f"{venue_text}\n\n"
+                "Hard rules: return the COMPLETE paper. ALL sections in their original "
+                "order, headings preserved, citations preserved. Apply the instruction "
+                "globally as needed."
+            )
+            sections_modified = ["all"]
+
         updated_content = await editor.complete(
             system=_EDITOR_COHERENCE_SYSTEM,
             user=freeform_user,
             action="freeform_edit",
         )
-        sections_modified = ["all"]
 
     # --- Critic review on the result ---
     review_user = (

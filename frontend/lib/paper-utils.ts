@@ -7,9 +7,14 @@ import type { PaperGenerateRequest } from "@/lib/types";
 /** Human-readable labels for every supported paper_type value. */
 export const PAPER_TYPE_LABELS: Record<PaperGenerateRequest["paper_type"], string> = {
   conference: "Conference Paper",
+  workshop: "Workshop Paper",
   journal: "Journal Article",
   technical_report: "Technical Report",
   white_paper: "White Paper",
+  extended_abstract: "Extended Abstract",
+  grant_proposal: "Grant Proposal",
+  phd_proposal: "PhD Proposal",
+  book_chapter: "Book Chapter",
 };
 
 /** Copy `text` to the clipboard and show a toast notification. */
