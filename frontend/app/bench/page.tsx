@@ -4,7 +4,9 @@ import { Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { BenchLayout } from '@/components/bench/BenchLayout';
 import { Rail } from '@/components/bench/Rail';
+import { ProjectFilter } from '@/components/bench/ProjectFilter';
 import { useBenchState } from '@/lib/bench/useBenchState';
+import { SURFACE_INDEX } from '@/lib/bench/surfaces';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -14,6 +16,7 @@ import { useBenchState } from '@/lib/bench/useBenchState';
 function BenchContent() {
   const router = useRouter();
   const { state, update } = useBenchState();
+  const surface = SURFACE_INDEX[state.surface];
 
   return (
     <BenchLayout
@@ -27,10 +30,19 @@ function BenchContent() {
       }
       inspector={null}
       main={
-        <div className="p-6 text-sm text-muted-foreground">
-          surface: <span className="text-foreground font-medium">{state.surface}</span> ·
-          project: <span className="text-foreground font-medium">{state.projectId ?? 'all'}</span>
-        </div>
+        <>
+          <header className="flex items-center justify-between border-b border-border/60 px-6 py-3">
+            <h1 className="text-lg font-semibold">{surface.label}</h1>
+            <ProjectFilter
+              projectId={state.projectId}
+              onChange={(id) => update({ projectId: id })}
+              onNewProject={() => { /* Task 12 */ }}
+            />
+          </header>
+          <div className="flex-1 p-6 text-sm text-muted-foreground">
+            (surface body — Task 6 onwards)
+          </div>
+        </>
       }
       log={
         <div className="p-2 text-xs text-muted-foreground font-mono">events</div>
