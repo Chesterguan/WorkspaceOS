@@ -44,3 +44,4 @@ test-*.png
 backend/tests/baseline_results.json
 backend/tests/upgraded_results.json
 backend/tests/benchmark_comparison.txt
+.superpowers/
