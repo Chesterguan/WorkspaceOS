@@ -506,6 +506,18 @@ async def send_message(
     for msg in advisor_messages:
         await db.refresh(msg)
 
+    try:
+        from app.services.event_stream import emit
+        emit(
+            "info",
+            "ai.complete",
+            f"{len(advisor_messages)} advisor{'s' if len(advisor_messages) != 1 else ''} replied",
+            project_id=str(project_id),
+            meta={"count": len(advisor_messages), "kind": "cofounder"},
+        )
+    except Exception:
+        logger.exception("event emit failed (non-fatal)")
+
     # Commit so background extraction tasks see the just-persisted messages
     # and so concurrent extraction tasks see each other's writes (the per-user
     # lock plus a committed view together prevent dedup races).

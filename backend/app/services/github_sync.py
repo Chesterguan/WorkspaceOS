@@ -281,6 +281,19 @@ async def run_sync(project_id: uuid.UUID, db: AsyncSession) -> SyncRun:
         _schedule_extraction(sync_run.id)
         _schedule_evolution_summary(sync_run.id)
 
+    if sync_run.commits_fetched and sync_run.commits_fetched > 0:
+        try:
+            from app.services.event_stream import emit
+            emit(
+                "success",
+                "sync",
+                f"+{sync_run.commits_fetched} commits",
+                project_id=str(project_id),
+                meta={"commits": sync_run.commits_fetched},
+            )
+        except Exception:
+            logger.exception("event emit failed (non-fatal)")
+
     return sync_run
 
 

@@ -839,6 +839,18 @@ async def generate_paper_v2(
 
     logger.info("generate_paper_v2: %s (post %s)", review_summary, post_id)
 
+    try:
+        from app.services.event_stream import emit
+        emit(
+            "success",
+            "paper",
+            "Paper finalized",
+            project_id=str(project_id),
+            meta={"title": title},
+        )
+    except Exception:
+        logger.exception("event emit failed (non-fatal)")
+
     return {
         "blog_post_id": str(post_id),
         "title": title,

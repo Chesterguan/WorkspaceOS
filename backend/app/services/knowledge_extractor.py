@@ -348,6 +348,19 @@ async def extract_from_chat_turn(
                     logger.debug("knowledge edge create failed (likely duplicate); skipping")
 
         await db.commit()
+        try:
+            from app.services.event_stream import emit
+            persisted_count = len([n for n in persisted if n is not None])
+            if persisted_count > 0:
+                emit(
+                    "success",
+                    "extract",
+                    f"+{persisted_count} knowledge node{'s' if persisted_count != 1 else ''}",
+                    project_id=str(project_id) if project_id else None,
+                    meta={"nodes": persisted_count},
+                )
+        except Exception:
+            logger.exception("event emit failed (non-fatal)")
     except Exception:
         logger.exception("knowledge extractor failed; rolling back")
         try:

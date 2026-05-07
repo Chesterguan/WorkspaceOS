@@ -315,6 +315,16 @@ async def generate_report(
 
     client = get_cloud_client()
     content = await client.complete(system_prompt, user_prompt)
+    try:
+        from app.services.event_stream import emit
+        emit(
+            "success",
+            "worklog",
+            f"{period_type} report generated",
+            meta={"period": period_type},
+        )
+    except Exception:
+        logger.exception("event emit failed (non-fatal)")
     return content
 
 
