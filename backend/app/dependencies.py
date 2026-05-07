@@ -3,7 +3,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Optional
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +60,32 @@ async def verify_api_key(
         if payload and payload.get("sub"):
             return payload["sub"]
 
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or missing API key / token",
+    )
+
+
+async def verify_api_key_or_query(
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    api_key: Optional[str] = Query(default=None),
+    authorization: Optional[str] = Header(default=None),
+) -> str:
+    """Like verify_api_key but also accepts ?api_key=<key> query param.
+
+    Used by SSE endpoints — the browser EventSource API can't set custom
+    headers, so the query param is the only viable auth path for SSE.
+    """
+    if _is_valid_api_key(x_api_key):
+        return x_api_key  # type: ignore[return-value]
+    if _is_valid_api_key(api_key):
+        return api_key  # type: ignore[return-value]
+    if authorization and authorization.startswith("Bearer "):
+        from app.services.auth_service import decode_access_token
+        token = authorization[7:]
+        payload = decode_access_token(token)
+        if payload and payload.get("sub"):
+            return payload["sub"]
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or missing API key / token",

@@ -5,7 +5,7 @@ from typing import AsyncIterator, Optional
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.dependencies import verify_api_key
+from app.dependencies import verify_api_key_or_query
 from app.services.event_stream import subscribe
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -19,7 +19,7 @@ async def _format_sse() -> AsyncIterator[bytes]:
 
 @router.get("/stream")
 async def stream_events(
-    _: str = Depends(verify_api_key),
+    _: str = Depends(verify_api_key_or_query),
 ) -> StreamingResponse:
     """Stream the event ring buffer + new events to the client.
 

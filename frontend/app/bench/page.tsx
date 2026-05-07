@@ -15,6 +15,7 @@ import { PapersSurface } from '@/components/bench/surfaces/PapersSurface';
 import { KnowledgeSurface } from '@/components/bench/surfaces/KnowledgeSurface';
 import { WorklogSurface } from '@/components/bench/surfaces/WorklogSurface';
 import { ProjectInspector } from '@/components/bench/ProjectInspector';
+import { EventLog } from '@/components/bench/EventLog';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -84,9 +85,7 @@ function BenchContent() {
           </div>
         </>
       }
-      log={
-        <div className="p-2 text-xs text-muted-foreground font-mono">events</div>
-      }
+      log={<EventLog />}
     />
     <CommandPalette
       open={paletteOpen}
