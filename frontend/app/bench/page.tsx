@@ -1,21 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { BenchLayout } from '@/components/bench/BenchLayout';
 import { Rail } from '@/components/bench/Rail';
-import type { SurfaceId } from '@/lib/bench/surfaces';
+import { useBenchState } from '@/lib/bench/useBenchState';
 
-export default function BenchPage() {
+/**
+ * Inner component separated so useSearchParams (called inside useBenchState)
+ * is scoped to a Suspense boundary — required by Next.js 16 to avoid
+ * prerendering build failures (see docs: use-search-params#prerendering).
+ */
+function BenchContent() {
   const router = useRouter();
-  const [active, setActive] = useState<SurfaceId>('r');
+  const { state, update } = useBenchState();
 
   return (
     <BenchLayout
       rail={
         <Rail
-          active={active}
-          onSelect={setActive}
+          active={state.surface}
+          onSelect={(id) => update({ surface: id })}
           onPaletteOpen={() => { /* Task 11 */ }}
           onSettingsOpen={() => router.push('/settings')}
         />
@@ -23,12 +28,21 @@ export default function BenchPage() {
       inspector={null}
       main={
         <div className="p-6 text-sm text-muted-foreground">
-          Active surface: <span className="text-foreground font-medium">{active}</span>
+          surface: <span className="text-foreground font-medium">{state.surface}</span> ·
+          project: <span className="text-foreground font-medium">{state.projectId ?? 'all'}</span>
         </div>
       }
       log={
         <div className="p-2 text-xs text-muted-foreground font-mono">events</div>
       }
     />
+  );
+}
+
+export default function BenchPage() {
+  return (
+    <Suspense fallback={null}>
+      <BenchContent />
+    </Suspense>
   );
 }
