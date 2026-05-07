@@ -1,7 +1,8 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { CommandPalette } from '@/components/bench/CommandPalette';
 import { BenchLayout } from '@/components/bench/BenchLayout';
 import { Rail } from '@/components/bench/Rail';
 import { ProjectFilter } from '@/components/bench/ProjectFilter';
@@ -24,13 +25,27 @@ function BenchContent() {
   const { state, update } = useBenchState();
   const surface = SURFACE_INDEX[state.surface];
 
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
   return (
+    <>
     <BenchLayout
       rail={
         <Rail
           active={state.surface}
           onSelect={(id) => update({ surface: id })}
-          onPaletteOpen={() => { /* Task 11 */ }}
+          onPaletteOpen={() => setPaletteOpen(true)}
           onSettingsOpen={() => router.push('/settings')}
         />
       }
@@ -71,6 +86,14 @@ function BenchContent() {
         <div className="p-2 text-xs text-muted-foreground font-mono">events</div>
       }
     />
+    <CommandPalette
+      open={paletteOpen}
+      onClose={() => setPaletteOpen(false)}
+      onProjectSelect={(id) => update({ projectId: id })}
+      onOverlayOpen={(id) => update({ overlay: id })}
+      onNewProject={() => { /* Task 12 */ }}
+    />
+    </>
   );
 }
 
