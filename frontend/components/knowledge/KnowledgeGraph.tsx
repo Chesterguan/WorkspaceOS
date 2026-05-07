@@ -94,8 +94,13 @@ export function KnowledgeGraph({ nodes, onSelect }: Props) {
 
   if (!nodes.length) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-        No knowledge nodes yet. Save one from a roundtable conversation or click "New" above.
+      <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground gap-2 px-6 text-center">
+        <p>No knowledge nodes yet.</p>
+        <p>
+          Click <span className="font-medium text-foreground">New</span> to create one,
+          or save a decision/claim from a roundtable conversation using the bookmark icon
+          on any advisor reply.
+        </p>
       </div>
     );
   }
