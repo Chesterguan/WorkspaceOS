@@ -231,6 +231,8 @@ app.include_router(google_oauth_router.router, prefix=API_PREFIX)
 app.include_router(microsoft_oauth_router.router, prefix=API_PREFIX)
 app.include_router(skills_router.router, prefix=API_PREFIX)
 app.include_router(knowledge_router.router, prefix=API_PREFIX)
+from app.routers import events as events_router
+app.include_router(events_router.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["health"])
