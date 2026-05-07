@@ -29,6 +29,7 @@ import {
   Loader2,
   Activity,
   LogOut,
+  Network,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
@@ -161,6 +162,20 @@ export default function ProjectsPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium group-hover:text-primary transition-colors">Work Log</p>
                       <p className="text-[11px] text-muted-foreground">Reports</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+
+              <Link href="/knowledge">
+                <Card className="hover:border-primary/50 hover:bg-card/80 transition-all cursor-pointer group">
+                  <CardContent className="flex items-center gap-3 p-3">
+                    <div className="w-9 h-9 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
+                      <Network className="w-4 h-4 text-teal-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium group-hover:text-primary transition-colors">Knowledge</p>
+                      <p className="text-[11px] text-muted-foreground">Cross-project</p>
                     </div>
                   </CardContent>
                 </Card>
