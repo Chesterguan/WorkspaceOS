@@ -12,6 +12,7 @@ import { DraftsSurface } from '@/components/bench/surfaces/DraftsSurface';
 import { PapersSurface } from '@/components/bench/surfaces/PapersSurface';
 import { KnowledgeSurface } from '@/components/bench/surfaces/KnowledgeSurface';
 import { WorklogSurface } from '@/components/bench/surfaces/WorklogSurface';
+import { ProjectInspector } from '@/components/bench/ProjectInspector';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -33,7 +34,14 @@ function BenchContent() {
           onSettingsOpen={() => router.push('/settings')}
         />
       }
-      inspector={null}
+      inspector={
+        state.projectId && state.inspectorOpen ? (
+          <ProjectInspector
+            projectId={state.projectId}
+            onClose={() => update({ inspectorOpen: false })}
+          />
+        ) : null
+      }
       main={
         <>
           <header className="flex items-center justify-between border-b border-border/60 px-6 py-3">
