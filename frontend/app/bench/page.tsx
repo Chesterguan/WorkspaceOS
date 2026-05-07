@@ -16,6 +16,9 @@ import { KnowledgeSurface } from '@/components/bench/surfaces/KnowledgeSurface';
 import { WorklogSurface } from '@/components/bench/surfaces/WorklogSurface';
 import { ProjectInspector } from '@/components/bench/ProjectInspector';
 import { EventLog } from '@/components/bench/EventLog';
+import { FilesOverlay } from '@/components/bench/overlays/FilesOverlay';
+import { MemoryOverlay } from '@/components/bench/overlays/MemoryOverlay';
+import { PortfolioOverlay } from '@/components/bench/overlays/PortfolioOverlay';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -99,6 +102,15 @@ function BenchContent() {
       onClose={() => setNewProjectOpen(false)}
       onCreated={(id) => update({ projectId: id, inspectorOpen: true })}
     />
+    {state.overlay === 'files' && (
+      <FilesOverlay projectId={state.projectId} onClose={() => update({ overlay: null })} />
+    )}
+    {state.overlay === 'memory' && (
+      <MemoryOverlay projectId={state.projectId} onClose={() => update({ overlay: null })} />
+    )}
+    {state.overlay === 'portfolio' && (
+      <PortfolioOverlay onClose={() => update({ overlay: null })} />
+    )}
     </>
   );
 }
