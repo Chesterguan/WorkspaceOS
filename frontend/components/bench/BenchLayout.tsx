@@ -8,6 +8,7 @@ interface BenchLayoutProps {
   inspector: ReactNode | null;
   main: ReactNode;
   log: ReactNode;
+  mobileNav?: ReactNode;
 }
 
 /**
@@ -19,7 +20,7 @@ interface BenchLayoutProps {
  *   md..lg:        rail + inspector + main visible; log hidden behind sheet.
  *   >= lg (1024px): all four columns visible.
  */
-export function BenchLayout({ rail, inspector, main, log }: BenchLayoutProps) {
+export function BenchLayout({ rail, inspector, main, log, mobileNav }: BenchLayoutProps) {
   const [logOpen, setLogOpen] = useState(false);
 
   return (
@@ -34,7 +35,14 @@ export function BenchLayout({ rail, inspector, main, log }: BenchLayoutProps) {
         </div>
       )}
 
-      <div className="flex-1 min-w-0 flex flex-col">{main}</div>
+      <div className="flex-1 min-w-0 flex flex-col">
+        {main}
+        {mobileNav && (
+          <div className="md:hidden border-t border-border/60 bg-card/30">
+            {mobileNav}
+          </div>
+        )}
+      </div>
 
       <div className="hidden lg:block w-[32%] shrink-0 border-l border-border/60 bg-[#0a0a0a]">
         {log}

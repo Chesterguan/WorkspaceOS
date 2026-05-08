@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
-import Link from 'next/link';
 
 interface Props {
   projectId: string | undefined;
@@ -17,9 +16,14 @@ export function MemoryOverlay({ projectId, onClose }: Props) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-40 bg-background flex flex-col">
+    <div
+      className="fixed inset-0 z-40 bg-background flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="overlay-title"
+    >
       <header className="flex items-center justify-between border-b border-border/60 px-6 py-3">
-        <h1 className="text-lg font-semibold">Memory</h1>
+        <h1 id="overlay-title" className="text-lg font-semibold">Memory</h1>
         <button
           type="button"
           onClick={onClose}
@@ -31,14 +35,8 @@ export function MemoryOverlay({ projectId, onClose }: Props) {
       </header>
       <div className="flex-1 overflow-y-auto p-6">
         {projectId ? (
-          <div className="text-sm text-muted-foreground space-y-3">
-            <p>Raw memory entries (the evidence behind Knowledge nodes) for this project.</p>
-            <Link
-              href={`/projects/${projectId}/memory`}
-              className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
-            >
-              Open project memory
-            </Link>
+          <div className="text-sm text-muted-foreground">
+            Raw memory entries (the evidence behind Knowledge nodes) for this project. Inline list coming in a future task.
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">

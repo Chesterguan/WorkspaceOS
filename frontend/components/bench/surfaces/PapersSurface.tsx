@@ -12,6 +12,11 @@ interface Props {
 }
 
 export function PapersSurface({ projectId }: Props) {
+  const { data: posts = [], isLoading } = useSWR<BlogPost[]>(
+    projectId ? `/projects/${projectId}/blog?tag=paper` : null,
+    () => blogApi.list(projectId!, { tag: 'paper' }),
+  );
+
   if (!projectId) {
     return (
       <EmptyProjectPicker
@@ -21,27 +26,12 @@ export function PapersSurface({ projectId }: Props) {
     );
   }
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { data: posts = [], isLoading } = useSWR<BlogPost[]>(
-    `/projects/${projectId}/blog?tag=paper`,
-    () => blogApi.list(projectId, { tag: 'paper' }),
-  );
-
   return (
     <div className="flex-1 overflow-y-auto p-6">
       {isLoading ? (
         <SurfaceLoading rows={4} />
       ) : posts.length === 0 ? (
-        <div className="text-sm text-muted-foreground">
-          No papers yet. Generate one in the existing{' '}
-          <Link
-            href={`/projects/${projectId}/research/paper`}
-            className="text-foreground underline hover:no-underline"
-          >
-            paper page
-          </Link>
-          {' '}— a &quot;+ New paper&quot; action will land here in a follow-up task.
-        </div>
+        <div className="text-sm text-muted-foreground">No papers yet for this project.</div>
       ) : (
         <ul className="space-y-2">
           {posts.map((p) => (

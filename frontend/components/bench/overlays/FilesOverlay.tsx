@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
-import Link from 'next/link';
 
 interface Props {
   projectId: string | undefined;
@@ -17,9 +16,14 @@ export function FilesOverlay({ projectId, onClose }: Props) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-40 bg-background flex flex-col">
+    <div
+      className="fixed inset-0 z-40 bg-background flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="overlay-title"
+    >
       <header className="flex items-center justify-between border-b border-border/60 px-6 py-3">
-        <h1 className="text-lg font-semibold">Files</h1>
+        <h1 id="overlay-title" className="text-lg font-semibold">Files</h1>
         <button
           type="button"
           onClick={onClose}
@@ -31,21 +35,12 @@ export function FilesOverlay({ projectId, onClose }: Props) {
       </header>
       <div className="flex-1 overflow-y-auto p-6">
         {projectId ? (
-          <div className="text-sm text-muted-foreground space-y-3">
-            <p>The file inbox UI for this project lives at the existing route for now.</p>
-            <Link
-              href={`/projects/${projectId}/files`}
-              className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
-            >
-              Open project files
-            </Link>
-            <p className="text-xs text-muted-foreground/80">
-              A future task will embed file listing + upload directly in this overlay.
-            </p>
+          <div className="text-sm text-muted-foreground">
+            Project files for this project. Inline file list + upload coming in a future task.
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">
-            Pick a project (in the bench header) to see its files. Cross-project Files view is a future task.
+            Pick a project to see its files. Cross-project Files view is a future task.
           </div>
         )}
       </div>

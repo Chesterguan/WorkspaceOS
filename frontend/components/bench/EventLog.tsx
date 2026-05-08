@@ -16,7 +16,7 @@ export function EventLog() {
   useEffect(() => {
     if (paused) return;
     containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight });
-  }, [events.length, paused]);
+  }, [events, paused]);
 
   const filtered = filter === 'all' ? events : events.filter((e) => e.level === filter);
 

@@ -221,6 +221,17 @@ main > * {
   animation: page-enter 0.18s ease-out both;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Subtle custom scrollbars */
 ::-webkit-scrollbar {
   width: 5px;

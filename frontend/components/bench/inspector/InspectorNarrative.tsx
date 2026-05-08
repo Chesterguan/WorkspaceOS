@@ -14,10 +14,15 @@ export function InspectorNarrative({ projectId }: Props) {
   const [oneLiner, setOneLiner] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Sync local edit state when narrative loads or projectId changes
   useEffect(() => {
+    // Sync local edit state ONLY when the project changes. We deliberately
+    // omit narrative.one_liner from the deps so background SWR revalidations
+    // don't clobber in-flight user edits. After save, mutate() updates the
+    // cached narrative; next time the user opens this project the textarea
+    // will pick up the new value.
     setOneLiner(narrative?.one_liner ?? '');
-  }, [narrative?.one_liner, projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   const save = async () => {
     setBusy(true);

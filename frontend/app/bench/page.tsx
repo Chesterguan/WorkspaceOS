@@ -20,6 +20,7 @@ import { EventLog } from '@/components/bench/EventLog';
 import { FilesOverlay } from '@/components/bench/overlays/FilesOverlay';
 import { MemoryOverlay } from '@/components/bench/overlays/MemoryOverlay';
 import { PortfolioOverlay } from '@/components/bench/overlays/PortfolioOverlay';
+import { MobileSurfaceBar } from '@/components/bench/MobileSurfaceBar';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -91,6 +92,13 @@ function BenchContent() {
         </>
       }
       log={<EventLog />}
+      mobileNav={
+        <MobileSurfaceBar
+          active={state.surface}
+          onSelect={(id) => update({ surface: id })}
+          onPaletteOpen={() => setPaletteOpen(true)}
+        />
+      }
     />
     <CommandPalette
       open={paletteOpen}

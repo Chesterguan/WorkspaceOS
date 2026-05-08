@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
-import Link from 'next/link';
 
 interface Props {
   onClose: () => void;
@@ -16,9 +15,14 @@ export function PortfolioOverlay({ onClose }: Props) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-40 bg-background flex flex-col">
+    <div
+      className="fixed inset-0 z-40 bg-background flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="overlay-title"
+    >
       <header className="flex items-center justify-between border-b border-border/60 px-6 py-3">
-        <h1 className="text-lg font-semibold">Portfolio</h1>
+        <h1 id="overlay-title" className="text-lg font-semibold">Portfolio</h1>
         <button
           type="button"
           onClick={onClose}
@@ -29,17 +33,8 @@ export function PortfolioOverlay({ onClose }: Props) {
         </button>
       </header>
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="text-sm text-muted-foreground space-y-3">
-          <p>The combined multi-project portfolio view lives at the existing route for now.</p>
-          <Link
-            href="/portfolio"
-            className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
-          >
-            Open portfolio
-          </Link>
-          <p className="text-xs text-muted-foreground/80">
-            A future task will embed the portfolio view directly in this overlay.
-          </p>
+        <div className="text-sm text-muted-foreground">
+          Combined multi-project portfolio view. Inline portfolio coming in a future task.
         </div>
       </div>
     </div>
