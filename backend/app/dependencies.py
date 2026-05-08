@@ -75,6 +75,15 @@ async def verify_api_key_or_query(
 
     Used by SSE endpoints — the browser EventSource API can't set custom
     headers, so the query param is the only viable auth path for SSE.
+
+    SECURITY: query strings are logged by reverse proxies (nginx, Cloudflare)
+    and persisted in browser history. This dependency is acceptable for
+    single-user dev / demo deployments where the API key is dev-secret-key
+    and the deployment is localhost or trusted.
+
+    For multi-tenant production: use a separate /events/auth endpoint that
+    POSTs the key and returns a short-lived single-use SSE token, then have
+    EventSource pass that token instead.
     """
     if _is_valid_api_key(x_api_key):
         return x_api_key  # type: ignore[return-value]

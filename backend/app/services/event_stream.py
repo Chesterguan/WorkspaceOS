@@ -68,14 +68,28 @@ def get_buffer() -> list[Dict[str, Any]]:
 
 
 async def subscribe() -> AsyncIterator[Dict[str, Any]]:
-    """Async iterator yielding buffered + live events for an SSE consumer."""
+    """Async iterator yielding buffered + live events for an SSE consumer.
+
+    Race-free contract: register the subscriber queue BEFORE replaying the
+    buffer. This ensures events emitted concurrently with the subscribe()
+    call land in the queue exactly once — either via the buffer replay
+    (if they were already there) or via fan-out (if they happened after).
+    Worst case: an event in the buffer is also delivered live, producing a
+    duplicate. The consumer is responsible for de-duping if it cares.
+    """
     queue: asyncio.Queue = asyncio.Queue(maxsize=500)
-    # Replay buffer first
-    for event in get_buffer():
-        await queue.put(event)
+
+    # Register first so any concurrent emit() reaches us before we replay.
     async with _subscribers_lock:
         _subscribers.append(queue)
+
     try:
+        # Replay current buffer state. Events appended between these two
+        # operations may be delivered twice (once via fan-out, once via this
+        # replay) — acceptable; consumers can dedupe by ts+source+summary.
+        for event in get_buffer():
+            await queue.put(event)
+
         while True:
             event = await queue.get()
             yield event
