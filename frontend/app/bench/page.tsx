@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CommandPalette } from '@/components/bench/CommandPalette';
 import { BenchLayout } from '@/components/bench/BenchLayout';
@@ -8,7 +8,8 @@ import { Rail } from '@/components/bench/Rail';
 import { ProjectFilter } from '@/components/bench/ProjectFilter';
 import { NewProjectModal } from '@/components/bench/NewProjectModal';
 import { useBenchState } from '@/lib/bench/useBenchState';
-import { SURFACE_INDEX } from '@/lib/bench/surfaces';
+import { SURFACE_INDEX, SURFACES } from '@/lib/bench/surfaces';
+import { useBenchShortcuts } from '@/lib/bench/keyboard';
 import { RoundtableSurface } from '@/components/bench/surfaces/RoundtableSurface';
 import { DraftsSurface } from '@/components/bench/surfaces/DraftsSurface';
 import { PapersSurface } from '@/components/bench/surfaces/PapersSurface';
@@ -33,16 +34,17 @@ function BenchContent() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setPaletteOpen(true);
-      }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, []);
+  useBenchShortcuts({
+    isPaletteOpen: paletteOpen,
+    isOverlayOpen: state.overlay !== null,
+    onSurfaceNumber: (i) => {
+      const s = SURFACES[i];
+      if (s) update({ surface: s.id });
+    },
+    onPaletteOpen: () => setPaletteOpen(true),
+    onInspectorClose: () => update({ inspectorOpen: false }),
+    onOverlayClose: () => update({ overlay: null }),
+  });
 
   return (
     <>
