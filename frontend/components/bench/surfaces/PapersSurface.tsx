@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { blog as blogApi } from '@/lib/api';
 import type { BlogPost } from '@/lib/types';
 import { EmptyProjectPicker } from './EmptyProjectPicker';
+import { SurfaceLoading } from '@/components/bench/SurfaceLoading';
 
 interface Props {
   projectId: string | undefined;
@@ -29,7 +30,7 @@ export function PapersSurface({ projectId }: Props) {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       {isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading…</div>
+        <SurfaceLoading rows={4} />
       ) : posts.length === 0 ? (
         <div className="text-sm text-muted-foreground">
           No papers yet. Generate one in the existing{' '}

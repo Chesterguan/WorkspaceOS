@@ -5,6 +5,7 @@ import { drafts as draftsApi } from '@/lib/api';
 import type { Draft } from '@/lib/types';
 import { DraftCard } from '@/components/DraftCard';
 import { EmptyProjectPicker } from './EmptyProjectPicker';
+import { SurfaceLoading } from '@/components/bench/SurfaceLoading';
 
 interface Props {
   projectId: string | undefined;
@@ -24,7 +25,7 @@ export function DraftsSurface({ projectId }: Props) {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       {isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading…</div>
+        <SurfaceLoading rows={4} />
       ) : items.length === 0 ? (
         <div className="text-sm text-muted-foreground">No drafts yet. Click &quot;+ New&quot; in the header.</div>
       ) : (

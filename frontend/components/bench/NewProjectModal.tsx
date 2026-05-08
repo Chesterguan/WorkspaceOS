@@ -69,13 +69,13 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-in fade-in-0 duration-150"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="w-[440px] max-w-[90vw] rounded-lg border border-border bg-card p-5 shadow-xl space-y-4"
+        className="w-[440px] max-w-[90vw] rounded-lg border border-border bg-card p-5 shadow-xl space-y-4 animate-in zoom-in-95 fade-in-0 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-base font-semibold">New project</h2>

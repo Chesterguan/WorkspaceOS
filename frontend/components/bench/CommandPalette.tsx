@@ -86,13 +86,13 @@ export function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24 animate-in fade-in-0 duration-150"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="w-[560px] max-w-[90vw] rounded-lg border border-border bg-card shadow-xl"
+        className="w-[560px] max-w-[90vw] rounded-lg border border-border bg-card shadow-xl animate-in zoom-in-95 fade-in-0 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         <input

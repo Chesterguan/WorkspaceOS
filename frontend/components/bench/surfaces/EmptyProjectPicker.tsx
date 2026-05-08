@@ -13,7 +13,7 @@ export function EmptyProjectPicker({ surfaceLabel, hint }: Props) {
       <div className="max-w-md space-y-3">
         <div className="text-base text-foreground">Pick a project to see {surfaceLabel.toLowerCase()}.</div>
         <p className="text-xs text-muted-foreground">
-          {hint ?? `${surfaceLabel} are project-scoped today. Use the project filter in the top right.`}
+          {hint ?? `${surfaceLabel} are project-scoped. Use the project filter in the top right of the page header.`}
         </p>
         <ArrowUpRight className="mx-auto h-5 w-5 text-muted-foreground/60" />
       </div>
