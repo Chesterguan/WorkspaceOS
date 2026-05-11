@@ -1,6 +1,7 @@
 'use client';
 
 import { ChatWindow } from '@/components/chat/ChatWindow';
+import { ResearchChatWindow } from '@/components/research/ResearchChatWindow';
 import { EmptyProjectPicker } from './EmptyProjectPicker';
 import type { RoundtableMode } from '@/lib/bench/useBenchState';
 
@@ -43,14 +44,7 @@ export function RoundtableSurface({ projectId, mode, onModeChange }: Props) {
         {mode === 'cofounder' ? (
           <ChatWindow projectId={projectId} />
         ) : (
-          <div className="flex h-full items-center justify-center p-12 text-center">
-            <div className="max-w-md space-y-3">
-              <div className="text-sm text-foreground">Research roundtable</div>
-              <p className="text-[11px] text-muted-foreground">
-                Inline research-mode chat is coming soon. Co-Founder mode is fully functional today.
-              </p>
-            </div>
-          </div>
+          <ResearchChatWindow projectId={projectId} />
         )}
       </div>
     </div>

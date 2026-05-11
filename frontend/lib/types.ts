@@ -788,7 +788,7 @@ export interface WorkLogReport {
 }
 
 export interface WorkLogListResponse {
-  reports: WorkLogReport[];
+  items: WorkLogReport[];
   total: number;
 }
 

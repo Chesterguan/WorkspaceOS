@@ -216,7 +216,7 @@ export function WorklogContent() {
   const fetchHistory = useCallback(async () => {
     try {
       const res = await worklogApi.list(20);
-      setHistory(res.reports);
+      setHistory(res.items);
     } catch {
       // silent — non-critical
     } finally {
