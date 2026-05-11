@@ -23,22 +23,40 @@ export function RoundtableSurface({ projectId, mode, onModeChange }: Props) {
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      <div className="flex items-center gap-2 border-b border-border/40 px-6 py-2">
+      <div className="flex items-center gap-3 border-b border-border/40 px-6 py-2">
         <span className="text-xs text-muted-foreground">Mode:</span>
-        <button
-          type="button"
-          onClick={() => onModeChange('cofounder')}
-          className={`rounded-md px-2.5 py-1 text-xs ${mode === 'cofounder' ? 'bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/30' : 'text-muted-foreground hover:bg-muted/40'}`}
+        <div
+          role="tablist"
+          aria-label="Roundtable mode"
+          className="inline-flex rounded-md border border-border bg-card/40 p-0.5"
         >
-          Co-Founder
-        </button>
-        <button
-          type="button"
-          onClick={() => onModeChange('research')}
-          className={`rounded-md px-2.5 py-1 text-xs ${mode === 'research' ? 'bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/30' : 'text-muted-foreground hover:bg-muted/40'}`}
-        >
-          Research
-        </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'cofounder'}
+            onClick={() => onModeChange('cofounder')}
+            className={`rounded px-3 py-1 text-xs font-medium transition ${
+              mode === 'cofounder'
+                ? 'bg-violet-500/25 text-violet-200 ring-1 ring-violet-500/40 shadow-sm'
+                : 'text-foreground/80 hover:bg-muted/40 hover:text-foreground'
+            }`}
+          >
+            Co-Founder
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'research'}
+            onClick={() => onModeChange('research')}
+            className={`rounded px-3 py-1 text-xs font-medium transition ${
+              mode === 'research'
+                ? 'bg-violet-500/25 text-violet-200 ring-1 ring-violet-500/40 shadow-sm'
+                : 'text-foreground/80 hover:bg-muted/40 hover:text-foreground'
+            }`}
+          >
+            Research
+          </button>
+        </div>
       </div>
       <div className="flex-1 min-h-0">
         {mode === 'cofounder' ? (
