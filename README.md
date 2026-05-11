@@ -1,117 +1,100 @@
-# ProjectScribe
+# ProjectScribe — Bench Demo
 
-AI co-founder platform for developer projects. Syncs GitHub activity, generates platform-adapted content, writes academic papers with adaptive review, manages project memory with hybrid RAG, and provides strategic advice via YC-trained chat.
+A single-surface workbench experiment built on top of [ProjectScribe](https://github.com/Chesterguan/ProjectScribe). The original tool is a daily-driver AI co-founder platform with 25+ pages; this branch (`feat/bench-ui`) reorganizes a subset of it into **one bench** where "project" is a filter, not a navigation root.
+
+It's a public-facing demo. Many of the full tool's features (publishing flows, paper editor, file ingest, raw memory, multi-platform integrations) are intentionally not surfaced — the goal is to show how the IA *feels* when a dense developer tool collapses into a single execution surface.
+
+---
+
+## What's in the bench
+
+Five surfaces on the rail (press `1`–`5` or click):
+
+| Letter | Surface     | What it does                                                                |
+|--------|-------------|-----------------------------------------------------------------------------|
+| **R**  | Roundtable  | Co-Founder (8 business advisors) + Research (6 academic reviewers), with a mode toggle |
+| **D**  | Drafts      | Blog and social drafts list per project                                     |
+| **P**  | Papers      | Generated research papers (single + portfolio)                              |
+| **K**  | Knowledge   | Cross-project knowledge graph — decisions, claims, hypotheses, rejections auto-extracted from your conversations |
+| **W**  | Worklog     | Periodic progress reports (weekly / monthly / quarterly)                    |
+
+Plus a `⌘K` command palette, a slide-in project inspector (one-liner narrative editing), and a right-side TUI event log streaming every AI call, sync, and extraction.
+
+## The interesting part: the knowledge layer
+
+Every Co-Founder + Research roundtable reply runs silently through a two-stage extractor and writes typed nodes to a user-scoped graph: `decision`, `claim`, `hypothesis`, `question`, `rejection`, `blocker`, `insight`. Connected by typed edges (`supports`, `contradicts`, `refines`, `rejects`, `related_to`).
+
+The graph is **cross-project by default** — a decision saved in Project A surfaces when you write a paper about Project B. Paper, draft, and worklog generation all pull relevant nodes into their LLM context automatically. The Karpathy "LLM Wiki" pattern, applied to roundtable transcripts.
+
+## Quick start
+
+```bash
+git clone https://github.com/Chesterguan/ProjectScribe.git ProjectScribe-bench
+cd ProjectScribe-bench
+git checkout feat/bench-ui
+
+cp .env.example .env
+# Edit .env — only GEMINI_API_KEY is required. Everything else is optional.
+
+docker compose up --build -d
+
+# Bench:  http://localhost:4000
+# API:    http://localhost:9000/docs
+```
+
+First load redirects you into `/bench`. Pick or create a project from the top-right filter, click the Roundtable icon, start a conversation.
+
+## What you need to set up
+
+| Required | Optional |
+|---|---|
+| **Gemini API key** (chat, drafts, papers, extraction, embeddings) | OpenAI key (paper roundtable reviewers — papers still generate without it) |
+| | Ollama running locally for free local embeddings (fallback: Gemini) |
+
+The full ProjectScribe also supports Twitter / LinkedIn / GitHub sync / Anthropic. **None of those are surfaced in this demo**, so their keys are omitted from `.env.example`. If you want to extend the demo to use them, the backend services are still present — just add the env vars and wire UI yourself.
 
 ## Architecture
 
-- **Frontend**: Next.js 16 (App Router) + Tailwind CSS + shadcn/ui (base-ui) → port 3989
-- **Backend**: Python FastAPI (async) → port 8989
-- **Database**: PostgreSQL 15 + pgvector (768-dim) + tsvector full-text → Docker
-- **AI**: Hybrid — Ollama (local/privacy), Gemini Flash (generation), OpenAI GPT-4o (review)
-- **Deployment**: Docker Compose with 3 services on `projectscribe` network
+- **Frontend** — Next.js 16 (App Router, Suspense-wrapped state, `proxy.ts` middleware), Tailwind v4, shadcn/ui, React Flow + dagre for the knowledge graph. Port **4000**.
+- **Backend** — FastAPI (async), PostgreSQL 15 + pgvector (768-dim IVFFlat), Server-Sent Events for the live log. Port **9000**.
+- **AI** — Hybrid. Local Ollama (`nomic-embed-text`) for embeddings when available; Gemini (`gemini-2.0-flash`) for generation; OpenAI (`gpt-4o`) for paper roundtable reviews.
+- **Deployment** — Docker Compose, three services (`db`, `backend`, `frontend`), DB volume isolated per compose project so you can run alongside the full ProjectScribe (which uses 3989/8989).
 
-## Quick Start
+## What's narrowed vs. the full tool
 
-```bash
-# Clone and configure
-cp .env.example .env  # Edit with your API keys
+These are intentionally placeholder in the bench (the full tool's UIs for them live on `main` in the parent repo):
 
-# Start everything
-docker compose up --build -d
+- **Files** overlay — upload + URL import + AI auto-tagging
+- **Memory** overlay — raw memory CRUD
+- **Portfolio** overlay — multi-project combined view
+- **Draft editor** — clicking a draft card does nothing yet
+- **Paper editor** — paper detail view (diagrams, tables, regenerate, version history, DOCX export) is not embedded
+- **Per-draft publishing** — LinkedIn / Dev.to / Hashnode / Twitter UIs not surfaced
+- **Project create** — bench modal captures name + GitHub repo only; the full form lives at `/projects/new`
 
-# Frontend: http://localhost:3989
-# Backend API: http://localhost:8989/docs
-```
+The backend services exist for all of these and work — the demo just doesn't wire them into the bench.
 
-## Features
+## Differences from the parent project
 
-### Content Generation
-- Multi-platform drafts: LinkedIn, Twitter/X, Xiaohongshu, Medium, GitHub Releases
-- 3-model agentic pipeline: Gemini writes → Ollama privacy-scans → OpenAI reviews → up to 4 rounds
-- Portfolio posts across multiple projects
+| | ProjectScribe (`main`) | This demo (`feat/bench-ui`) |
+|---|---|---|
+| IA | 25 per-project pages | One bench, project = filter |
+| Ports | 3989 / 8989 | 4000 / 9000 |
+| Audience | Personal daily-driver | Public demo |
+| Coverage | Full functionality | Five core surfaces + placeholders |
+| Routing | Direct routes | Aggressive proxy → bench |
 
-### Research & Papers
-- ARIS-powered research assistant with real citations
-- Literature search: Semantic Scholar + OpenAlex + arXiv + Unpaywall
-- Adaptive paper review: 5 aspects, retry until 8+/10, max 12 rounds
-- Title suggestions, comparison tables, charts, diagrams (Kroki.io)
-- LaTeX export + BibTeX generation (CrossRef + synthetic)
+## Tech notes for the curious
 
-### Memory (Hybrid RAG)
-- Dual retrieval: pgvector cosine similarity + BM25 full-text (tsvector)
-- Reciprocal Rank Fusion + FlashRank cross-encoder reranking
-- Contextual retrieval: AI-generated context descriptions on write
-- Cross-project search across all memory entries
+- **Next.js 16 conformance:** uses `proxy.ts` (not the deprecated `middleware.ts`), `useSearchParams` wrapped in `<Suspense>`, dynamic params via `use()`
+- **Knowledge dedup:** per-user `asyncio.Lock` serializes concurrent advisor extractions so cosine-near nodes from one roundtable turn merge instead of duplicating
+- **Event SSE auth:** falls back to a `?api_key=` query string because EventSource can't set custom headers — fine for the single-tenant demo, not safe for shared deployment
+- **Reduced motion respected** — WCAG 2.3.3 honored globally
 
-### Project Intelligence
-- GitHub sync: commits, releases, README → memory entries + AI theme extraction
-- Daily auto-sync scheduler (24h interval, runs all projects sequentially)
-- Project timeline: chronological view of commits, releases, AI-extracted insights
-- Co-Founder AI chat: YC-trained strategic advisor with 8 frameworks
-- Local workspace scanner with media asset discovery
+## Credits
 
-### Publishing
-- GitHub Releases: API-based publishing
-- LinkedIn: OAuth 2.0 (API version 202603)
-- Twitter/X, Medium, Xiaohongshu: manual copy-paste (API limitations)
+Built on top of [Chester Guan's ProjectScribe](https://github.com/Chesterguan/ProjectScribe). See the parent repo for the full feature set, the paper pipeline internals, and the design specs under `docs/superpowers/specs/`.
 
-## Environment Variables
+## License
 
-### Backend (`backend/.env`)
-
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL async connection string |
-| `GITHUB_TOKEN` | GitHub personal access token (needs `repo` scope) |
-| `LOCAL_AI_PROVIDER` | `ollama` (default) |
-| `CLOUD_AI_PROVIDER` | `gemini` (or `openai`, `anthropic`) |
-| `OLLAMA_BASE_URL` | Ollama API URL (default: http://host.docker.internal:11434) |
-| `GEMINI_API_KEY` | Google Gemini API key |
-| `OPENAI_API_KEY` | OpenAI API key (for review) |
-| `API_SECRET_KEY` | API key for frontend auth |
-
-### Frontend (build args in docker-compose.yml)
-
-| Variable | Description |
-|---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | Backend URL (default: http://localhost:8989/api/v1) |
-| `NEXT_PUBLIC_API_KEY` | Must match backend `API_SECRET_KEY` |
-
-## Project Structure
-
-```
-backend/
-  app/
-    models/       # SQLAlchemy ORM models
-    schemas/      # Pydantic request/response schemas
-    routers/      # FastAPI route handlers (16 routers)
-    services/     # Business logic (21 services)
-    utils/        # Prompt templates
-  alembic/        # Database migrations (6 versions)
-  tests/          # Benchmark framework
-
-frontend/
-  app/            # Next.js App Router (21 pages)
-  components/     # React components (shadcn/ui + custom)
-  lib/            # API client, SWR hooks, types
-```
-
-## Key Workflows
-
-1. **GitHub Sync**: Fetches commits, releases, README. Stores as memory entries with embeddings. AI extracts themes in background.
-2. **Hybrid Search**: Query → pgvector cosine + BM25 tsvector → RRF fusion → FlashRank rerank → top-K results.
-3. **Draft Generation**: Narrative + memory + repo context → Gemini generates → Ollama privacy-scans → OpenAI reviews → iterate.
-4. **Paper Pipeline**: Topic → Gemini writes sections → OpenAI reviews 5 aspects → retry weak sections until 8+/10 → final polish.
-5. **Timeline**: Commits + releases + extracted insights merged chronologically, grouped by month.
-6. **Auto-Sync**: Background asyncio task syncs all projects daily with per-project timeout.
-
-## Known Constraints
-
-- Docker runs on OrbStack (macOS)
-- Projects mounted read-only at /projects/ in backend container
-- Semantic Scholar rate-limited (429) — retry with backoff + OpenAlex fallback
-- Paper pipeline can take 3-10 minutes depending on rounds needed
-- Twitter/X API requires paid Basic tier ($100/mo) — manual only
-- Medium API closed to new integrations Jan 2025 — manual only
-
-Last updated: 2026-04-02
+MIT — see the parent repo.
