@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import Link from 'next/link';
 import { X } from 'lucide-react';
 
 interface Props {
@@ -34,14 +33,9 @@ export function PortfolioOverlay({ onClose }: Props) {
         </button>
       </header>
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="text-sm text-muted-foreground space-y-3">
-          <p>Combined multi-project portfolio view.</p>
-          <Link
-            href="/portfolio"
-            className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
-          >
-            Open portfolio (classic view)
-          </Link>
+        <div className="max-w-md mx-auto text-center text-sm text-muted-foreground space-y-2 mt-8">
+          <p className="text-foreground">Portfolio</p>
+          <p>Combined multi-project portfolio view coming soon.</p>
         </div>
       </div>
     </div>

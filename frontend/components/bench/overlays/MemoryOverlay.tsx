@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import Link from 'next/link';
 import { X } from 'lucide-react';
 
 interface Props {
@@ -9,7 +8,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function MemoryOverlay({ projectId, onClose }: Props) {
+export function MemoryOverlay({ projectId: _projectId, onClose }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handler);
@@ -35,21 +34,10 @@ export function MemoryOverlay({ projectId, onClose }: Props) {
         </button>
       </header>
       <div className="flex-1 overflow-y-auto p-6">
-        {projectId ? (
-          <div className="text-sm text-muted-foreground space-y-3">
-            <p>Raw memory entries (the evidence behind Knowledge nodes) for this project.</p>
-            <Link
-              href={`/projects/${projectId}/memory`}
-              className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
-            >
-              Open memory (classic view)
-            </Link>
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">
-            Pick a project to see its memory entries.
-          </div>
-        )}
+        <div className="max-w-md mx-auto text-center text-sm text-muted-foreground space-y-2 mt-8">
+          <p className="text-foreground">Memory</p>
+          <p>Raw memory entries are the evidence behind Knowledge nodes. Inline browsing is coming soon.</p>
+        </div>
       </div>
     </div>
   );

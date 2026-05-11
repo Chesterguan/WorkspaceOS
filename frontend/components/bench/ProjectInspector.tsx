@@ -4,7 +4,6 @@ import { X } from 'lucide-react';
 import { useProject } from '@/lib/hooks/useProjects';
 import { InspectorOverview } from './inspector/InspectorOverview';
 import { InspectorNarrative } from './inspector/InspectorNarrative';
-import { InspectorQuickLinks } from './inspector/InspectorQuickLinks';
 
 interface Props {
   projectId: string;
@@ -32,7 +31,6 @@ export function ProjectInspector({ projectId, onClose }: Props) {
       <div className="flex-1 overflow-y-auto p-3 text-xs space-y-4">
         <InspectorOverview projectId={projectId} />
         <InspectorNarrative projectId={projectId} />
-        <InspectorQuickLinks projectId={projectId} />
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import Link from 'next/link';
 import { X } from 'lucide-react';
 
 interface Props {
@@ -9,7 +8,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function FilesOverlay({ projectId, onClose }: Props) {
+export function FilesOverlay({ projectId: _projectId, onClose }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handler);
@@ -35,21 +34,10 @@ export function FilesOverlay({ projectId, onClose }: Props) {
         </button>
       </header>
       <div className="flex-1 overflow-y-auto p-6">
-        {projectId ? (
-          <div className="text-sm text-muted-foreground space-y-3">
-            <p>Project files for this project. Inline upload + list coming in a future task.</p>
-            <Link
-              href={`/projects/${projectId}/files`}
-              className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
-            >
-              Open files (classic view)
-            </Link>
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">
-            Pick a project to see its files. Cross-project Files view is a future task.
-          </div>
-        )}
+        <div className="max-w-md mx-auto text-center text-sm text-muted-foreground space-y-2 mt-8">
+          <p className="text-foreground">Files</p>
+          <p>Inline file ingest is coming soon. For the live demo this surface is a placeholder.</p>
+        </div>
       </div>
     </div>
   );

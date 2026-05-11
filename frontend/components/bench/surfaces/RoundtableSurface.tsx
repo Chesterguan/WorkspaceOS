@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { EmptyProjectPicker } from './EmptyProjectPicker';
 import type { RoundtableMode } from '@/lib/bench/useBenchState';
@@ -46,15 +45,9 @@ export function RoundtableSurface({ projectId, mode, onModeChange }: Props) {
         ) : (
           <div className="flex h-full items-center justify-center p-12 text-center">
             <div className="max-w-md space-y-3">
-              <div className="text-sm text-foreground">Research roundtable lives at the existing route for now.</div>
-              <Link
-                href={`/projects/${projectId}/research`}
-                className="inline-block rounded-md bg-violet-500/20 px-3 py-1.5 text-xs text-violet-300 ring-1 ring-violet-500/30 hover:bg-violet-500/30"
-              >
-                Open research roundtable
-              </Link>
+              <div className="text-sm text-foreground">Research roundtable</div>
               <p className="text-[11px] text-muted-foreground">
-                A future task will wire research mode into this surface natively.
+                Inline research-mode chat is coming soon. Co-Founder mode is fully functional today.
               </p>
             </div>
           </div>

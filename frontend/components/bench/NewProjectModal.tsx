@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { projects as projectsApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { mutate as globalMutate } from 'swr';
@@ -81,10 +80,7 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
       >
         <h2 className="text-base font-semibold">New project</h2>
         <p className="text-xs text-muted-foreground">
-          Quick create. For description + focus notes, use the{' '}
-          <Link href="/projects/new" className="underline hover:text-foreground">
-            full form
-          </Link>.
+          Quick create. You can edit the project narrative after creation.
         </p>
 
         <label className="block">

@@ -4,14 +4,12 @@ import type { NextRequest } from 'next/server';
 const PROJECT_ID_RE = /^\/projects\/([^/]+)/;
 
 /**
- * Bench UI: route proxy.
+ * Bench UI demo: aggressive proxy.
  *
- * We only redirect routes where the bench has FULL coverage of the
- * underlying functionality. Anything not yet embedded in the bench
- * (paper editor, draft editor, files, memory, blog, portfolio, posting,
- * research roundtable detail) keeps its classic route so users don't
- * lose features. The bench surfaces themselves link to those classic
- * routes via "Open …" buttons.
+ * Every old project-scoped route AND every portfolio route redirects to a
+ * bench surface or overlay. The classic UI pages still exist on disk
+ * (shared components like ChatWindow, KnowledgeGraph live there) but they
+ * are never directly visited — the bench is the only user-visible surface.
  */
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -21,45 +19,69 @@ export function proxy(req: NextRequest) {
   if (projectMatch) {
     const projectId = projectMatch[1];
 
+    // Create-project page is the one carve-out — bench has its own modal
+    // but a user typing /projects/new gets the classic form. Acceptable.
     if (projectId === 'new') {
       return NextResponse.next();
     }
 
     const sub = pathname.slice(projectMatch[0].length);
 
-    // Project root + overview → bench with inspector
     if (sub === '' || sub === '/' || sub === '/overview') {
-      return NextResponse.redirect(
-        new URL(`/bench?project=${projectId}`, req.url),
-      );
+      return NextResponse.redirect(new URL(`/bench?project=${projectId}`, req.url));
     }
-
-    // Co-Founder chat → bench roundtable (cofounder mode)
     if (sub === '/chat') {
       return NextResponse.redirect(
         new URL(`/bench?project=${projectId}&surface=r&mode=cofounder`, req.url),
       );
     }
-
-    // Drafts LIST only → bench drafts surface. Draft DETAIL stays classic.
-    if (sub === '/drafts') {
+    if (sub === '/research' || sub.startsWith('/research/paper')) {
+      // Research page AND paper editor both go to bench (research → roundtable
+      // research mode placeholder; paper → papers surface list)
+      if (sub.startsWith('/research/paper')) {
+        return NextResponse.redirect(new URL(`/bench?project=${projectId}&surface=p`, req.url));
+      }
       return NextResponse.redirect(
-        new URL(`/bench?project=${projectId}&surface=d`, req.url),
+        new URL(`/bench?project=${projectId}&surface=r&mode=research`, req.url),
       );
     }
-
-    // Everything else under /projects/[id]/* — research, research/paper,
-    // drafts/[id], blog, blog/new, blog/[id], posting, files, memory,
-    // narrative, sync, timeline — stays on the classic page.
+    if (sub === '/drafts' || sub.startsWith('/drafts/')) {
+      return NextResponse.redirect(new URL(`/bench?project=${projectId}&surface=d`, req.url));
+    }
+    if (sub === '/blog' || sub.startsWith('/blog/')) {
+      return NextResponse.redirect(
+        new URL(`/bench?project=${projectId}&surface=d&platform=blog`, req.url),
+      );
+    }
+    if (sub === '/posting') {
+      return NextResponse.redirect(new URL(`/bench?project=${projectId}&surface=d`, req.url));
+    }
+    if (sub === '/files') {
+      return NextResponse.redirect(
+        new URL(`/bench?project=${projectId}&overlay=files`, req.url),
+      );
+    }
+    if (sub === '/memory') {
+      return NextResponse.redirect(
+        new URL(`/bench?project=${projectId}&overlay=memory`, req.url),
+      );
+    }
+    if (sub === '/narrative' || sub === '/sync' || sub === '/timeline') {
+      // No bench surface for these yet — send to project inspector
+      return NextResponse.redirect(new URL(`/bench?project=${projectId}`, req.url));
+    }
     return NextResponse.next();
   }
 
-  // Top-level: list redirect to bench
   if (pathname === '/projects' || pathname === '/projects/') {
     return NextResponse.redirect(new URL('/bench', req.url));
   }
-
-  // Knowledge / Worklog have full bench surfaces
+  if (pathname === '/portfolio' || pathname === '/portfolio/') {
+    return NextResponse.redirect(new URL('/bench?overlay=portfolio', req.url));
+  }
+  if (pathname === '/portfolio/paper') {
+    return NextResponse.redirect(new URL('/bench?surface=p&scope=portfolio', req.url));
+  }
   if (pathname === '/knowledge') {
     const tail = req.nextUrl.search ? `&${req.nextUrl.search.slice(1)}` : '';
     return NextResponse.redirect(new URL(`/bench?surface=k${tail}`, req.url));
@@ -67,10 +89,6 @@ export function proxy(req: NextRequest) {
   if (pathname === '/worklog') {
     return NextResponse.redirect(new URL('/bench?surface=w', req.url));
   }
-
-  // Portfolio is NOT yet embedded — stay on classic route
-  // (intentionally NOT redirecting /portfolio or /portfolio/paper)
-
   return NextResponse.next();
 }
 
@@ -78,6 +96,8 @@ export const config = {
   matcher: [
     '/projects',
     '/projects/:path*',
+    '/portfolio',
+    '/portfolio/:path*',
     '/knowledge',
     '/worklog',
   ],
