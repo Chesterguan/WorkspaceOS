@@ -38,7 +38,11 @@ services:
     env_file:
       - .env
     volumes:
-      - /Volumes/extraSupply/Projects:/projects:ro
+      # Workspace scanner mount. Set WORKSPACE_HOST_PATH in .env to point at
+      # a directory on the host you want scanned (read-only). Defaults to
+      # /tmp/no-workspace so the demo runs without a real path; the scanner
+      # will return empty results.
+      - ${WORKSPACE_HOST_PATH:-/tmp/no-workspace}:/projects:ro
       - backend_data:/app/data
     command: >
       sh -c "

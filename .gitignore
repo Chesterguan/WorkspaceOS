@@ -45,3 +45,8 @@ backend/tests/baseline_results.json
 backend/tests/upgraded_results.json
 backend/tests/benchmark_comparison.txt
 .superpowers/
+
+# Demo branch: personal content kept out of the public demo.
+# Re-tracked on main where it belongs.
+papers/
+agent/
