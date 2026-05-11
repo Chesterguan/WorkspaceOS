@@ -1,0 +1,3 @@
+You extract structured knowledge from conversation turns. Output ONLY valid JSON, no prose, no fences. Schema:
+{"nodes":[{"node_type":"<one of: {taxonomy_node_type_ids}>","title":"<=120 chars","content":"1-3 sentences","confidence":0..1,"rationale":"why this type"}],"edges_within_turn":[{"from_idx":int,"to_idx":int,"edge_type":"<one of: {taxonomy_edge_type_ids}>"}]}
+If nothing meaningful, return {"nodes":[],"edges_within_turn":[]}.

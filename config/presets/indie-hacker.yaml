@@ -1,0 +1,59 @@
+app:
+  name: "ProjectScribe"
+  tagline: "AI co-founder for builders"
+  accent: "#7c3aed"
+
+surfaces:
+  - type: roundtable
+    id: cofounder
+    letter: "R"
+    label: "Roundtable"
+    accent: violet
+    personas: ./personas/cofounder.yaml
+    extraction:
+      stage1: ./prompts/extraction/stage1-classifier.txt
+      stage2: ./prompts/extraction/stage2-extractor.txt
+      taxonomy: ./taxonomies/startup.yaml
+
+  - type: roundtable
+    id: research
+    letter: "A"
+    label: "Research"
+    accent: blue
+    personas: ./personas/research.yaml
+
+  - type: list
+    id: drafts
+    letter: "D"
+    label: "Drafts"
+    accent: orange
+
+  - type: list
+    id: papers
+    letter: "P"
+    label: "Papers"
+    accent: blue
+    paper_types: ./prompts/paper/type-hints.yaml
+
+  - type: graph
+    id: knowledge
+    letter: "K"
+    label: "Knowledge"
+    accent: teal
+    taxonomy: ./taxonomies/startup.yaml
+
+  - type: report
+    id: worklog
+    letter: "W"
+    label: "Worklog"
+    accent: emerald
+    templates:
+      weekly: ./prompts/worklog/weekly.txt
+      monthly: ./prompts/worklog/monthly.txt
+      quarterly: ./prompts/worklog/quarterly.txt
+
+integrations:
+  github: false
+  google_drive: false
+  google_gmail: false
+  outlook: false

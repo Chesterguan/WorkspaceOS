@@ -1,0 +1,9 @@
+Does this conversation turn contain extractable knowledge?
+Extractable = states a decision, claim, hypothesis, question to revisit, rejection, blocker, or insight.
+NOT extractable = greeting, acknowledgment, restating provided context, pure question with no answer.
+
+USER: {user}
+
+AI: {ai}
+
+Reply YES or NO.

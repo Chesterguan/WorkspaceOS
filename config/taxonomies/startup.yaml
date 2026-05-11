@@ -1,0 +1,59 @@
+name: startup
+description: "Decisions, claims, rejections, hypotheses, questions, blockers, insights from startup-builder conversations."
+node_types:
+  - id: decision
+    label: "Decision"
+    color: "#22c55e"
+    description: "A choice made about the project"
+  - id: claim
+    label: "Claim"
+    color: "#3b82f6"
+    description: "An assertion about the world or product"
+  - id: rejection
+    label: "Rejection"
+    color: "#ef4444"
+    description: "Something explicitly ruled out with reasoning"
+  - id: hypothesis
+    label: "Hypothesis"
+    color: "#a855f7"
+    description: "A claim to test"
+  - id: question
+    label: "Question"
+    color: "#f59e0b"
+    description: "An open question to revisit"
+  - id: blocker
+    label: "Blocker"
+    color: "#f97316"
+    description: "Something stopping progress"
+  - id: insight
+    label: "Insight"
+    color: "#14b8a6"
+    description: "An observation worth saving"
+edge_types:
+  - id: supports
+    label: "supports"
+    stroke: "#22c55e"
+  - id: contradicts
+    label: "contradicts"
+    stroke: "#ef4444"
+    style: dashed
+  - id: refines
+    label: "refines"
+    stroke: "#3b82f6"
+  - id: follows_up
+    label: "follows up"
+    stroke: "#a855f7"
+  - id: depends_on
+    label: "depends on"
+    stroke: "#f97316"
+  - id: derives_from
+    label: "derives from"
+    stroke: "#94a3b8"
+    style: dashed
+  - id: rejects
+    label: "rejects"
+    stroke: "#ef4444"
+  - id: related_to
+    label: "related to"
+    stroke: "#94a3b8"
+    style: dashed
