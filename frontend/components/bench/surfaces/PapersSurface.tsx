@@ -31,7 +31,15 @@ export function PapersSurface({ projectId }: Props) {
       {isLoading ? (
         <SurfaceLoading rows={4} />
       ) : posts.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No papers yet for this project.</div>
+        <div className="text-sm text-muted-foreground space-y-3">
+          <p>No papers yet for this project.</p>
+          <Link
+            href={`/projects/${projectId}/research/paper`}
+            className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
+          >
+            Open paper editor (classic view)
+          </Link>
+        </div>
       ) : (
         <ul className="space-y-2">
           {posts.map((p) => (

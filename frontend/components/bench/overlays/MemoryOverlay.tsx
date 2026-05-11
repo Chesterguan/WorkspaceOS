@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { X } from 'lucide-react';
 
 interface Props {
@@ -35,8 +36,14 @@ export function MemoryOverlay({ projectId, onClose }: Props) {
       </header>
       <div className="flex-1 overflow-y-auto p-6">
         {projectId ? (
-          <div className="text-sm text-muted-foreground">
-            Raw memory entries (the evidence behind Knowledge nodes) for this project. Inline list coming in a future task.
+          <div className="text-sm text-muted-foreground space-y-3">
+            <p>Raw memory entries (the evidence behind Knowledge nodes) for this project.</p>
+            <Link
+              href={`/projects/${projectId}/memory`}
+              className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
+            >
+              Open memory (classic view)
+            </Link>
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { X } from 'lucide-react';
 
 interface Props {
@@ -35,8 +36,14 @@ export function FilesOverlay({ projectId, onClose }: Props) {
       </header>
       <div className="flex-1 overflow-y-auto p-6">
         {projectId ? (
-          <div className="text-sm text-muted-foreground">
-            Project files for this project. Inline file list + upload coming in a future task.
+          <div className="text-sm text-muted-foreground space-y-3">
+            <p>Project files for this project. Inline upload + list coming in a future task.</p>
+            <Link
+              href={`/projects/${projectId}/files`}
+              className="inline-block rounded-md bg-primary/80 px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary"
+            >
+              Open files (classic view)
+            </Link>
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">
