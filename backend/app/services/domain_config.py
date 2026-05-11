@@ -10,7 +10,6 @@ Path refs (./personas/foo.yaml) are resolved lazily on accessor calls so
 broken refs surface at use-time with a clear error, not at startup.
 """
 import logging
-import os
 import re
 import shutil
 from pathlib import Path

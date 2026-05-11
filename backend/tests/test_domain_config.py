@@ -1,8 +1,13 @@
+import textwrap
+from pathlib import Path
+
 import pytest
+
 from app.schemas.domain_config import (
     AppConfig, Persona, PersonaPool, NodeTypeDef, EdgeTypeDef,
     Taxonomy, SurfaceConfig,
 )
+from app.services.domain_config import DomainConfigLoader
 
 
 def test_app_config_minimal():
@@ -52,13 +57,6 @@ def test_surface_config_rejects_unknown_type():
             type="alien", id="x", letter="X",
             label="X", accent="violet",
         )
-
-
-import os
-import textwrap
-from pathlib import Path
-
-from app.services.domain_config import DomainConfigLoader
 
 
 def _write(p: Path, content: str) -> None:
