@@ -19,9 +19,6 @@ logger = logging.getLogger(__name__)
 # Compat alias — old code may import "AdvisorConfig" or use isinstance checks.
 AdvisorConfig = Persona
 
-# Default fallback when router fails — must match IDs in cofounder.yaml.
-DEFAULT_ADVISORS = ["yc_partner", "alex_hormozi", "dan_koe"]
-
 
 # ---------------------------------------------------------------------------
 # Registry shim — exposes a dict-like object backed by the live persona pool.
@@ -113,35 +110,40 @@ def get_advisor_count() -> int:
 # not the old hardcoded dict.
 # ---------------------------------------------------------------------------
 
-_ROUTER_SYSTEM = """\
-You are a routing agent for a Co-Founder Roundtable. Given a user's question, you must select \
-the 3-4 most relevant advisors from the following list.
-
-ADVISORS:
-{advisor_list}
-
-RULES:
-- Always include yc_partner if the question is about startup strategy, fundraising, or PMF
-- Pick 3-4 advisors whose expertise is MOST relevant to the specific question
-- Return ONLY a JSON array of advisor IDs, e.g. ["yc_partner", "alex_hormozi", "dan_koe"]
-- No explanation, no markdown, no other text — just the JSON array
-"""
-
-
 def _build_router_prompt() -> str:
     """Build the router system prompt with the current advisor list from config."""
+    personas = list(ADVISOR_REGISTRY.values())
     lines = []
-    for p in ADVISOR_REGISTRY.values():
+    for p in personas:
         tags = ", ".join(p.expertise)
         lines.append(f"- {p.id}: {p.name} — {p.tagline} (expertise: {tags})")
     advisor_list = "\n".join(lines)
-    return _ROUTER_SYSTEM.format(advisor_list=advisor_list)
+    example_json = (
+        "["
+        + ", ".join(f'"{p.id}"' for p in personas[:3])
+        + "]"
+    )
+    return (
+        "You are a routing agent for a Co-Founder Roundtable. "
+        "Given a user's question, you must select the 3-4 most relevant advisors "
+        "from the following list.\n\n"
+        f"ADVISORS:\n{advisor_list}\n\n"
+        "RULES:\n"
+        "- Pick 3-4 advisors whose expertise is MOST relevant to the specific question\n"
+        f"- Return ONLY a JSON array of advisor IDs, e.g. {example_json}\n"
+        "- No explanation, no markdown, no other text — just the JSON array\n"
+    )
+
+
+def _fallback_advisor_ids() -> List[str]:
+    """Return the first 3 advisor IDs from the pool (used when routing fails)."""
+    return [p.id for p in ADVISOR_REGISTRY.values()][:3]
 
 
 async def route_to_advisors(user_message: str) -> List[str]:
     """Call cloud AI to pick 3-4 relevant advisors for the given question.
 
-    Returns a list of advisor IDs. Falls back to DEFAULT_ADVISORS on any failure.
+    Returns a list of advisor IDs. Falls back to the first 3 pool advisors on any failure.
     IDs are validated against the live persona pool (not a hardcoded dict).
     """
     from app.services.ai_client import get_cloud_client  # local import avoids circular
@@ -164,18 +166,18 @@ async def route_to_advisors(user_message: str) -> List[str]:
         # Validate: must be a list of known advisor IDs
         if not isinstance(advisor_ids, list):
             logger.warning("Router returned non-list: %s", type(advisor_ids))
-            return list(DEFAULT_ADVISORS)
+            return _fallback_advisor_ids()
 
         valid_ids = [aid for aid in advisor_ids if aid in ADVISOR_REGISTRY]
         if len(valid_ids) < 2:
             logger.warning("Router returned too few valid advisors: %s", valid_ids)
-            return list(DEFAULT_ADVISORS)
+            return _fallback_advisor_ids()
 
         return valid_ids[:4]  # Cap at 4
 
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
         logger.warning("Router JSON parse failed: %s", exc)
-        return list(DEFAULT_ADVISORS)
+        return _fallback_advisor_ids()
     except Exception as exc:
         logger.error("Router agent failed: %s", exc, exc_info=True)
-        return list(DEFAULT_ADVISORS)
+        return _fallback_advisor_ids()
