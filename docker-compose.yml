@@ -44,11 +44,12 @@ services:
       # will return empty results.
       - ${WORKSPACE_HOST_PATH:-/tmp/no-workspace}:/projects:ro
       - backend_data:/app/data
+      - ./config:/app/config
     command: >
       sh -c "
         alembic upgrade head &&
         python seed.py || true &&
-        uvicorn app.main:app --host 0.0.0.0 --port 8000
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info
       "
     working_dir: /app
 

@@ -4,6 +4,14 @@ import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+# Make app.* loggers visible at INFO level. Uvicorn only configures its own
+# loggers and leaves the root logger at WARNING with no handlers; add a
+# StreamHandler so app.services.* INFO messages reach stdout.
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(logging.INFO)
+if not _app_logger.handlers:
+    _app_logger.addHandler(logging.StreamHandler())
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -15,6 +23,7 @@ from slowapi.util import get_remote_address
 # still being generous for legitimate use (AI endpoints take 5-30s each).
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
+from app.services import domain_config
 from app.routers import ai, auth, drafts, files as files_router, memory, narratives, projects, sync
 from app.routers import agentic, blog, chat, github, linkedin, posting, publish, workspace
 from app.routers import paper, research, settings as settings_router, worklog as worklog_router
@@ -132,6 +141,8 @@ async def _daily_sync_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup/shutdown lifecycle: validate config, then start background tasks."""
+    domain_config.load_on_startup()
+
     from app.config import settings
     if not settings.validate_startup():
         logger.critical("Aborting startup due to config validation failure")
