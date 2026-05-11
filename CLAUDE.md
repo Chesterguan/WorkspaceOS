@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ProjectScribe — AI co-founder platform for developer projects. Multi-agent roundtable advisory (8 business + 6 academic advisors), paper pipeline with roundtable review, universal file ingest with AI auto-tagging, wiki layer (Karpathy LLM Wiki pattern), work log generator for supervisors, and publishing to 5 platforms.
 
 ## Architecture
-- Frontend: Next.js 16 (App Router) + Tailwind + shadcn/ui → port 3989
-- Backend: Python FastAPI (async) → port 8989
+- Frontend: Next.js 16 (App Router) + Tailwind + shadcn/ui → port 4000 (demo) / 3989 (main)
+- Backend: Python FastAPI (async) → port 9000 (demo) / 8989 (main)
 - Database: PostgreSQL 15 + pgvector (768-dim) → Docker internal
 - AI: Hybrid — Ollama (local/privacy), Gemini Flash (generation), OpenAI GPT-4o (review)
 - Deployment: Docker Compose with 3 services on `projectscribe` network + backend_data volume

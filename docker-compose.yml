@@ -31,7 +31,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8989:8000"
+      - "9000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -53,13 +53,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL: http://localhost:8989/api/v1
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:9000/api/v1
         NEXT_PUBLIC_API_KEY: dev-secret-key
     restart: unless-stopped
     networks:
       - projectscribe
     ports:
-      - "3989:3000"
+      - "4000:3000"
     depends_on:
       - backend
     environment:
