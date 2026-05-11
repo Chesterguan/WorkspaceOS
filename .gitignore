@@ -50,3 +50,6 @@ backend/tests/benchmark_comparison.txt
 # Re-tracked on main where it belongs.
 papers/
 agent/
+
+# Domain config — auto-installed from presets/ at runtime
+config/scribe.yaml
