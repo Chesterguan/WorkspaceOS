@@ -10,7 +10,7 @@ import dagre from 'dagre';
 import useSWR from 'swr';
 import { knowledge } from '@/lib/api';
 import type { KnowledgeNode, KnowledgeEdge } from '@/lib/types';
-import { EDGE_STYLES, NODE_COLORS } from '@/lib/knowledge-style';
+import { edgeStyle, nodeColor, useKnowledgeTaxonomy } from '@/lib/knowledge-style';
 
 const NODE_W = 220;
 const NODE_H = 70;
@@ -35,6 +35,8 @@ function layout(nodes: Node[], edges: Edge[]): Node[] {
 }
 
 export function KnowledgeGraph({ nodes, onSelect }: Props) {
+  const taxonomy = useKnowledgeTaxonomy();
+
   // Fetch edges where BOTH endpoints are visible — keyed by sorted ids
   // so SWR cache hits when the same set of nodes is shown.
   const idKey = useMemo(
@@ -55,28 +57,31 @@ export function KnowledgeGraph({ nodes, onSelect }: Props) {
         position: { x: 0, y: 0 },
         style: {
           background: 'white',
-          border: `2px solid ${NODE_COLORS[n.node_type]}`,
+          border: `2px solid ${nodeColor(taxonomy, n.node_type)}`,
           borderRadius: 8,
           padding: 8,
           width: NODE_W,
         },
       })),
-    [nodes],
+    [nodes, taxonomy],
   );
 
   const initialEdges: Edge[] = useMemo(() => {
     const all = edgeData ?? [];
-    return all.map((e) => ({
-      id: e.id,
-      source: e.source_node_id,
-      target: e.target_node_id,
-      label: e.edge_type,
-      style: {
-        stroke: EDGE_STYLES[e.edge_type]?.stroke ?? '#888',
-        strokeDasharray: EDGE_STYLES[e.edge_type]?.dashed ? '4 4' : undefined,
-      },
-    }));
-  }, [edgeData]);
+    return all.map((e) => {
+      const style = edgeStyle(taxonomy, e.edge_type);
+      return {
+        id: e.id,
+        source: e.source_node_id,
+        target: e.target_node_id,
+        label: e.edge_type,
+        style: {
+          stroke: style.stroke,
+          strokeDasharray: style.dashed ? '4 4' : undefined,
+        },
+      };
+    });
+  }, [edgeData, taxonomy]);
 
   // React Flow 12 type-tightness workaround: useNodesState([]) infers never[],
   // but useNodesState<Node>([]) causes NodeChange callback mismatches.

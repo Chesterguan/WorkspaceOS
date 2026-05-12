@@ -1,13 +1,8 @@
 'use client';
 
 import { useProjects } from '@/lib/hooks/useProjects';
+import { useKnowledgeTaxonomy } from '@/lib/knowledge-style';
 import type { NodeType } from '@/lib/types';
-import { NODE_TYPE_LABELS } from '@/lib/knowledge-style';
-
-const NODE_TYPES: NodeType[] = [
-  'claim', 'decision', 'question', 'hypothesis',
-  'rejection', 'blocker', 'insight',
-];
 
 interface Props {
   projectId: string | undefined;
@@ -27,6 +22,8 @@ export function KnowledgeFilters({
   onIncludeArchivedChange,
 }: Props) {
   const { data: projects = [] } = useProjects();
+  const taxonomy = useKnowledgeTaxonomy();
+  const nodeTypes = taxonomy?.node_types ?? [];
 
   return (
     <aside className="w-64 shrink-0 border-r p-4 space-y-6 bg-card overflow-y-auto">
@@ -56,15 +53,15 @@ export function KnowledgeFilters({
             />
             <span>All</span>
           </label>
-          {NODE_TYPES.map((t) => (
-            <label key={t} className="flex items-center gap-2 text-sm">
+          {nodeTypes.map((nt) => (
+            <label key={nt.id} className="flex items-center gap-2 text-sm">
               <input
                 type="radio"
                 name="nodeType"
-                checked={nodeType === t}
-                onChange={() => onTypeChange(t)}
+                checked={nodeType === nt.id}
+                onChange={() => onTypeChange(nt.id)}
               />
-              <span>{NODE_TYPE_LABELS[t]}</span>
+              <span>{nt.label}</span>
             </label>
           ))}
         </div>

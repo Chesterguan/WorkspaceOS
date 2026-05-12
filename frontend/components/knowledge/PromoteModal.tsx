@@ -1,14 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { knowledge } from '@/lib/api';
 import type { NodeType, SourceRef } from '@/lib/types';
-import { NODE_TYPE_LABELS } from '@/lib/knowledge-style';
-
-const TYPES: NodeType[] = [
-  'claim', 'decision', 'question', 'hypothesis',
-  'rejection', 'blocker', 'insight',
-];
+import { useKnowledgeTaxonomy } from '@/lib/knowledge-style';
 
 interface Props {
   open: boolean;
@@ -22,7 +17,11 @@ interface Props {
 export function PromoteModal({
   open, source, projectId, defaultExcerpt, onClose, onSaved,
 }: Props) {
-  const [type, setType] = useState<NodeType>('insight');
+  const taxonomy = useKnowledgeTaxonomy();
+  const nodeTypes = useMemo(() => taxonomy?.node_types ?? [], [taxonomy]);
+  const defaultType: NodeType = nodeTypes[0]?.id ?? 'insight';
+
+  const [type, setType] = useState<NodeType>(defaultType);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [busy, setBusy] = useState(false);
@@ -36,13 +35,13 @@ export function PromoteModal({
 
   useEffect(() => {
     if (open && !prevOpen.current) {
-      setType('insight');
+      setType(defaultType);
       setTitle((defaultExcerpt ?? '').slice(0, 80).replace(/\s+/g, ' ').trim());
       setContent(defaultExcerpt ?? '');
       setError(null);
     }
     prevOpen.current = open;
-  }, [open, defaultExcerpt]);
+  }, [open, defaultExcerpt, defaultType]);
 
   // Close on Escape — WAI-ARIA modal contract (aria-modal="true" implies this)
   useEffect(() => {
@@ -101,8 +100,8 @@ export function PromoteModal({
             onChange={(e) => setType(e.target.value as NodeType)}
             className="w-full p-2 rounded border bg-background"
           >
-            {TYPES.map((t) => (
-              <option key={t} value={t}>{NODE_TYPE_LABELS[t]}</option>
+            {nodeTypes.map((nt) => (
+              <option key={nt.id} value={nt.id}>{nt.label}</option>
             ))}
           </select>
         </label>

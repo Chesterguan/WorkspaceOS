@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { knowledge } from '@/lib/api';
 import type { KnowledgeNode } from '@/lib/types';
-import { NODE_COLORS, NODE_TYPE_LABELS } from '@/lib/knowledge-style';
+import { nodeColor, nodeLabel, useKnowledgeTaxonomy } from '@/lib/knowledge-style';
 
 interface Props {
   node: KnowledgeNode;
@@ -14,6 +14,7 @@ interface Props {
 
 export function NodeDetailPanel({ node, onClose, onChanged }: Props) {
   const [busy, setBusy] = useState(false);
+  const taxonomy = useKnowledgeTaxonomy();
 
   const archive = async () => {
     setBusy(true);
@@ -48,9 +49,9 @@ export function NodeDetailPanel({ node, onClose, onChanged }: Props) {
         <div>
           <span
             className="inline-block px-2 py-0.5 rounded text-xs text-white"
-            style={{ background: NODE_COLORS[node.node_type] }}
+            style={{ background: nodeColor(taxonomy, node.node_type) }}
           >
-            {NODE_TYPE_LABELS[node.node_type]}
+            {nodeLabel(taxonomy, node.node_type)}
           </span>
           <h2 className="text-lg font-semibold mt-1">{node.title}</h2>
         </div>
