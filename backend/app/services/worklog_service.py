@@ -182,50 +182,6 @@ async def gather_period_data(
 # Report generation
 # ---------------------------------------------------------------------------
 
-# All three templates share one discipline: treat the Project Context section
-# (user-pinned focus + evolving wiki summary) as the narrative baseline, then
-# use the metrics that follow as evidence of progress within that narrative.
-# Without this nudge the LLM re-describes each project from scratch every
-# report, producing bullet-list reports that read like incident logs.
-_CONTEXT_DIRECTIVE = (
-    "The 'Project Context' section is your ground truth: the 'Current focus' "
-    "is what the user explicitly wants tracked this period — call out progress "
-    "against it. The wiki summary tells you what each project IS; do not "
-    "re-explain it. Frame the metrics below as a slice of that ongoing story."
-)
-
-_TEMPLATES = {
-    "weekly": (
-        "You are a concise technical writer producing a weekly progress report for a "
-        "software engineering supervisor. Keep it to roughly 1 page. Use markdown. "
-        "Include sections: Summary, Key Accomplishments, Knowledge & Decisions, "
-        "Commits Overview, Issues & Blockers, Next Week Goals. "
-        "If a Knowledge Captured section is provided, the Knowledge & Decisions section should "
-        "summarise the most important items (do not list all). "
-        "Use bullet points. Include a markdown table summarising commits per project. "
-        + _CONTEXT_DIRECTIVE
-    ),
-    "monthly": (
-        "You are a technical writer producing a detailed monthly progress report for a "
-        "software engineering supervisor. Use markdown. Include sections: Executive Summary, "
-        "Project Highlights (per project), Knowledge & Decisions, "
-        "Metrics (commits, papers, drafts — use a markdown table), "
-        "Key Achievements, Challenges & Mitigations, Goals Review, Next Month Plan. "
-        "If a Knowledge Captured section is provided, the Knowledge & Decisions section should "
-        "summarise the most important items (do not list all). "
-        "Be thorough with metrics and concrete examples. "
-        + _CONTEXT_DIRECTIVE
-    ),
-    "quarterly": (
-        "You are a strategic technical writer producing a quarterly review for senior leadership. "
-        "Use markdown. Include sections: Quarter Overview, Strategic Accomplishments, "
-        "Project Summaries (per project with metrics table), Research Output, "
-        "Key Metrics & Trends, Challenges Faced, Lessons Learned, Next Quarter Objectives. "
-        "Focus on impact and trends rather than low-level details. "
-        + _CONTEXT_DIRECTIVE
-    ),
-}
-
 # Cap the wiki-per-project slice to keep the prompt under control when the
 # report covers many projects. Tuned to leave room for focus + metrics in a
 # typical 8k-token budget.
@@ -259,7 +215,12 @@ async def generate_report(
     additional_instructions: Optional[str] = None,
 ) -> str:
     """Call cloud AI to generate the progress report markdown."""
-    system_prompt = _TEMPLATES.get(period_type, _TEMPLATES["weekly"])
+    from app.services.domain_config import get_loader
+
+    try:
+        system_prompt = get_loader().get_worklog_template(period_type)
+    except KeyError:
+        system_prompt = get_loader().get_worklog_template("weekly")
 
     user_parts: List[str] = [
         f"Period: {period_data['period_start']} to {period_data['period_end']}",
