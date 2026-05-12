@@ -36,6 +36,9 @@ class Persona(BaseModel):
     tagline: Optional[str] = None
     avatar: Optional[str] = None
     expertise: List[str] = Field(default_factory=list)
+    # Research-style metadata — present on academic reviewers, optional for cofounders.
+    modeled_after: Optional[str] = None
+    focus: Optional[str] = None
 
 
 class PersonaRouting(BaseModel):
