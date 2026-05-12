@@ -1,11 +1,12 @@
 'use client';
 
 import { Search } from 'lucide-react';
-import { SURFACES, type SurfaceId } from '@/lib/bench/surfaces';
+import { useDomainConfig } from '@/lib/bench/useDomainConfig';
+import type { SurfaceId } from '@/lib/bench/surfaces';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  active: SurfaceId;
+  active: SurfaceId | undefined;
   onSelect: (id: SurfaceId) => void;
   onPaletteOpen: () => void;
 }
@@ -19,9 +20,11 @@ const ACCENT: Record<string, string> = {
 };
 
 export function MobileSurfaceBar({ active, onSelect, onPaletteOpen }: Props) {
+  const { data } = useDomainConfig();
+  const surfaces = data?.surfaces ?? [];
   return (
     <nav className="flex items-stretch divide-x divide-border/60" aria-label="Surfaces">
-      {SURFACES.map((s) => {
+      {surfaces.map((s) => {
         const isActive = s.id === active;
         return (
           <button

@@ -3,23 +3,23 @@
 import { useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import type { SurfaceId } from '@/lib/bench/surfaces';
-import { SURFACES } from '@/lib/bench/surfaces';
 
 export type RoundtableMode = 'cofounder' | 'research';
 export type OverlayId = 'files' | 'memory' | 'portfolio' | null;
 
 export interface BenchState {
-  surface: SurfaceId;
+  surface: SurfaceId | undefined;
   projectId: string | undefined;          // undefined = "All projects"
   inspectorOpen: boolean;
-  mode: RoundtableMode;                   // only meaningful when surface === 'r'
+  mode: RoundtableMode;                   // only meaningful on a roundtable surface
   overlay: OverlayId;
 }
 
-const VALID_SURFACES = new Set<SurfaceId>(SURFACES.map((s) => s.id));
-
-function parseSurface(raw: string | null): SurfaceId {
-  return raw && VALID_SURFACES.has(raw as SurfaceId) ? (raw as SurfaceId) : 'r';
+function parseSurface(raw: string | null): SurfaceId | undefined {
+  // Surface IDs are runtime-defined by domain config — the page resolves the
+  // URL value against the loaded surface list and shows a fallback if the
+  // saved ID is no longer present.
+  return raw && raw.length > 0 ? raw : undefined;
 }
 
 function parseMode(raw: string | null): RoundtableMode {

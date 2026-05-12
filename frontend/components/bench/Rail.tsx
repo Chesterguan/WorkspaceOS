@@ -1,30 +1,26 @@
 'use client';
 
 import { Search, Settings } from 'lucide-react';
-import { SURFACES, type SurfaceId } from '@/lib/bench/surfaces';
+import { useDomainConfig } from '@/lib/bench/useDomainConfig';
+import { getAccentClasses } from '@/lib/bench/accent-classes';
 import { cn } from '@/lib/utils';
+import type { SurfaceId } from '@/lib/bench/surfaces';
 
 interface RailProps {
-  active: SurfaceId;
+  active: SurfaceId | undefined;
   onSelect: (id: SurfaceId) => void;
   onPaletteOpen: () => void;
   onSettingsOpen: () => void;
 }
 
-const ACCENT_CLASS: Record<string, { active: string; inactive: string }> = {
-  violet:  { active: 'bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/30',  inactive: 'text-muted-foreground hover:text-foreground hover:bg-muted/40' },
-  orange:  { active: 'bg-orange-500/20 text-orange-300 ring-1 ring-orange-500/30',  inactive: 'text-muted-foreground hover:text-foreground hover:bg-muted/40' },
-  blue:    { active: 'bg-blue-500/20 text-blue-300 ring-1 ring-blue-500/30',        inactive: 'text-muted-foreground hover:text-foreground hover:bg-muted/40' },
-  teal:    { active: 'bg-teal-500/20 text-teal-300 ring-1 ring-teal-500/30',        inactive: 'text-muted-foreground hover:text-foreground hover:bg-muted/40' },
-  emerald: { active: 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/30', inactive: 'text-muted-foreground hover:text-foreground hover:bg-muted/40' },
-};
-
 export function Rail({ active, onSelect, onPaletteOpen, onSettingsOpen }: RailProps) {
+  const { data } = useDomainConfig();
+  const surfaces = data?.surfaces ?? [];
+
   return (
     <nav className="flex h-full flex-col items-center gap-2 py-3" aria-label="Bench surfaces">
-      {SURFACES.map((s) => {
+      {surfaces.map((s) => {
         const isActive = s.id === active;
-        const klass = ACCENT_CLASS[s.accent] ?? ACCENT_CLASS.blue;
         return (
           <button
             key={s.id}
@@ -35,7 +31,7 @@ export function Rail({ active, onSelect, onPaletteOpen, onSettingsOpen }: RailPr
             onClick={() => onSelect(s.id)}
             className={cn(
               'h-8 w-8 rounded-md flex items-center justify-center font-semibold text-xs transition',
-              isActive ? klass.active : klass.inactive,
+              getAccentClasses(s.accent, isActive),
             )}
           >
             {s.letter}
