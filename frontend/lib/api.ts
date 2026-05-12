@@ -89,6 +89,7 @@ import type {
   CreateNodeRequest,
   UpdateNodeRequest,
   PromoteNodeRequest,
+  DomainConfig,
 } from './types';
 
 import { safeGetItem } from './utils';
@@ -1052,6 +1053,12 @@ export const knowledge = {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  },
+};
+
+export const config = {
+  domain(): Promise<DomainConfig> {
+    return apiFetch<DomainConfig>('/config/domain');
   },
 };
 

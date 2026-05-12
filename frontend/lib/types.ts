@@ -886,13 +886,69 @@ export interface WorkspaceContext {
 // Knowledge Layer
 // ---------------------------------------------------------------------------
 
-export type NodeType =
-  | 'claim' | 'decision' | 'question' | 'hypothesis'
-  | 'rejection' | 'blocker' | 'insight';
+// Taxonomy is runtime-defined from domain config — these were literal unions
+// until the framework refactor, but treating them as plain strings lets the
+// UI render whatever taxonomy the active preset defines.
+export type NodeType = string;
+export type EdgeType = string;
 
-export type EdgeType =
-  | 'supports' | 'contradicts' | 'refines' | 'follows_up'
-  | 'depends_on' | 'derives_from' | 'rejects' | 'related_to';
+// ---------------------------------------------------------------------------
+// Domain config (GET /api/v1/config/domain)
+// ---------------------------------------------------------------------------
+
+export interface DomainConfigApp {
+  name: string;
+  accent: string;
+  tagline?: string;
+}
+
+export interface DomainConfigNodeType {
+  id: string;
+  label: string;
+  color: string;
+  description?: string;
+}
+
+export interface DomainConfigEdgeType {
+  id: string;
+  label?: string;
+  stroke?: string;
+  style?: 'solid' | 'dashed';
+}
+
+export interface DomainConfigTaxonomy {
+  node_types: DomainConfigNodeType[];
+  edge_types: DomainConfigEdgeType[];
+}
+
+export interface DomainConfigPersonaItem {
+  id: string;
+  name: string;
+  color: string;
+  avatar?: string;
+}
+
+export interface DomainConfigPersonas {
+  pool_id: string;
+  mode_label: string;
+  items: DomainConfigPersonaItem[];
+}
+
+export interface DomainConfigSurface {
+  type: 'roundtable' | 'list' | 'graph' | 'editor' | 'report';
+  id: string;
+  letter: string;
+  label: string;
+  accent: string;
+  taxonomy?: DomainConfigTaxonomy;
+  personas?: DomainConfigPersonas;
+}
+
+export interface DomainConfig {
+  app: DomainConfigApp;
+  surfaces: DomainConfigSurface[];
+  integrations: Record<string, boolean>;
+}
 
 export interface SourceRef {
   kind: string;
