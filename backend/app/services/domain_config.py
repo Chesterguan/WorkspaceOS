@@ -147,7 +147,13 @@ class DomainConfigLoader:
 
     def _require(self) -> DomainConfig:
         if self._root is None:
-            raise RuntimeError("domain_config not loaded; call load_on_startup() first")
+            # Lazy-load on first access. Production calls load_on_startup() in
+            # the FastAPI lifespan, but tests (and any out-of-band tooling) hit
+            # services without that hook — auto-loading keeps them working with
+            # the same config the running server uses.
+            self.load()
+        if self._root is None:
+            raise RuntimeError("domain_config failed to load")
         return self._root
 
     def _load_persona_file(self, ref: str) -> PersonaPool:

@@ -17,7 +17,7 @@ from app.models.ai_usage import AIUsageLog
 from app.models.worklog import WorkLog
 from app.models.activity import ActivityEvent
 from app.models.user_oauth_token import UserOAuthToken
-from app.models.knowledge import KnowledgeNode, KnowledgeEdge, NODE_TYPES, EDGE_TYPES  # noqa: F401
+from app.models.knowledge import KnowledgeEdge, KnowledgeNode  # noqa: F401
 
 __all__ = [
     "User",
@@ -43,6 +43,4 @@ __all__ = [
     "UserOAuthToken",
     "KnowledgeNode",
     "KnowledgeEdge",
-    "NODE_TYPES",
-    "EDGE_TYPES",
 ]

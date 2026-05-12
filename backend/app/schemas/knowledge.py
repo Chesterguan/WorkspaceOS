@@ -4,7 +4,20 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.models.knowledge import EDGE_TYPES, NODE_TYPES
+
+def allowed_node_types() -> Optional[set]:
+    """Active node-type IDs from the knowledge surface taxonomy.
+
+    Returns None if no taxonomy is configured for the surface — callers should
+    treat that as "accept anything" rather than failing closed, so a misconfigured
+    or unloaded config doesn't take the API down.
+    """
+    from app.services.domain_config import get_loader  # avoid import cycle at module load
+    try:
+        tax = get_loader().get_taxonomy_for_surface("knowledge")
+    except (KeyError, RuntimeError):
+        return None
+    return tax.node_type_ids
 
 
 class SourceRef(BaseModel):
@@ -90,8 +103,9 @@ class NodeCreateRequest(BaseModel):
     @field_validator("node_type")
     @classmethod
     def validate_node_type(cls, v: str) -> str:
-        if v not in NODE_TYPES:
-            raise ValueError(f"node_type must be one of {sorted(NODE_TYPES)}")
+        allowed = allowed_node_types()
+        if allowed is not None and v not in allowed:
+            raise ValueError(f"node_type must be one of {sorted(allowed)}")
         return v
 
 
@@ -105,8 +119,11 @@ class NodeUpdateRequest(BaseModel):
     @field_validator("node_type")
     @classmethod
     def validate_node_type(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in NODE_TYPES:
-            raise ValueError(f"node_type must be one of {sorted(NODE_TYPES)}")
+        if v is None:
+            return v
+        allowed = allowed_node_types()
+        if allowed is not None and v not in allowed:
+            raise ValueError(f"node_type must be one of {sorted(allowed)}")
         return v
 
 

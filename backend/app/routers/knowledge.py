@@ -7,10 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, get_optional_user_id, verify_api_key
-from app.models.knowledge import KnowledgeEdge, KnowledgeNode, NODE_TYPES
+from app.models.knowledge import KnowledgeEdge, KnowledgeNode
 from app.schemas.knowledge import (
     GraphResponse, KnowledgeEdgeOut, KnowledgeNodeOut,
     NodeCreateRequest, NodeUpdateRequest, PromoteRequest, SourceRef,
+    allowed_node_types,
 )
 from app.services import knowledge_extractor, knowledge_service
 
@@ -61,8 +62,10 @@ async def list_nodes(
     db: AsyncSession = Depends(get_db),
 ):
     user_id = _resolve_user_id(auth_user_id)
-    if node_type is not None and node_type not in NODE_TYPES:
-        raise HTTPException(400, f"node_type must be one of {sorted(NODE_TYPES)}")
+    if node_type is not None:
+        allowed = allowed_node_types()
+        if allowed is not None and node_type not in allowed:
+            raise HTTPException(400, f"node_type must be one of {sorted(allowed)}")
 
     stmt = select(KnowledgeNode).where(KnowledgeNode.user_id == user_id)
     if project_id is not None:

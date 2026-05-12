@@ -1,48 +1,63 @@
 """Knowledge extractor — pulls structured nodes from roundtable turns.
 
 See docs/superpowers/specs/2026-05-04-knowledge-layer-design.md
+
+Prompts and the active node/edge type taxonomy live in config/ — see
+SurfaceExtractionRefs (stage1/stage2/taxonomy) on the cofounder surface.
 """
+import json
 import logging
-from typing import Any
+import re
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+from app.schemas.domain_config import SurfaceExtractionRefs
+from app.services.domain_config import get_loader
 
 logger = logging.getLogger(__name__)
 
 
-_CLASSIFIER_SYSTEM = (
-    "You are a precision classifier. Reply with exactly one word: YES or NO. "
-    "Nothing else."
-)
-_CLASSIFIER_TEMPLATE = (
-    "Does this conversation turn contain extractable knowledge?\n"
-    "Extractable = states a decision, claim, hypothesis, question to revisit, "
-    "rejection, blocker, or insight.\n"
-    "NOT extractable = greeting, acknowledgment, restating provided context, "
-    "pure question with no answer.\n\n"
-    "USER: {user}\n\nAI: {ai}\n\n"
-    "Reply YES or NO."
-)
+def _extraction_refs() -> SurfaceExtractionRefs:
+    """Return the first surface's extraction refs (only cofounder has them today)."""
+    for s in get_loader().get_surfaces():
+        if s.extraction:
+            return s.extraction
+    raise RuntimeError("no surface has extraction configured")
+
+
+def _allowed_extraction_types() -> tuple:
+    """Return (node_type_ids, edge_type_ids) from the extraction surface's taxonomy.
+
+    Returns (None, None) if no taxonomy is configured — treat as "accept anything"
+    so a misconfigured surface doesn't silently drop every extraction.
+    """
+    ext = _extraction_refs()
+    if not ext.taxonomy:
+        return (None, None)
+    tax = get_loader().get_taxonomy_by_path(ext.taxonomy)
+    return (tax.node_type_ids, tax.edge_type_ids)
 
 
 async def _classify_extractable(ai: Any, user: str, ai_response: str) -> bool:
     """Stage 1: cheap YES/NO check. Anything that doesn't normalize to YES → False."""
+    ext = _extraction_refs()
+    if not ext.stage1:
+        logger.warning("extraction surface missing stage1 prompt; skipping classification")
+        return False
+    system = get_loader().render_prompt(ext.stage1, taxonomy_path=ext.taxonomy)
+    template_ref = ext.stage1.replace("stage1-classifier.txt", "stage1-classifier-template.txt")
+    user_prompt = get_loader().render_prompt(
+        template_ref,
+        taxonomy_path=ext.taxonomy,
+        extra_vars={"user": user[:1500], "ai": ai_response[:3000]},
+    )
     try:
-        raw = await ai.complete(
-            _CLASSIFIER_SYSTEM,
-            _CLASSIFIER_TEMPLATE.format(user=user[:1500], ai=ai_response[:3000]),
-        )
+        raw = await ai.complete(system, user_prompt)
     except Exception:
         logger.exception("knowledge classifier failed")
         return False
     token = (raw or "").strip().rstrip(".").upper()
     return token == "YES"
-
-
-import json
-import re
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-
-from app.models.knowledge import NODE_TYPES, EDGE_TYPES
 
 
 @dataclass
@@ -57,19 +72,6 @@ class ExtractedNode:
 class ExtractionResult:
     nodes: List[ExtractedNode] = field(default_factory=list)
     edges_within_turn: List[Dict[str, Any]] = field(default_factory=list)
-
-
-_EXTRACTION_SYSTEM = (
-    "You extract structured knowledge from conversation turns. "
-    "Output ONLY valid JSON, no prose, no fences. "
-    "Schema:\n"
-    '{"nodes":[{"node_type":"<one of: claim|decision|question|hypothesis|rejection|blocker|insight>",'
-    '"title":"<=120 chars","content":"1-3 sentences","confidence":0..1,'
-    '"rationale":"why this type"}],'
-    '"edges_within_turn":[{"from_idx":int,"to_idx":int,'
-    '"edge_type":"<one of: supports|contradicts|refines|follows_up|depends_on|derives_from|rejects|related_to>"}]}'
-    "\nIf nothing meaningful, return {\"nodes\":[],\"edges_within_turn\":[]}."
-)
 
 
 def _build_extraction_user(user: str, ai_response: str, kind: str,
@@ -102,9 +104,16 @@ async def _extract_structured(
     recent_turns: List[Dict[str, str]],
 ) -> ExtractionResult:
     """Stage 2. JSON parse failure → empty result, never raises."""
+    ext = _extraction_refs()
+    if not ext.stage2:
+        logger.warning("extraction surface missing stage2 prompt; skipping extraction")
+        return ExtractionResult()
+    system_prompt = get_loader().render_prompt(ext.stage2, taxonomy_path=ext.taxonomy)
+    node_types, edge_types = _allowed_extraction_types()
+
     try:
         raw = await ai.complete(
-            _EXTRACTION_SYSTEM,
+            system_prompt,
             _build_extraction_user(user, ai_response, conversation_kind, recent_turns),
         )
     except Exception:
@@ -122,7 +131,7 @@ async def _extract_structured(
         if not isinstance(n, dict):
             continue
         nt = n.get("node_type")
-        if nt not in NODE_TYPES:
+        if node_types is not None and nt not in node_types:
             continue
         title = (n.get("title") or "")[:160].strip()
         content = (n.get("content") or "").strip()
@@ -138,7 +147,7 @@ async def _extract_structured(
         if not isinstance(e, dict):
             continue
         et = e.get("edge_type")
-        if et not in EDGE_TYPES:
+        if edge_types is not None and et not in edge_types:
             continue
         try:
             from_idx = int(e["from_idx"])
@@ -389,8 +398,9 @@ async def promote_manual(
     if not title or not content:
         raise ValueError("title and content required for manual promotion")
     nt = suggested_type or "insight"
-    if nt not in NODE_TYPES:
-        raise ValueError(f"node_type must be one of {sorted(NODE_TYPES)}")
+    node_types, _ = _allowed_extraction_types()
+    if node_types is not None and nt not in node_types:
+        raise ValueError(f"node_type must be one of {sorted(node_types)}")
 
     embedding: List[float]
     try:

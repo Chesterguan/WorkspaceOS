@@ -72,13 +72,3 @@ class KnowledgeEdge(Base):
         UniqueConstraint("source_node_id", "target_node_id", "edge_type",
                          name="uq_knowledge_edges_triple"),
     )
-
-
-# Valid type sets — single source of truth for validation
-NODE_TYPES = frozenset({
-    "claim", "decision", "question", "hypothesis", "rejection", "blocker", "insight",
-})
-EDGE_TYPES = frozenset({
-    "supports", "contradicts", "refines", "follows_up",
-    "depends_on", "derives_from", "rejects", "related_to",
-})
