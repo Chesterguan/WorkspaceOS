@@ -32,6 +32,7 @@ from app.routers import google_oauth as google_oauth_router
 from app.routers import microsoft_oauth as microsoft_oauth_router
 from app.routers import skills as skills_router
 from app.routers import knowledge as knowledge_router
+from app.routers import config as config_router
 from app.routers.paper import portfolio_paper_router
 from app.routers.publish import blog_publish_router
 from app.routers.chat import starters_router as chat_starters_router
@@ -242,6 +243,7 @@ app.include_router(google_oauth_router.router, prefix=API_PREFIX)
 app.include_router(microsoft_oauth_router.router, prefix=API_PREFIX)
 app.include_router(skills_router.router, prefix=API_PREFIX)
 app.include_router(knowledge_router.router, prefix=API_PREFIX)
+app.include_router(config_router.router, prefix=API_PREFIX)
 from app.routers import events as events_router
 app.include_router(events_router.router, prefix=API_PREFIX)
 
