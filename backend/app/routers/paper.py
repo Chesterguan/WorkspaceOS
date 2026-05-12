@@ -66,8 +66,18 @@ from app.services.diagram_service import (
 router = APIRouter(prefix="/projects/{project_id}/paper", tags=["paper"])
 portfolio_paper_router = APIRouter(prefix="/portfolio/paper", tags=["paper"])
 
-# Valid paper type values — enforced at the router layer for clear error messages
-_VALID_PAPER_TYPES = frozenset(["conference", "journal", "technical_report", "white_paper"])
+# Valid paper type values — enforced at the router layer for clear error messages.
+# Backed by the domain config so adding a paper type to config/prompts/paper/
+# type-hints.yaml automatically expands the accepted set.
+def _valid_paper_types() -> frozenset:
+    from app.services.domain_config import get_loader
+
+    try:
+        return frozenset(get_loader().get_paper_type_hints().keys())
+    except (KeyError, RuntimeError):
+        # Misconfigured / unloaded config — fall back to the historical defaults
+        # so the API doesn't reject everything.
+        return frozenset(["conference", "journal", "technical_report", "white_paper"])
 
 # Valid LaTeX templates
 _VALID_TEMPLATES = frozenset(["arxiv", "ieee", "acm", "neurips", "icml", "iclr", "acl", "aaai"])
@@ -124,12 +134,13 @@ async def generate_paper(
     """
     await require_owned_project(project_id, db, jwt_user_id)
 
-    if body.paper_type not in _VALID_PAPER_TYPES:
+    valid_types = _valid_paper_types()
+    if body.paper_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"Invalid paper_type '{body.paper_type}'. "
-                f"Must be one of: {sorted(_VALID_PAPER_TYPES)}"
+                f"Must be one of: {sorted(valid_types)}"
             ),
         )
 
@@ -339,12 +350,13 @@ async def suggest_titles(
     """
     await require_owned_project(project_id, db, jwt_user_id)
 
-    if body.paper_type not in _VALID_PAPER_TYPES:
+    valid_types = _valid_paper_types()
+    if body.paper_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"Invalid paper_type '{body.paper_type}'. "
-                f"Must be one of: {sorted(_VALID_PAPER_TYPES)}"
+                f"Must be one of: {sorted(valid_types)}"
             ),
         )
 
@@ -541,10 +553,11 @@ async def generate_paper_v2(
     """Run the v2 multi-agent section-by-section paper pipeline (5-15 minutes)."""
     await require_owned_project(project_id, db, jwt_user_id)
 
-    if body.paper_type not in _VALID_PAPER_TYPES:
+    valid_types = _valid_paper_types()
+    if body.paper_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid paper_type '{body.paper_type}'. Must be one of: {sorted(_VALID_PAPER_TYPES)}",
+            detail=f"Invalid paper_type '{body.paper_type}'. Must be one of: {sorted(valid_types)}",
         )
 
     result = await paper_pipeline_v2.generate_paper_v2(
@@ -688,10 +701,11 @@ async def generate_portfolio_paper_v2(
     jwt_user_id: Optional[str] = Depends(get_optional_user_id),
 ) -> PaperGenerateV2Response:
     """Run the v2 multi-agent pipeline for a multi-project paper with roundtable review."""
-    if body.paper_type not in _VALID_PAPER_TYPES:
+    valid_types = _valid_paper_types()
+    if body.paper_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid paper_type '{body.paper_type}'. Must be one of: {sorted(_VALID_PAPER_TYPES)}",
+            detail=f"Invalid paper_type '{body.paper_type}'. Must be one of: {sorted(valid_types)}",
         )
 
     if jwt_user_id:
@@ -763,12 +777,13 @@ async def generate_portfolio_paper(
     Progress tags format: `["paper", "portfolio", "progress:N", "step:...", "pass:N/5"]`
     When complete: `["paper", "portfolio", "progress:100", "step:complete"]`
     """
-    if body.paper_type not in _VALID_PAPER_TYPES:
+    valid_types = _valid_paper_types()
+    if body.paper_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"Invalid paper_type '{body.paper_type}'. "
-                f"Must be one of: {sorted(_VALID_PAPER_TYPES)}"
+                f"Must be one of: {sorted(valid_types)}"
             ),
         )
 

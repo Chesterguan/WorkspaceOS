@@ -137,65 +137,19 @@ REVIEW_PASSES: List[Dict] = [
 ]
 
 # ---------------------------------------------------------------------------
-# Paper type → venue hint mapping
+# Paper type → venue hint mapping (sourced from domain config at runtime)
 # ---------------------------------------------------------------------------
 
-_PAPER_TYPE_HINTS: Dict[str, str] = {
-    "conference": (
-        "a peer-reviewed conference paper (typical length: 8-12 pages). "
-        "Include: Abstract, Introduction, Related Work, Methodology, "
-        "Experiments/Evaluation, Discussion, Conclusion, References."
-    ),
-    "workshop": (
-        "a peer-reviewed workshop paper (typical length: 4-6 pages). "
-        "Include: Abstract, Introduction, Related Work, Method, Preliminary Results, "
-        "Discussion, Conclusion, References. "
-        "Workshop papers emphasize novelty and ongoing work over completeness."
-    ),
-    "journal": (
-        "a full journal article (typical length: 15-25 pages). "
-        "Include: Abstract, Introduction, Background, Methodology, "
-        "Results, Discussion, Conclusion, References. "
-        "Journal papers require more thorough related work and deeper analysis than conference papers."
-    ),
-    "technical_report": (
-        "a technical report (no page limit). "
-        "Include: Executive Summary, Introduction, Background and Related Work, "
-        "System Design, Implementation, Evaluation, Discussion, Conclusion, References."
-    ),
-    "white_paper": (
-        "an industry white paper for a non-academic audience. "
-        "Include: Executive Summary, Problem Statement, Solution Overview, "
-        "Technical Approach, Evidence and Results, Call to Action, References. "
-        "Avoid jargon. Lead with value, not with methodology."
-    ),
-    "extended_abstract": (
-        "an extended abstract for a conference (typical length: 2-4 pages). "
-        "Include: Abstract (1 paragraph), Introduction & Motivation, Approach (concise), "
-        "Preliminary Results, Future Work, References. "
-        "Be terse — every sentence earns its place."
-    ),
-    "grant_proposal": (
-        "a research grant proposal (typical length: 12-15 pages, follows NIH/NSF format). "
-        "Include: Project Summary / Specific Aims (1 page), Significance, Innovation, "
-        "Approach (with timeline), Preliminary Data, Broader Impacts, References. "
-        "Frame everything around what will be DONE in the project, not what has been done. "
-        "Aims should be testable, time-bound, and independent of each other."
-    ),
-    "phd_proposal": (
-        "a PhD thesis proposal (typical length: 20-40 pages). "
-        "Include: Abstract, Motivation, Research Questions, Background and Related Work, "
-        "Preliminary Work, Proposed Research (3-4 chapters / aims), Timeline, "
-        "Expected Contributions, References. "
-        "Frame as a research plan: what's done, what's proposed, why each piece matters."
-    ),
-    "book_chapter": (
-        "a book chapter aimed at a graduate-level audience (typical length: 20-30 pages). "
-        "Include: Introduction, Background, Core Concepts (multiple subsections), "
-        "Worked Examples, Open Problems, Summary, References. "
-        "Tutorial in tone — the reader is learning the topic for the first time."
-    ),
-}
+
+def _paper_type_hint(paper_type: str) -> str:
+    """Look up the type hint for a paper_type, falling back to "conference"."""
+    from app.services.domain_config import get_loader
+
+    hints = get_loader().get_paper_type_hints()
+    hint = hints.get(paper_type) or hints.get("conference")
+    if hint is None:
+        return ""
+    return hint.hint
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +316,7 @@ def _build_draft_prompt(
 ) -> str:
     """Build the user prompt for the initial draft generation."""
     venue_str = target_venue or "a suitable peer-reviewed venue"
-    type_hint = _PAPER_TYPE_HINTS.get(paper_type, _PAPER_TYPE_HINTS["conference"])
+    type_hint = _paper_type_hint(paper_type)
 
     instructions = additional_instructions or "No additional instructions provided."
 
@@ -1212,7 +1166,7 @@ async def generate_paper_titles(
     )
 
     venue_str = target_venue or "a suitable peer-reviewed venue"
-    type_hint = _PAPER_TYPE_HINTS.get(paper_type, _PAPER_TYPE_HINTS["conference"])
+    type_hint = _paper_type_hint(paper_type)
 
     system = (
         "You are an expert academic title writer who understands what makes conference and "
