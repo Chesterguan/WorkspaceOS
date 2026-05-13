@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { formatDistanceToNow } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { ADVISORS } from "@/lib/advisors";
+import { PersonaAvatar } from "@/components/personas/PersonaAvatar";
+import { usePersonaPool } from "@/lib/personas";
 import type { ChatMessage as ChatMessageType } from "@/lib/types";
 import { PromoteButton } from "@/components/knowledge/PromoteButton";
 
@@ -26,20 +26,27 @@ function markdownToHtml(text: string): string {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user';
-  const advisorId = message.advisor_id || (message.metadata_?.advisor_id as string | undefined);
-  const advisor = advisorId ? ADVISORS[advisorId] : null;
+  const { byId: cofounderById } = usePersonaPool('cofounder');
+  const { byId: researchById } = usePersonaPool('research');
 
-  // Fallback: construct advisor-like object from metadata for research reviewers
-  // (their data is stored in metadata_ but not in the ADVISORS registry)
-  const reviewerFallback = !advisor && !isUser && message.metadata_?.reviewer_id ? {
-    id: (message.metadata_.reviewer_id as string) || "",
-    name: (message.metadata_.reviewer_name as string) || "Reviewer",
-    tagline: (message.metadata_.modeled_after as string) || "",
-    expertise: [],
-    color: (message.metadata_.color as string) || "#888",
-    avatar: (message.metadata_.avatar as string) || "",
+  const advisorId = message.advisor_id || (message.metadata_?.advisor_id as string | undefined);
+  const fromPool = advisorId
+    ? (cofounderById[advisorId] ?? researchById[advisorId] ?? null)
+    : null;
+
+  // Research reviewer messages carry their info in metadata_. If the
+  // reviewer_id isn't in the live persona pool (e.g. message predates
+  // a config change), reconstruct a display-only persona from metadata.
+  const reviewerId = message.metadata_?.reviewer_id as string | undefined;
+  const reviewerFromPool = reviewerId ? researchById[reviewerId] ?? null : null;
+  const reviewerFallback = !fromPool && !reviewerFromPool && !isUser && reviewerId ? {
+    id: reviewerId,
+    name: (message.metadata_?.reviewer_name as string) || "Reviewer",
+    color: (message.metadata_?.color as string) || "#888",
+    avatar: (message.metadata_?.avatar as string) || "",
   } : null;
-  const displayAdvisor = advisor || reviewerFallback;
+
+  const displayAdvisor = fromPool ?? reviewerFromPool ?? reviewerFallback;
 
   return (
     <div
@@ -52,10 +59,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
       <div className={cn("flex items-center gap-2 px-1", isUser ? "flex-row-reverse" : "flex-row")}>
         {displayAdvisor && !isUser ? (
           <div className="flex items-center gap-1.5">
-            <div className="w-5 h-5 rounded-full overflow-hidden border" style={{ borderColor: displayAdvisor.color }}>
-              <Image src={displayAdvisor.avatar} alt={displayAdvisor.name} width={20} height={20} className="rounded-full" />
+            <div className="rounded-full overflow-hidden border" style={{ borderColor: displayAdvisor.color }}>
+              <PersonaAvatar
+                name={displayAdvisor.name}
+                color={displayAdvisor.color}
+                avatar={displayAdvisor.avatar}
+                size={20}
+              />
             </div>
-            <span className="text-xs font-semibold" style={{ color: displayAdvisor.color }}>{displayAdvisor.name}</span>
+            <span className="text-xs font-semibold" style={{ color: displayAdvisor.color }}>
+              {displayAdvisor.name}
+            </span>
           </div>
         ) : (
           <span className="text-xs font-medium text-muted-foreground">

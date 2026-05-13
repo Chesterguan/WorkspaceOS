@@ -2,13 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { PaperSearchDialog } from "@/components/research/PaperSearchDialog";
+import { PersonaAvatar } from "@/components/personas/PersonaAvatar";
 import { useResearch } from "@/lib/hooks/useResearch";
 import { research as researchApi } from "@/lib/api";
+import { usePersonaPool } from "@/lib/personas";
 import { toast } from "sonner";
 import {
   BookOpen,
@@ -66,19 +67,13 @@ const FALLBACK_STARTERS: StarterGroup[] = [
   },
 ];
 
-// Research reviewer metadata for the picker bar
-const RESEARCH_REVIEWERS: Record<string, { id: string; name: string; modeled_after: string; avatar: string; color: string }> = {
-  technical_rigor: { id: "technical_rigor", name: "Technical Rigor", modeled_after: "Yoshua Bengio", avatar: "/avatars/reviewer_technical_rigor.svg", color: "#DC2626" },
-  novelty_positioning: { id: "novelty_positioning", name: "Novelty & Positioning", modeled_after: "Yann LeCun", avatar: "/avatars/reviewer_novelty_positioning.svg", color: "#2563EB" },
-  writing_clarity: { id: "writing_clarity", name: "Writing Clarity", modeled_after: "Steven Pinker", avatar: "/avatars/reviewer_writing_clarity.svg", color: "#7C3AED" },
-  practical_impact: { id: "practical_impact", name: "Practical Impact", modeled_after: "Andrew Ng", avatar: "/avatars/reviewer_practical_impact.svg", color: "#059669" },
-  design_elegance: { id: "design_elegance", name: "Design Elegance", modeled_after: "Saining Xie", avatar: "/avatars/reviewer_design_elegance.svg", color: "#D97706" },
-  science_communication: { id: "science_communication", name: "Science Communication", modeled_after: "Eric Topol", avatar: "/avatars/reviewer_science_communication.svg", color: "#0891B2" },
-};
-const RESEARCH_REVIEWER_ORDER = ["technical_rigor", "novelty_positioning", "writing_clarity", "practical_impact", "design_elegance", "science_communication"];
+// Reviewer pool is now driven by domain config (usePersonaPool('research')).
+// The legacy pool above lives in lib/advisors.ts / lib/personas.ts as the
+// fallback path when domain config has no research personas configured.
 
 export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
   const { data: history, isLoading, mutate } = useResearch(projectId);
+  const { personas: reviewers } = usePersonaPool('research');
 
   // Optimistic messages shown while API call is in-flight
   const [optimisticMessages, setOptimisticMessages] = useState<ChatMessageType[]>([]);
@@ -343,32 +338,39 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
             <Users className="w-3.5 h-3.5" />
             Roundtable
           </button>
-          {RESEARCH_REVIEWER_ORDER.map((id) => {
-            const reviewer = RESEARCH_REVIEWERS[id];
-            if (!reviewer) return null;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setSelectedReviewer(selectedReviewer === id ? null : id)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all shrink-0 text-xs",
-                  selectedReviewer === id
-                    ? "border-2 bg-secondary/30"
-                    : "border-border hover:bg-secondary/50",
+          {reviewers.map((reviewer) => (
+            <button
+              key={reviewer.id}
+              type="button"
+              onClick={() =>
+                setSelectedReviewer(selectedReviewer === reviewer.id ? null : reviewer.id)
+              }
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all shrink-0 text-xs",
+                selectedReviewer === reviewer.id
+                  ? "border-2 bg-secondary/30"
+                  : "border-border hover:bg-secondary/50",
+              )}
+              style={selectedReviewer === reviewer.id ? { borderColor: reviewer.color } : undefined}
+            >
+              <div className="rounded-full border-2 shrink-0" style={{ borderColor: reviewer.color }}>
+                <PersonaAvatar
+                  name={reviewer.name}
+                  color={reviewer.color}
+                  avatar={reviewer.avatar}
+                  size={24}
+                />
+              </div>
+              <div className="text-left min-w-0">
+                <p className="text-xs font-semibold truncate">{reviewer.name}</p>
+                {reviewer.tagline && (
+                  <p className="text-[9px] text-muted-foreground truncate">
+                    {reviewer.tagline}
+                  </p>
                 )}
-                style={selectedReviewer === id ? { borderColor: reviewer.color } : undefined}
-              >
-                <div className="w-6 h-6 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: reviewer.color }}>
-                  <Image src={reviewer.avatar} alt={reviewer.name} width={24} height={24} className="rounded-full" />
-                </div>
-                <div className="text-left min-w-0">
-                  <p className="text-xs font-semibold truncate">{reviewer.name}</p>
-                  <p className="text-[9px] text-muted-foreground truncate">{reviewer.modeled_after}</p>
-                </div>
-              </button>
-            );
-          })}
+              </div>
+            </button>
+          ))}
         </div>
 
         {/* Context toggles — Literature is an extra toggle unique to Research */}
@@ -440,7 +442,8 @@ interface ResearchRoundtableGroupProps {
   roundtableGroup: string;
 }
 
-function ResearchRoundtableGroup({ messages, roundtableGroup }: ResearchRoundtableGroupProps) {
+function ResearchRoundtableGroup({ messages }: ResearchRoundtableGroupProps) {
+  const { byId: reviewersById } = usePersonaPool('research');
   const reviewerIds = messages
     .map((m) => (m.metadata_?.reviewer_id as string | undefined))
     .filter((id): id is string => !!id);
@@ -454,11 +457,20 @@ function ResearchRoundtableGroup({ messages, roundtableGroup }: ResearchRoundtab
         </span>
         <div className="flex -space-x-1.5">
           {reviewerIds.map((id) => {
-            const reviewer = RESEARCH_REVIEWERS[id];
+            const reviewer = reviewersById[id];
             if (!reviewer) return null;
             return (
-              <div key={id} className="w-5 h-5 rounded-full overflow-hidden border border-background" title={reviewer.name}>
-                <Image src={reviewer.avatar} alt={reviewer.name} width={20} height={20} />
+              <div
+                key={id}
+                title={reviewer.name}
+                className="rounded-full border border-background overflow-hidden"
+              >
+                <PersonaAvatar
+                  name={reviewer.name}
+                  color={reviewer.color}
+                  avatar={reviewer.avatar}
+                  size={20}
+                />
               </div>
             );
           })}
@@ -489,10 +501,20 @@ interface ResearchChatMessageProps {
 
 function ResearchChatMessage({ message }: ResearchChatMessageProps) {
   const isUser = message.role === "user";
+  const { byId: reviewersById } = usePersonaPool('research');
 
-  // Extract reviewer info from metadata
+  // Extract reviewer info — prefer the live persona pool, fall back to
+  // message metadata when the message predates the current config.
   const reviewerId = message.metadata_?.reviewer_id as string | undefined;
-  const reviewer = reviewerId ? RESEARCH_REVIEWERS[reviewerId] : null;
+  const fromPool = reviewerId ? reviewersById[reviewerId] : null;
+  const reviewerFallback = !fromPool && reviewerId ? {
+    id: reviewerId,
+    name: (message.metadata_?.reviewer_name as string) || reviewerId,
+    color: (message.metadata_?.color as string) || '#888',
+    avatar: (message.metadata_?.avatar as string) || '',
+    tagline: (message.metadata_?.modeled_after as string) || undefined,
+  } : null;
+  const reviewer = fromPool ?? reviewerFallback;
 
   return (
     <div
@@ -505,11 +527,20 @@ function ResearchChatMessage({ message }: ResearchChatMessageProps) {
       <div className={cn("flex items-center gap-2 px-1", isUser ? "flex-row-reverse" : "flex-row")}>
         {reviewer && !isUser ? (
           <div className="flex items-center gap-1.5">
-            <div className="w-5 h-5 rounded-full overflow-hidden border" style={{ borderColor: reviewer.color }}>
-              <Image src={reviewer.avatar} alt={reviewer.name} width={20} height={20} className="rounded-full" />
+            <div className="rounded-full overflow-hidden border" style={{ borderColor: reviewer.color }}>
+              <PersonaAvatar
+                name={reviewer.name}
+                color={reviewer.color}
+                avatar={reviewer.avatar}
+                size={20}
+              />
             </div>
-            <span className="text-xs font-semibold" style={{ color: reviewer.color }}>{reviewer.name}</span>
-            <span className="text-[10px] text-muted-foreground">({reviewer.modeled_after})</span>
+            <span className="text-xs font-semibold" style={{ color: reviewer.color }}>
+              {reviewer.name}
+            </span>
+            {reviewer.tagline && (
+              <span className="text-[10px] text-muted-foreground">({reviewer.tagline})</span>
+            )}
           </div>
         ) : (
           <span className="text-xs font-medium text-muted-foreground">

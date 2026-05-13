@@ -1,37 +1,54 @@
-"use client";
+'use client';
 
-import Image from "next/image";
-import { ADVISORS } from "@/lib/advisors";
-import { ChatMessage } from "@/components/chat/ChatMessage";
-import type { ChatMessage as ChatMessageType } from "@/lib/types";
-import { Users } from "lucide-react";
+import { PersonaAvatar } from '@/components/personas/PersonaAvatar';
+import { ChatMessage } from '@/components/chat/ChatMessage';
+import { usePersonaPool } from '@/lib/personas';
+import type { ChatMessage as ChatMessageType } from '@/lib/types';
+import { Users } from 'lucide-react';
 
 interface RoundtableGroupProps {
   messages: ChatMessageType[];
   roundtableGroup: string;
 }
 
-export function RoundtableGroup({ messages, roundtableGroup }: RoundtableGroupProps) {
-  // Collect advisor/reviewer display info from each message
-  const participants = messages
-    .map((m) => {
+interface Participant {
+  id: string;
+  name: string;
+  color: string;
+  avatar: string;
+}
+
+export function RoundtableGroup({ messages }: RoundtableGroupProps) {
+  // Cofounder pool drives the lookup. Research reviewers fall through to
+  // the metadata-derived fallback below — they're not in this pool, but
+  // their messages carry name/avatar in metadata fields.
+  const { byId: cofounderById } = usePersonaPool('cofounder');
+  const { byId: researchById } = usePersonaPool('research');
+
+  // Build the participant list from each message: prefer the persona
+  // pool record, fall back to message metadata for surfaces / personas
+  // we don't currently have in config (legacy data, custom integrations).
+  const participants: Participant[] = messages
+    .map((m): Participant | null => {
       const advisorId = m.advisor_id || (m.metadata_?.advisor_id as string | undefined);
-      if (advisorId && ADVISORS[advisorId]) {
-        const a = ADVISORS[advisorId];
-        return { id: advisorId, name: a.name, avatar: a.avatar };
+      if (advisorId) {
+        const p = cofounderById[advisorId] ?? researchById[advisorId];
+        if (p) return { id: p.id, name: p.name, color: p.color, avatar: p.avatar };
       }
-      // Fallback for research reviewers: read from metadata
       const reviewerId = m.metadata_?.reviewer_id as string | undefined;
       if (reviewerId) {
+        const p = researchById[reviewerId];
+        if (p) return { id: p.id, name: p.name, color: p.color, avatar: p.avatar };
         return {
           id: reviewerId,
           name: (m.metadata_?.reviewer_name as string) || reviewerId,
-          avatar: (m.metadata_?.avatar as string) || "",
+          color: '#a78bfa',
+          avatar: (m.metadata_?.avatar as string) || '',
         };
       }
       return null;
     })
-    .filter((p): p is { id: string; name: string; avatar: string } => p !== null);
+    .filter((p): p is Participant => p !== null);
 
   return (
     <div className="space-y-3">
@@ -42,17 +59,22 @@ export function RoundtableGroup({ messages, roundtableGroup }: RoundtableGroupPr
         </span>
         <div className="flex -space-x-1.5">
           {participants.map((p) => (
-            <div key={p.id} className="w-5 h-5 rounded-full overflow-hidden border border-background" title={p.name}>
-              {p.avatar ? (
-                <Image src={p.avatar} alt={p.name} width={20} height={20} />
-              ) : (
-                <div className="w-5 h-5 bg-muted rounded-full" />
-              )}
+            <div
+              key={p.id}
+              title={p.name}
+              className="rounded-full border border-background overflow-hidden"
+            >
+              <PersonaAvatar
+                name={p.name}
+                color={p.color}
+                avatar={p.avatar}
+                size={20}
+              />
             </div>
           ))}
         </div>
         <span className="text-[10px] text-muted-foreground">
-          {participants.length} {participants.length === 1 ? "advisor" : "advisors"} weighed in
+          {participants.length} {participants.length === 1 ? 'advisor' : 'advisors'} weighed in
         </span>
       </div>
       <div className="space-y-3 border-l-2 border-border/50 pl-3 ml-1">

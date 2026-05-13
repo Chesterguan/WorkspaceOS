@@ -12,7 +12,7 @@ import type { ChatStarterGroup } from "@/lib/api";
 import { toast } from "sonner";
 import { AdvisorCard } from "@/components/chat/AdvisorCard";
 import { RoundtableGroup } from "@/components/chat/RoundtableGroup";
-import { ADVISORS, ADVISOR_ORDER } from "@/lib/advisors";
+import { usePersonaPool } from "@/lib/personas";
 import type { ChatRoundtableResponse } from "@/lib/types";
 import { MessageSquare, Send, Loader2, Trash2, Users } from "lucide-react";
 import { cn, groupMessages } from "@/lib/utils";
@@ -58,6 +58,7 @@ const FALLBACK_STARTERS: ChatStarterGroup[] = [
 
 export function ChatWindow({ projectId }: ChatWindowProps) {
   const { data: history, isLoading, mutate } = useChat(projectId);
+  const { personas: advisors } = usePersonaPool('cofounder');
 
   // Optimistic messages shown while API call is in-flight
   const [optimisticMessages, setOptimisticMessages] = useState<ChatMessageType[]>([]);
@@ -306,19 +307,17 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
             <Users className="w-3.5 h-3.5" />
             Roundtable
           </button>
-          {ADVISOR_ORDER.map((id) => {
-            const advisor = ADVISORS[id];
-            if (!advisor) return null;
-            return (
-              <AdvisorCard
-                key={id}
-                advisor={advisor}
-                size="lg"
-                selected={selectedAdvisor === id}
-                onClick={() => setSelectedAdvisor(selectedAdvisor === id ? null : id)}
-              />
-            );
-          })}
+          {advisors.map((advisor) => (
+            <AdvisorCard
+              key={advisor.id}
+              advisor={advisor}
+              size="lg"
+              selected={selectedAdvisor === advisor.id}
+              onClick={() =>
+                setSelectedAdvisor(selectedAdvisor === advisor.id ? null : advisor.id)
+              }
+            />
+          ))}
         </div>
 
         {/* Context toggles */}
