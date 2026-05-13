@@ -3,11 +3,16 @@ Seed script — populates the database with realistic demo data.
 
 Usage:
     cd backend
-    python seed.py
+    SEED_DEMO_DATA=true python seed.py
+
+Demo seeding is opt-in: set SEED_DEMO_DATA=true (or 1/yes) to populate the
+demo user + projects + drafts. Without the env var, the script is a no-op
+so fresh deployments boot into an empty DB ready for real registration.
 
 Requires the database to already have the schema applied (alembic upgrade head).
 """
 import asyncio
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -76,6 +81,11 @@ async def _get_or_create_project(
 # ---------------------------------------------------------------------------
 
 async def seed() -> None:
+    if os.getenv("SEED_DEMO_DATA", "").lower() not in ("1", "true", "yes"):
+        print("Seed skipped: SEED_DEMO_DATA not enabled "
+              "(set SEED_DEMO_DATA=true to populate demo user + projects).")
+        return
+
     async with AsyncSessionLocal() as db:
         # Idempotency guard: skip seeding entirely if the DB already has real
         # users. Once the demo account has been renamed / merged into a real
