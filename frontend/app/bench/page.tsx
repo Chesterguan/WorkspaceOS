@@ -95,8 +95,7 @@ function BenchContent() {
             {surface?.type === 'roundtable' && (
               <RoundtableSurface
                 projectId={state.projectId}
-                mode={state.mode}
-                onModeChange={(m) => update({ mode: m })}
+                surfaceId={surface.id}
               />
             )}
             {surface?.type === 'list' && surface.id === 'drafts' && (

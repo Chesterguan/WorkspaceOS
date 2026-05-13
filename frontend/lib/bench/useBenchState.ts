@@ -4,14 +4,12 @@ import { useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import type { SurfaceId } from '@/lib/bench/surfaces';
 
-export type RoundtableMode = 'cofounder' | 'research';
 export type OverlayId = 'files' | 'memory' | 'portfolio' | null;
 
 export interface BenchState {
   surface: SurfaceId | undefined;
   projectId: string | undefined;          // undefined = "All projects"
   inspectorOpen: boolean;
-  mode: RoundtableMode;                   // only meaningful on a roundtable surface
   overlay: OverlayId;
 }
 
@@ -20,10 +18,6 @@ function parseSurface(raw: string | null): SurfaceId | undefined {
   // URL value against the loaded surface list and shows a fallback if the
   // saved ID is no longer present.
   return raw && raw.length > 0 ? raw : undefined;
-}
-
-function parseMode(raw: string | null): RoundtableMode {
-  return raw === 'research' ? 'research' : 'cofounder';
 }
 
 function parseOverlay(raw: string | null): OverlayId {
@@ -40,7 +34,6 @@ export function useBenchState() {
     surface: parseSurface(params.get('surface')),
     projectId: params.get('project') || undefined,
     inspectorOpen: params.get('inspector') !== 'closed' && Boolean(params.get('project')),
-    mode: parseMode(params.get('mode')),
     overlay: parseOverlay(params.get('overlay')),
   };
 
@@ -61,9 +54,6 @@ export function useBenchState() {
     if (patch.inspectorOpen !== undefined) {
       if (patch.inspectorOpen) next.delete('inspector');
       else next.set('inspector', 'closed');
-    }
-    if (patch.mode !== undefined) {
-      next.set('mode', patch.mode);
     }
     if (patch.overlay !== undefined) {
       if (patch.overlay) next.set('overlay', patch.overlay);

@@ -3,15 +3,20 @@
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ResearchChatWindow } from '@/components/research/ResearchChatWindow';
 import { EmptyProjectPicker } from './EmptyProjectPicker';
-import type { RoundtableMode } from '@/lib/bench/useBenchState';
 
 interface Props {
   projectId: string | undefined;
-  mode: RoundtableMode;
-  onModeChange: (m: RoundtableMode) => void;
+  surfaceId: string;
 }
 
-export function RoundtableSurface({ projectId, mode, onModeChange }: Props) {
+// Each roundtable surface in the domain config maps to one persona pool:
+// id=cofounder → ChatWindow (business advisors)
+// id=research  → ResearchChatWindow (academic reviewers, paper search)
+// A previous version had a Co-Founder/Research mode toggle inside this
+// component, but with multiple roundtable surfaces driven by the rail
+// the toggle was redundant and silently broke the Research surface
+// (defaulting mode to cofounder regardless of which rail entry was clicked).
+export function RoundtableSurface({ projectId, surfaceId }: Props) {
   if (!projectId) {
     return (
       <EmptyProjectPicker
@@ -23,48 +28,11 @@ export function RoundtableSurface({ projectId, mode, onModeChange }: Props) {
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      <div className="flex items-center gap-3 border-b border-border/40 px-6 py-2">
-        <span className="text-xs text-muted-foreground">Mode:</span>
-        <div
-          role="tablist"
-          aria-label="Roundtable mode"
-          className="inline-flex rounded-md border border-border bg-card/40 p-0.5"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'cofounder'}
-            onClick={() => onModeChange('cofounder')}
-            className={`rounded px-3 py-1 text-xs font-medium transition ${
-              mode === 'cofounder'
-                ? 'bg-violet-500/25 text-violet-200 ring-1 ring-violet-500/40 shadow-sm'
-                : 'text-foreground/80 hover:bg-muted/40 hover:text-foreground'
-            }`}
-          >
-            Co-Founder
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'research'}
-            onClick={() => onModeChange('research')}
-            className={`rounded px-3 py-1 text-xs font-medium transition ${
-              mode === 'research'
-                ? 'bg-violet-500/25 text-violet-200 ring-1 ring-violet-500/40 shadow-sm'
-                : 'text-foreground/80 hover:bg-muted/40 hover:text-foreground'
-            }`}
-          >
-            Research
-          </button>
-        </div>
-      </div>
-      <div className="flex-1 min-h-0">
-        {mode === 'cofounder' ? (
-          <ChatWindow projectId={projectId} />
-        ) : (
-          <ResearchChatWindow projectId={projectId} />
-        )}
-      </div>
+      {surfaceId === 'research' ? (
+        <ResearchChatWindow projectId={projectId} />
+      ) : (
+        <ChatWindow projectId={projectId} />
+      )}
     </div>
   );
 }

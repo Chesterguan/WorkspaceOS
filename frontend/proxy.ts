@@ -32,29 +32,30 @@ export function proxy(req: NextRequest) {
     }
     if (sub === '/chat') {
       return NextResponse.redirect(
-        new URL(`/bench?project=${projectId}&surface=r&mode=cofounder`, req.url),
+        new URL(`/bench?project=${projectId}&surface=cofounder`, req.url),
       );
     }
     if (sub === '/research' || sub.startsWith('/research/paper')) {
-      // Research page AND paper editor both go to bench (research → roundtable
-      // research mode placeholder; paper → papers surface list)
+      // Research page → research roundtable; paper editor → papers surface.
       if (sub.startsWith('/research/paper')) {
-        return NextResponse.redirect(new URL(`/bench?project=${projectId}&surface=p`, req.url));
+        return NextResponse.redirect(
+          new URL(`/bench?project=${projectId}&surface=papers`, req.url),
+        );
       }
       return NextResponse.redirect(
-        new URL(`/bench?project=${projectId}&surface=r&mode=research`, req.url),
+        new URL(`/bench?project=${projectId}&surface=research`, req.url),
       );
     }
     if (sub === '/drafts' || sub.startsWith('/drafts/')) {
-      return NextResponse.redirect(new URL(`/bench?project=${projectId}&surface=d`, req.url));
+      return NextResponse.redirect(new URL(`/bench?project=${projectId}&surface=drafts`, req.url));
     }
     if (sub === '/blog' || sub.startsWith('/blog/')) {
       return NextResponse.redirect(
-        new URL(`/bench?project=${projectId}&surface=d&platform=blog`, req.url),
+        new URL(`/bench?project=${projectId}&surface=drafts&platform=blog`, req.url),
       );
     }
     if (sub === '/posting') {
-      return NextResponse.redirect(new URL(`/bench?project=${projectId}&surface=d`, req.url));
+      return NextResponse.redirect(new URL(`/bench?project=${projectId}&surface=drafts`, req.url));
     }
     if (sub === '/files') {
       return NextResponse.redirect(
@@ -80,14 +81,14 @@ export function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL('/bench?overlay=portfolio', req.url));
   }
   if (pathname === '/portfolio/paper') {
-    return NextResponse.redirect(new URL('/bench?surface=p&scope=portfolio', req.url));
+    return NextResponse.redirect(new URL('/bench?surface=papers&scope=portfolio', req.url));
   }
   if (pathname === '/knowledge') {
     const tail = req.nextUrl.search ? `&${req.nextUrl.search.slice(1)}` : '';
-    return NextResponse.redirect(new URL(`/bench?surface=k${tail}`, req.url));
+    return NextResponse.redirect(new URL(`/bench?surface=knowledge${tail}`, req.url));
   }
   if (pathname === '/worklog') {
-    return NextResponse.redirect(new URL('/bench?surface=w', req.url));
+    return NextResponse.redirect(new URL('/bench?surface=worklog', req.url));
   }
   return NextResponse.next();
 }
