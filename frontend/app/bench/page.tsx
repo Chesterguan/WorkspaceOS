@@ -11,6 +11,7 @@ import { useBenchState } from '@/lib/bench/useBenchState';
 import { findSurface } from '@/lib/bench/surfaces';
 import { useDomainConfig } from '@/lib/bench/useDomainConfig';
 import { useBenchShortcuts } from '@/lib/bench/keyboard';
+import { useFirstRunRedirect } from '@/lib/onboarding/useFirstRunRedirect';
 import { RoundtableSurface } from '@/components/bench/surfaces/RoundtableSurface';
 import { DraftsSurface } from '@/components/bench/surfaces/DraftsSurface';
 import { PapersSurface } from '@/components/bench/surfaces/PapersSurface';
@@ -33,6 +34,9 @@ function BenchContent() {
   const { state, update } = useBenchState();
   const { data } = useDomainConfig();
   const surfaces = data?.surfaces ?? [];
+
+  // Fresh users with no projects + incomplete wizard → soft-redirect to /onboarding
+  useFirstRunRedirect();
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);

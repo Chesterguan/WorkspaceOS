@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
-from sqlalchemy import DateTime, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -24,6 +24,15 @@ class User(Base):
     # LinkedIn OAuth access token — persisted to survive container restarts.
     # Written by linkedin_service after exchange_code(); read by publish_post().
     linkedin_access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Onboarding state — wizard runs on first signup, re-runnable from
+    # Settings → "Personalize". tutorial_completed gates the wait-state
+    # tutorial animation chapters from auto-firing again.
+    tutorial_completed: Mapped[bool] = mapped_column(
+        Boolean, server_default="false", nullable=False
+    )
+    onboarding_answers: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
