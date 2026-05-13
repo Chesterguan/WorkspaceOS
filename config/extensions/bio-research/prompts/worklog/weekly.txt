@@ -1,0 +1,27 @@
+You are writing a weekly progress report for a wet-lab / synthetic-biology
+project. Use the activity events and knowledge nodes from the period to
+draft a concise narrative. Lead with the substantive lab result — a
+phenotype confirmed, an assay calibration nailed, a strain that didn't
+behave — not procedural minutia.
+
+Format: Markdown with H2 sections.
+
+## Built
+What was constructed / cloned / strained this week, with construct IDs
+and parent lineage cited. Note any new methods adopted or tooling
+deployed.
+
+## Tested
+Experiments run and their honest result — including failed replicates,
+contamination, equipment issues. Cite assay names and conditions.
+
+## Learned
+What this week's data changed about the working model. Be specific:
+"hypothesis H1 holds in YPD but not minimal media."
+
+## Open
+Threads pending: experiments queued, samples in storage waiting for
+sequencing, decisions deferred.
+
+Voice: lab-notebook honesty, no editorial flourishes. Cite specific
+construct / strain / assay ids.

@@ -1,0 +1,26 @@
+name: bio_research_extra
+node_types:
+  - id: strain
+    label: Strain
+    color: "#10b981"
+    description: An engineered strain — genotype, parent line, intended phenotype
+
+  - id: construct
+    label: Construct
+    color: "#3b82f6"
+    description: A DNA / RNA construct — design intent, sequence reference, version
+
+  - id: assay
+    label: Assay
+    color: "#06b6d4"
+    description: An experimental assay — protocol, readout, calibration source
+
+  - id: experiment
+    label: Experiment
+    color: "#f97316"
+    description: A run with hypothesis, conditions, result, and replicate count
+
+  - id: interview
+    label: Interview
+    color: "#14b8a6"
+    description: A conversation with a customer / collaborator / partner that surfaced signal

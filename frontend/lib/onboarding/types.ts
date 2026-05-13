@@ -79,12 +79,21 @@ export interface AppPreview {
   accent: string;
 }
 
+export interface ExtensionBadge {
+  id: string;
+  name: string;
+  version: string;
+  description?: string | null;
+  score?: number | null;
+}
+
 export interface GeneratedConfig {
   app: AppPreview;
   surfaces: SurfacePreview[];
   persona_pools: PersonaPoolPreview[];
   taxonomy: TaxonomyPreview;
   worklog_templates: Record<string, string>;
+  extension?: ExtensionBadge | null;
   raw_files: Record<string, string>;
 }
 

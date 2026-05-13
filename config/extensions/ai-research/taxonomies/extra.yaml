@@ -1,0 +1,21 @@
+name: ai_research_extra
+node_types:
+  - id: paper
+    label: Paper
+    color: "#3b82f6"
+    description: A relevant paper read or written, with bib key + main contribution
+
+  - id: benchmark
+    label: Benchmark
+    color: "#06b6d4"
+    description: A benchmark result with dataset, metric, score, and provenance
+
+  - id: ablation
+    label: Ablation
+    color: "#f97316"
+    description: An ablation finding — what was removed and the delta it produced
+
+  - id: experiment
+    label: Experiment
+    color: "#06b6d4"
+    description: A training / eval run with hypothesis, configuration, and outcome

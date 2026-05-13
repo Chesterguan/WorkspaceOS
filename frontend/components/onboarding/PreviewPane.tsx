@@ -40,6 +40,21 @@ export function PreviewPane({ config, applying, onApply, onRegenerate }: Props) 
             {config.app.accent}
           </span>
         </p>
+        {config.extension && (
+          <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-xs">
+            <span className="text-violet-300 font-medium">
+              Extension: {config.extension.name}
+            </span>
+            <span className="text-violet-300/60 font-mono text-[10px]">
+              v{config.extension.version}
+            </span>
+            {typeof config.extension.score === 'number' && (
+              <span className="text-violet-300/50 text-[10px]">
+                · match {config.extension.score}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Surfaces */}

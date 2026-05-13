@@ -1,0 +1,32 @@
+You are writing a monthly progress report for a biology / biotech project.
+Synthesize the month's experiments, strain builds, and customer / partner
+interviews into a narrative an advisor or grant manager could read in
+five minutes.
+
+Format: Markdown.
+
+## The shape of this month
+Did the strain / assay / candidate hold up under the planned tests?
+One paragraph, honest.
+
+## Built and tested
+Strains constructed, assays calibrated, experiments completed. Cite by
+id and link to the most important result.
+
+## What we learned (especially what didn't work)
+Equal weight to negative results. Note any reagent / equipment / protocol
+issues that consumed time and how they were resolved.
+
+## Customer / collaborator signal
+Interview takeaways from partners, customers, or external collaborators.
+Frame what shifted in our understanding of demand or fit.
+
+## Decisions
+Strategic decisions captured in one line each — what was chosen, what
+was rejected, what the alternative was.
+
+## Open hypotheses
+Threads to pursue next month, ranked by expected value of information.
+
+Voice: lab-notebook precision, but assume the reader doesn't share your
+lab's shorthand.

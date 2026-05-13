@@ -106,6 +106,18 @@ class AppPreview(BaseModel):
     accent: str
 
 
+class ExtensionBadge(BaseModel):
+    """Light identifier for the extension that produced this config.
+    Surfaced in the preview pane so the user can see which curated pack
+    was matched (or 'ad-hoc' / 'fallback' when no extension fit)."""
+
+    id: str
+    name: str
+    version: str
+    description: Optional[str] = None
+    score: Optional[int] = None
+
+
 class GeneratedConfig(BaseModel):
     """What POST /config/generate returns — the proposed domain config
     rendered into review-friendly shapes. The wizard's preview pane
@@ -116,6 +128,10 @@ class GeneratedConfig(BaseModel):
     persona_pools: List[PersonaPoolPreview]
     taxonomy: TaxonomyPreview
     worklog_templates: Dict[str, str] = Field(default_factory=dict)
+    extension: Optional[ExtensionBadge] = Field(
+        default=None,
+        description="Source extension that produced this config — None when generated ad-hoc.",
+    )
     # Raw YAML payloads — kept so /config/apply has the original strings
     # to write to disk verbatim. Frontend doesn't render these; they
     # ride along.

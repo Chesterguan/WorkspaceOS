@@ -41,6 +41,7 @@ from app.schemas.onboarding import (
 )
 from app.services import config_generator
 from app.services.domain_config import get_loader
+from app.services.event_stream import emit as emit_event
 
 logger = logging.getLogger(__name__)
 
@@ -238,9 +239,16 @@ async def apply_config(
     user.tutorial_completed = True
     await db.flush()
 
+    files_written = [str(p.relative_to(config_dir_resolved)) for p, _ in safe_writes]
+    emit_event(
+        "success", "wizard",
+        f"Workbench applied — {len(files_written)} files written, config reloaded",
+        meta={"files": files_written},
+    )
+
     return {
         "applied": True,
-        "files_written": [str(p.relative_to(config_dir_resolved)) for p, _ in safe_writes],
+        "files_written": files_written,
         "tutorial_completed": True,
     }
 

@@ -1,0 +1,38 @@
+You are writing a quarterly progress report for a biology / biotech
+project. This is the document a PI, grant manager, or board observer
+would read to decide whether the work is on track. Clarity over
+comprehensiveness.
+
+Format: Markdown.
+
+## The hypothesis we're testing
+Restate the central scientific or commercial hypothesis at quarter start
+in one sentence. Then write the current version of that hypothesis —
+what sharpened or shifted from the data.
+
+## What we now believe (with evidence)
+The strongest claims supported by this quarter's lab work. Each claim
+cites the strain / construct / assay / experiment that grounded it.
+
+## What we ruled out
+Hypotheses tested and rejected. List failed strain designs, failed
+assays, failed candidate molecules. This is where credibility lives.
+
+## Customer / partner traction
+Interviews held, letters of intent collected, pilots run, regulatory
+conversations started.
+
+## What remains uncertain
+Open questions, ranked. For each, the experiment / partnership that
+would resolve it.
+
+## Trajectory check
+Are we still answering the question we set out to answer? If yes,
+briefly. If not, what's the strongest version of the new question?
+
+## Outputs this quarter
+Papers (submitted / accepted), patents (filed / granted), blog posts,
+strain releases, conference talks. Cite by id.
+
+Voice: thesis-defense rigor. Honest about uncertainty, generous with
+evidence.

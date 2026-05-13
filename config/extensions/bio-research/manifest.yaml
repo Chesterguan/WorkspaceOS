@@ -1,0 +1,40 @@
+id: bio-research
+name: Bio Research
+description: Persona panel + taxonomy for wet-lab biology, synthetic biology,
+  biofoundry operations, and translational / clinical research. Reviewer
+  lenses model real figures in synthetic and applied biology; cofounder
+  panel mixes biotech-savvy operators and venture creators.
+version: 0.1.0
+author: workspaceos
+matches:
+  domain_keywords:
+    - "bio"
+    - "biology"
+    - "biotech"
+    - "biofoundry"
+    - "synthetic biology"
+    - "synbio"
+    - "cell engineering"
+    - "strain"
+    - "genomic"
+    - "genetic"
+    - "wet lab"
+    - "clinical"
+    - "pharma"
+    - "drug discovery"
+    - "neuro"
+    - "molecular"
+    - "crispr"
+    - "protein"
+  audience_any:
+    - peer_researchers
+  outputs_any:
+    - papers
+personas:
+  cofounder: ./personas/cofounder.yaml
+  research: ./personas/research.yaml
+taxonomy_extra: ./taxonomies/extra.yaml
+worklog_templates:
+  weekly: ./prompts/worklog/weekly.txt
+  monthly: ./prompts/worklog/monthly.txt
+  quarterly: ./prompts/worklog/quarterly.txt

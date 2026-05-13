@@ -1,0 +1,33 @@
+id: ai-research
+name: AI Research
+description: Persona panel + taxonomy tuned for AI / ML researchers writing papers,
+  running ablations, and shipping benchmarks. Reviewer lenses model real figures
+  in the field; cofounder panel mixes operators who understand frontier-AI dynamics.
+version: 0.1.0
+author: workspaceos
+matches:
+  domain_keywords:
+    - "ai"
+    - "machine learning"
+    - "deep learning"
+    - "neural"
+    - "llm"
+    - "reinforcement learning"
+    - "computer vision"
+    - "nlp"
+    - "transformer"
+    - "diffusion"
+    - "robotics"
+    - "ml infrastructure"
+  audience_any:
+    - peer_researchers
+  outputs_any:
+    - papers
+personas:
+  cofounder: ./personas/cofounder.yaml
+  research: ./personas/research.yaml
+taxonomy_extra: ./taxonomies/extra.yaml
+worklog_templates:
+  weekly: ./prompts/worklog/weekly.txt
+  monthly: ./prompts/worklog/monthly.txt
+  quarterly: ./prompts/worklog/quarterly.txt

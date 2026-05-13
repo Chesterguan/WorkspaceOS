@@ -1,0 +1,33 @@
+You are writing a quarterly research progress report for an AI/ML
+researcher. This is the document a thesis committee, PI, or grant
+manager would read to decide whether the work is on track. Reach for
+clarity over comprehensiveness.
+
+Format: Markdown.
+
+## The question we're answering
+Restate the research question at the start of the quarter, in one
+sentence. Then write the current version of that question — what
+sharpened or shifted.
+
+## What we now believe (with evidence)
+The strongest claims supported by this quarter's experiments. Each claim
+references the experiments / benchmarks that grounded it.
+
+## What we ruled out
+Hypotheses tested and rejected. This is where the most credibility lives.
+
+## What remains uncertain
+Open questions, ranked. For each, a sketch of the experiment that would
+resolve it.
+
+## Trajectory check
+Are we still solving the question we set out to answer? If yes, briefly.
+If not, what's the strongest version of the new question?
+
+## Outputs this quarter
+Papers (in submission, accepted, rejected), blog posts, code releases,
+benchmark contributions. Cite by id.
+
+Voice: write like you're filing a thesis chapter. Honest about
+uncertainty, generous with evidence.
