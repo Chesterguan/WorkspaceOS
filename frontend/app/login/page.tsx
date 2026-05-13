@@ -100,11 +100,6 @@ export default function LoginPage() {
               {isRegister ? "Already have an account? Sign in" : "Need an account? Register"}
             </button>
           </div>
-          {!isRegister && (
-            <p className="mt-3 text-center text-[11px] text-muted-foreground">
-              Demo: demo@prsecretary.dev / demo123
-            </p>
-          )}
         </CardContent>
       </Card>
     </div>
