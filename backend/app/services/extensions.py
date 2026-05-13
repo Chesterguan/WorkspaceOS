@@ -54,6 +54,11 @@ class LoadedExtension:
     is keyed by the file's relative path inside the active config tree
     (e.g. 'personas/cofounder.yaml'), so they can be written verbatim
     on /config/apply.
+
+    Capability declarations live on `manifest.capabilities`. They are
+    Phase 2 — the loader passes them through verbatim but the runtime
+    doesn't execute them. Authors can list intended ingest / slash /
+    action capabilities now to keep manifests forward-compatible.
     """
 
     def __init__(

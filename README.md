@@ -1,102 +1,218 @@
 # WorkspaceOS
 
-A configurable single-surface workbench framework. Personas, taxonomies, prompts, and surface layout are domain config (`config/domain.yaml` + the trees it points at) rather than hardcoded UI.
+A configurable single-surface workbench framework for focused,
+long-running creative work.
 
-**ProjectScribe** — the maintainer's daily-driver AI co-founder platform — is the reference instance. Its `config/` tree (cofounder/research persona pools, startup taxonomy, paper/worklog prompts) is what ships in this repo; swap in your own to retarget the same surfaces at a different domain.
+You answer 7 questions about your domain. The framework generates a
+workbench tailored to it — advisor panel, knowledge taxonomy, prompt
+tone, surface layout — and you can keep customizing from there. Domain
+content is **plug-and-play** via extension folders. The framework ships
+two extensions today (AI research, biology research); writing your
+own is one folder of YAML.
 
-This branch (`feat/bench-ui`) collapses ProjectScribe's legacy 25-page UI into **one bench** where "project" is a filter, not a navigation root. Many of the full tool's features (publishing flows, paper editor, file ingest, raw memory, multi-platform integrations) are intentionally not surfaced — the goal is to show how the IA *feels* when a dense developer tool collapses into a single execution surface.
+The reference instance — **ProjectScribe** — is the maintainer's
+AI co-founder daily-driver, used to build WorkspaceOS itself.
+
+> Phase 1 = content extensions (personas, taxonomies, prompts).
+> Phase 2 = capability extensions (Gmail / Calendar / Slack ingest).
+> Phase 2 schema is already reserved so manifests authored today
+> stay forward-compatible.
 
 ---
 
-## What's in the bench
+## What it does
 
-Five surfaces on the rail (press `1`–`5` or click):
+A bench with six opt-in surfaces, each driven by your domain config:
 
-| Letter | Surface     | What it does                                                                |
-|--------|-------------|-----------------------------------------------------------------------------|
-| **R**  | Roundtable  | Co-Founder (8 business advisors) + Research (6 academic reviewers), with a mode toggle |
-| **D**  | Drafts      | Blog and social drafts list per project                                     |
-| **P**  | Papers      | Generated research papers (single + portfolio)                              |
-| **K**  | Knowledge   | Cross-project knowledge graph — decisions, claims, hypotheses, rejections auto-extracted from your conversations |
-| **W**  | Worklog     | Periodic progress reports (weekly / monthly / quarterly)                    |
+| Letter | Surface     | What it does |
+|--------|-------------|--------------|
+| **R**  | Roundtable  | Chat with a cofounder advisor panel. 3–4 advisors weigh in per message. |
+| **A**  | Research    | Parallel critique from a research reviewer panel. 5–6 reviewers, distinct lenses. |
+| **D**  | Drafts      | Blog and social drafts (per-project, paginated). |
+| **P**  | Papers      | Research papers — single + portfolio. Multi-agent v2 pipeline. |
+| **K**  | Knowledge   | Cross-project graph of decisions / claims / hypotheses extracted from chat. |
+| **W**  | Worklog     | Weekly / monthly / quarterly progress reports. |
 
-Plus a `⌘K` command palette, a slide-in project inspector (one-liner narrative editing), and a right-side TUI event log streaming every AI call, sync, and extraction.
-
-## The interesting part: the knowledge layer
-
-Every Co-Founder + Research roundtable reply runs silently through a two-stage extractor and writes typed nodes to a user-scoped graph: `decision`, `claim`, `hypothesis`, `question`, `rejection`, `blocker`, `insight`. Connected by typed edges (`supports`, `contradicts`, `refines`, `rejects`, `related_to`).
-
-The graph is **cross-project by default** — a decision saved in Project A surfaces when you write a paper about Project B. Paper, draft, and worklog generation all pull relevant nodes into their LLM context automatically. The Karpathy "LLM Wiki" pattern, applied to roundtable transcripts.
+Plus a `⌘K` command palette, slide-in project inspector, and a
+right-side TUI log streaming every AI call, sync, and extraction in
+real time.
 
 ## Quick start
 
 ```bash
-git clone https://github.com/Chesterguan/ProjectScribe.git ProjectScribe-bench
-cd ProjectScribe-bench
-git checkout feat/bench-ui
+git clone https://github.com/Chesterguan/WorkspaceOS.git
+cd WorkspaceOS
 
 cp .env.example .env
-# Edit .env — only GEMINI_API_KEY is required. Everything else is optional.
+# Edit .env — minimum required is GEMINI_API_KEY. Everything else has
+# defaults that work for local development.
 
 docker compose up --build -d
 
-# Bench:  http://localhost:4000
-# API:    http://localhost:9000/docs
+# Bench:        http://localhost:4000
+# Backend API:  http://localhost:9000/docs
 ```
 
-First load redirects you into `/bench`. Pick or create a project from the top-right filter, click the Roundtable icon, start a conversation.
+First load redirects you to `/login`. Register an account, then
+`/onboarding` walks you through 7 questions and generates a workbench.
+You can skip the wizard and use the default config at any time.
 
-## What you need to set up
+## How extensions plug in
 
-| Required | Optional |
-|---|---|
-| **Gemini API key** (chat, drafts, papers, extraction, embeddings) | OpenAI key (paper roundtable reviewers — papers still generate without it) |
-| | Ollama running locally for free local embeddings (fallback: Gemini) |
+An extension is a single folder under `config/extensions/<id>/`:
 
-The full ProjectScribe also supports Twitter / LinkedIn / GitHub sync / Anthropic. **None of those are surfaced in this demo**, so their keys are omitted from `.env.example`. If you want to extend the demo to use them, the backend services are still present — just add the env vars and wire UI yourself.
+```
+config/extensions/bio-research/
+├── manifest.yaml         # match rules + version + path refs
+├── personas/
+│   ├── cofounder.yaml    # 3–4 cofounder personas
+│   └── research.yaml     # 5–6 research reviewers
+├── taxonomies/extra.yaml # node types added to the base 7
+└── prompts/worklog/
+    ├── weekly.txt
+    ├── monthly.txt
+    └── quarterly.txt
+```
+
+`manifest.yaml` is just YAML — no Python, no JS, no build step:
+
+```yaml
+id: bio-research
+name: Bio Research
+description: Persona panel + taxonomy for wet-lab biology and biofoundry.
+version: 0.1.0
+author: workspaceos
+matches:
+  domain_keywords: [bio, biotech, biofoundry, synthetic biology, strain, crispr]
+  audience_any: [peer_researchers]
+  outputs_any: [papers]
+personas:
+  cofounder: ./personas/cofounder.yaml
+  research:  ./personas/research.yaml
+taxonomy_extra: ./taxonomies/extra.yaml
+worklog_templates:
+  weekly:    ./prompts/worklog/weekly.txt
+  monthly:   ./prompts/worklog/monthly.txt
+  quarterly: ./prompts/worklog/quarterly.txt
+```
+
+**Adding a new extension** is one folder drop:
+
+1. `cp -r config/extensions/bio-research config/extensions/your-domain`
+2. Edit `manifest.yaml` — change `id`, `name`, `matches.domain_keywords`
+3. Rewrite the persona / taxonomy / prompt files for your domain
+4. Restart the backend (`docker compose restart backend`)
+
+The wizard's matcher scores each extension against the user's answers:
+- `domain_keywords` substring hit = +2 each
+- `audience_any` overlap = +1 each
+- `outputs_any` overlap = +1 each
+
+Threshold is 2. Highest-scoring extension above threshold wins. No
+match → falls back to Gemini synthesis → falls back to a deterministic
+bucket stub.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full extension authoring
+guide.
+
+## How the wizard works
+
+1. **User answers 7 questions** at `/onboarding`. Domain (free text),
+   primary outputs, audience, dream advisor panel, what you track,
+   cadence, stage.
+
+2. **Backend matches extensions**. Scores each shipped extension's
+   `matches` rules against the answers.
+
+3. **Generator builds the config**:
+   - If an extension matches → splice its bundled files verbatim,
+     emit "Matched extension: X (score N)" event.
+   - Else if `GEMINI_API_KEY` is set → one LLM call returns
+     personas + taxonomy additions + tagline.
+   - Else → deterministic bucket stub (CS / biology / economics).
+
+4. **SSE streams** progress captions to the wizard's wait animation
+   (5-chapter SVG tutorial loops independently). Same events also
+   flow into the bench's right-side TUI log so the user can see what
+   ran after they navigate back.
+
+5. **Preview pane** shows generated personas, taxonomy chips,
+   worklog template sample, raw YAML disclosure. **Apply** writes
+   files into `config/`, triggers a live reload, and marks the user
+   as onboarded. **Regenerate** re-rolls.
+
+Total wall-clock: ~15s for extension match, ~10s for Gemini, instant
+for the bucket stub.
 
 ## Architecture
 
-- **Frontend** — Next.js 16 (App Router, Suspense-wrapped state, `proxy.ts` middleware), Tailwind v4, shadcn/ui, React Flow + dagre for the knowledge graph. Port **4000**.
-- **Backend** — FastAPI (async), PostgreSQL 15 + pgvector (768-dim IVFFlat), Server-Sent Events for the live log. Port **9000**.
-- **AI** — Hybrid. Local Ollama (`nomic-embed-text`) for embeddings when available; Gemini (`gemini-2.0-flash`) for generation; OpenAI (`gpt-4o`) for paper roundtable reviews.
-- **Deployment** — Docker Compose, three services (`db`, `backend`, `frontend`), DB volume isolated per compose project so you can run alongside the full ProjectScribe (which uses 3989/8989).
+- **Frontend** — Next.js 16 (App Router, Suspense, `proxy.ts`
+  middleware), Tailwind v4, shadcn/ui, motion (Framer), React Flow +
+  dagre for the knowledge graph. Port **4000**.
+- **Backend** — FastAPI (async), PostgreSQL 15 + pgvector (768-dim
+  IVFFlat), Server-Sent Events for the bench log + wizard generation.
+  Port **9000**.
+- **AI** — Hybrid. Local Ollama (`nomic-embed-text`) for embeddings
+  when available; Gemini for generation + long-tail wizard fallback;
+  OpenAI for paper roundtable reviewers (optional).
+- **Deployment** — Docker Compose, three services (`db`, `backend`,
+  `frontend`) on the `workspaceos` network. Auth: JWT for users,
+  `X-API-Key` for scripts and SSE query-param.
 
-## What's narrowed vs. the full tool
+## Required vs optional setup
 
-These are intentionally placeholder in the bench (the full tool's UIs for them live on `main` in the parent repo):
+| Required | Optional |
+|---|---|
+| **Gemini API key** — chat / drafts / papers / extraction / embeddings-fallback. Free tier works for testing. | **OpenAI key** — only used by the paper roundtable reviewers. Papers still generate without it. |
+| | **Ollama** running locally — free local embeddings. Falls back to Gemini if absent. |
+| | **GitHub token** — repo sync, deep repo context, release publishing. |
+| | **LinkedIn / Dev.to / Hashnode keys** — multi-platform publishing. |
 
-- **Files** overlay — upload + URL import + AI auto-tagging
-- **Memory** overlay — raw memory CRUD
-- **Portfolio** overlay — multi-project combined view
-- **Draft editor** — clicking a draft card does nothing yet
-- **Paper editor** — paper detail view (diagrams, tables, regenerate, version history, DOCX export) is not embedded
-- **Per-draft publishing** — LinkedIn / Dev.to / Hashnode / Twitter UIs not surfaced
-- **Project create** — bench modal captures name + GitHub repo only; the full form lives at `/projects/new`
+All API keys can be set at runtime through the Settings page
+(Fernet-encrypted in the DB) instead of `.env`.
 
-The backend services exist for all of these and work — the demo just doesn't wire them into the bench.
+## Roadmap
 
-## Differences from the parent project
+- **Phase 2 — capability extensions.** Extensions ship code, not just
+  YAML. `ingest_source` (Gmail / Calendar / Slack / Notion sync),
+  `slash_command` (⌘K palette entry), `action_button` (per-node
+  context action), `surface_widget` (sub-component in an existing
+  surface). Manifest schema reserves the `capabilities: []` field
+  today; runtime activation arrives in Phase 2.
+- **More content extensions** — `indie-founder`, `phd-student`,
+  `engineering-manager`. Contributions welcome.
+- **Settings → "Personalize"** — re-run the wizard with prefilled
+  prior answers.
+- **Custom surface types** — not on the roadmap. The 6 surface types
+  cover the framework's scope. Surface code stays in core.
 
-| | ProjectScribe (`main`) | This demo (`feat/bench-ui`) |
-|---|---|---|
-| IA | 25 per-project pages | One bench, project = filter |
-| Ports | 3989 / 8989 | 4000 / 9000 |
-| Audience | Personal daily-driver | Public demo |
-| Coverage | Full functionality | Five core surfaces + placeholders |
-| Routing | Direct routes | Aggressive proxy → bench |
+## Status
 
-## Tech notes for the curious
+OSS-targeted, MIT licensed (see [LICENSE](LICENSE)). The bench, six
+surfaces, extension framework, onboarding wizard, knowledge graph,
+worklog generator, and paper pipeline v2 all work today. Multi-tenant
+deployment is not yet hardened — see Security notes in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-- **Next.js 16 conformance:** uses `proxy.ts` (not the deprecated `middleware.ts`), `useSearchParams` wrapped in `<Suspense>`, dynamic params via `use()`
-- **Knowledge dedup:** per-user `asyncio.Lock` serializes concurrent advisor extractions so cosine-near nodes from one roundtable turn merge instead of duplicating
-- **Event SSE auth:** falls back to a `?api_key=` query string because EventSource can't set custom headers — fine for the single-tenant demo, not safe for shared deployment
-- **Reduced motion respected** — WCAG 2.3.3 honored globally
+## Tech notes
 
-## Credits
+- **Next.js 16 conformance** — uses `proxy.ts` (not deprecated
+  `middleware.ts`), `useSearchParams` wrapped in `<Suspense>`,
+  dynamic params via `use()`.
+- **Knowledge dedup** — per-user `asyncio.Lock` serializes concurrent
+  advisor extractions so cosine-near nodes from one roundtable turn
+  merge instead of duplicating.
+- **Event SSE auth** — falls back to a `?api_key=` query string
+  because `EventSource` can't set custom headers. Fine for
+  single-tenant demo, not safe for shared deployment without a
+  short-lived SSE token exchange.
+- **Reduced motion respected** — WCAG 2.3.3 honored globally.
 
-Built on top of [Chester Guan's ProjectScribe](https://github.com/Chesterguan/ProjectScribe). See the parent repo for the full feature set, the paper pipeline internals, and the design specs under `docs/superpowers/specs/`.
+## Contributing
+
+Pull requests welcome — especially **new content extensions**. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the authoring guide.
 
 ## License
 
-MIT — see the parent repo.
+MIT. See [LICENSE](LICENSE).
