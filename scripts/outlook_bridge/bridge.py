@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-ProjectScribe Outlook Bridge — runs on the user's Mac, queries Outlook
-for Mac via AppleScript, POSTs the items into the ProjectScribe backend
+WorkspaceOS Outlook Bridge — runs on the user's Mac, queries Outlook
+for Mac via AppleScript, POSTs the items into the WorkspaceOS backend
 at /skills/local-ingest/items.
 
 Runs without any pip dependencies — stdlib only. Installable via
 `install.sh` which sets up a launchd job to fire this script every
 30 minutes.
 
-Config is read from ~/.projectscribe-bridge.json:
+Config is read from ~/.workspaceos-bridge.json:
 {
   "api_base":      "http://localhost:8989/api/v1",
   "api_key":       "dev-secret-key",
@@ -24,7 +24,7 @@ Failure modes handled:
     log if still failing.
   * Backend 5xx / network error → log + exit 0.
 
-Log location: ~/Library/Logs/projectscribe-bridge.log
+Log location: ~/Library/Logs/workspaceos-bridge.log
 """
 from __future__ import annotations
 
@@ -43,8 +43,8 @@ from typing import Any, Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 
 HOME = Path.home()
-CONFIG_PATH = HOME / ".projectscribe-bridge.json"
-LOG_PATH = HOME / "Library" / "Logs" / "projectscribe-bridge.log"
+CONFIG_PATH = HOME / ".workspaceos-bridge.json"
+LOG_PATH = HOME / "Library" / "Logs" / "workspaceos-bridge.log"
 APPLESCRIPT_PATH = Path(__file__).resolve().parent / "sync.applescript"
 
 # macOS Mail + Calendar can be slow to enumerate on first run after
@@ -67,7 +67,7 @@ BATCH_SIZE = 10
 
 def _setup_logging() -> logging.Logger:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("projectscribe.bridge")
+    logger = logging.getLogger("workspaceos.bridge")
     logger.setLevel(logging.INFO)
     # Never bubble up to the root logger — harmless belt-and-braces so
     # any library that logs to root doesn't clutter our file.

@@ -33,9 +33,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
+import { useDomainConfig } from "@/lib/bench/useDomainConfig";
 
 export default function ProjectsPage() {
   const { user, logout } = useAuth();
+  const { data: domainConfig } = useDomainConfig();
+  const appName = domainConfig?.app?.name ?? "WorkspaceOS";
+  const appTagline = domainConfig?.app?.tagline ?? "Configurable single-surface workbench framework";
   const { data: projectList, error, isLoading } = useProjects();
   const { statsMap } = useProjectStats();
   const { data: summaryData } = useSWR<DashboardSummary>(
@@ -93,9 +97,9 @@ export default function ProjectsPage() {
         <div className="max-w-6xl mx-auto px-8 py-5">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">ProjectScribe</h1>
+              <h1 className="text-2xl font-bold tracking-tight">{appName}</h1>
               <p className="text-sm text-muted-foreground mt-1">
-                AI co-founder for project management, content, and research
+                {appTagline}
               </p>
             </div>
             <div className="flex items-center gap-2">

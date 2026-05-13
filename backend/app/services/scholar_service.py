@@ -30,7 +30,7 @@ def _get_http_client() -> httpx.AsyncClient:
         # Semantic Scholar can be slow on first request; generous timeout
         _http_client = httpx.AsyncClient(
             timeout=20.0,
-            headers={"User-Agent": "ProjectScribe/1.0 (mailto:ziyuan9512@gmail.com)"},
+            headers={"User-Agent": "WorkspaceOS/1.0 (mailto:ziyuan9512@gmail.com)"},
         )
     return _http_client
 
@@ -320,7 +320,7 @@ async def doi_to_bibtex(doi: str) -> str:
             async with httpx.AsyncClient(
                 timeout=15.0,
                 follow_redirects=True,
-                headers={"User-Agent": "ProjectScribe/1.0 (mailto:ziyuan9512@gmail.com)"},
+                headers={"User-Agent": "WorkspaceOS/1.0 (mailto:ziyuan9512@gmail.com)"},
             ) as client:
                 resp = await client.get(url, headers=headers)
             if resp.status_code == 429:

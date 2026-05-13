@@ -672,7 +672,7 @@ async def publish_devto(
     tags = []
     if draft.platform:
         tags.append(draft.platform.lower().replace(" ", ""))
-    tags.append("projectscribe")
+    tags.append("workspaceos")
     # Dev.to allows max 4 tags
     tags = tags[:4]
 
@@ -683,7 +683,7 @@ async def publish_devto(
                 headers={
                     "api-key": settings.devto_api_key,
                     "Content-Type": "application/json",
-                    "User-Agent": "ProjectScribe/1.0",
+                    "User-Agent": "WorkspaceOS/1.0",
                 },
                 json={
                     "article": {
@@ -877,7 +877,7 @@ async def publish_content_to_devto(
             "details": None,
         }
 
-    tags = ["projectscribe"]
+    tags = ["workspaceos"]
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -886,7 +886,7 @@ async def publish_content_to_devto(
                 headers={
                     "api-key": settings.devto_api_key,
                     "Content-Type": "application/json",
-                    "User-Agent": "ProjectScribe/1.0",
+                    "User-Agent": "WorkspaceOS/1.0",
                 },
                 json={
                     "article": {

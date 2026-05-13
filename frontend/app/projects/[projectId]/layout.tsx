@@ -6,6 +6,7 @@ import { useProject } from "@/lib/hooks/useProjects";
 import { ProjectSidebar } from "@/components/ProjectSidebar";
 import { ProjectHeader } from "@/components/ProjectHeader";
 import { ProjectContext } from "@/components/ProjectContext";
+import { useDomainConfig } from "@/lib/bench/useDomainConfig";
 import { AlertCircle } from "lucide-react";
 
 interface ProjectLayoutProps {
@@ -17,16 +18,18 @@ export default function ProjectLayout({ children, params }: ProjectLayoutProps) 
   const { projectId } = use(params);
   const pathname = usePathname();
   const { data: project, error, isLoading, mutate } = useProject(projectId);
+  const { data: domainConfig } = useDomainConfig();
+  const appName = domainConfig?.app?.name ?? "WorkspaceOS";
 
-  // Dynamic page title: "HAVEN | Timeline | ProjectScribe"
+  // Dynamic page title: "HAVEN | Timeline | <app name>"
   useEffect(() => {
     if (!project) return;
     const segments = pathname.split("/").filter(Boolean);
     // segments: ["projects", projectId, "timeline"] → page = "timeline"
     const page = segments[2] ?? "overview";
     const pageLabel = page.charAt(0).toUpperCase() + page.slice(1);
-    document.title = `${project.name} | ${pageLabel} | ProjectScribe`;
-  }, [project, pathname]);
+    document.title = `${project.name} | ${pageLabel} | ${appName}`;
+  }, [project, pathname, appName]);
 
   if (isLoading) {
     return (

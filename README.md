@@ -1,8 +1,10 @@
-# ProjectScribe — Bench Demo
+# WorkspaceOS
 
-A single-surface workbench experiment built on top of [ProjectScribe](https://github.com/Chesterguan/ProjectScribe). The original tool is a daily-driver AI co-founder platform with 25+ pages; this branch (`feat/bench-ui`) reorganizes a subset of it into **one bench** where "project" is a filter, not a navigation root.
+A configurable single-surface workbench framework. Personas, taxonomies, prompts, and surface layout are domain config (`config/domain.yaml` + the trees it points at) rather than hardcoded UI.
 
-It's a public-facing demo. Many of the full tool's features (publishing flows, paper editor, file ingest, raw memory, multi-platform integrations) are intentionally not surfaced — the goal is to show how the IA *feels* when a dense developer tool collapses into a single execution surface.
+**ProjectScribe** — the maintainer's daily-driver AI co-founder platform — is the reference instance. Its `config/` tree (cofounder/research persona pools, startup taxonomy, paper/worklog prompts) is what ships in this repo; swap in your own to retarget the same surfaces at a different domain.
+
+This branch (`feat/bench-ui`) collapses ProjectScribe's legacy 25-page UI into **one bench** where "project" is a filter, not a navigation root. Many of the full tool's features (publishing flows, paper editor, file ingest, raw memory, multi-platform integrations) are intentionally not surfaced — the goal is to show how the IA *feels* when a dense developer tool collapses into a single execution surface.
 
 ---
 

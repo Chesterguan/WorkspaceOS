@@ -11,8 +11,8 @@ from app.services.domain_config import DomainConfigLoader
 
 
 def test_app_config_minimal():
-    app = AppConfig(name="ProjectScribe", accent="#7c3aed")
-    assert app.name == "ProjectScribe"
+    app = AppConfig(name="WorkspaceOS", accent="#7c3aed")
+    assert app.name == "WorkspaceOS"
     assert app.tagline is None
 
 
@@ -91,7 +91,7 @@ def fake_config(tmp_path):
     """)
     _write(base / "prompts/extraction/stage2.txt",
            "Use these node types: {taxonomy_node_type_ids}\n\nDetails:\n{taxonomy_summary}")
-    _write(base / "scribe.yaml", """
+    _write(base / "domain.yaml", """
         app:
           name: "TestApp"
           accent: "#7c3aed"
@@ -111,7 +111,7 @@ def fake_config(tmp_path):
     return base
 
 
-def test_loader_reads_scribe_yaml(fake_config):
+def test_loader_reads_domain_yaml(fake_config):
     loader = DomainConfigLoader(config_dir=fake_config)
     loader.load()
     app = loader.get_app()

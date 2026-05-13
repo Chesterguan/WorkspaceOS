@@ -1,5 +1,5 @@
 """
-Integration tests for ProjectScribe API endpoints.
+Integration tests for WorkspaceOS API endpoints.
 
 Tests run against the real Docker database with seeded demo data.
 Each test uses a transactional session that rolls back on completion.

@@ -118,7 +118,7 @@ class SurfaceTemplatesRefs(BaseModel):
 
 
 class SurfaceConfig(BaseModel):
-    """One surface entry in scribe.yaml. Path-valued fields are resolved by
+    """One surface entry in domain.yaml. Path-valued fields are resolved by
     the loader; this schema only validates the raw shape."""
     type: str
     id: str

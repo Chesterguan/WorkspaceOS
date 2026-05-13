@@ -1,5 +1,5 @@
 #!/bin/bash
-# ProjectScribe database backup script
+# WorkspaceOS database backup script
 # Runs pg_dump and saves to /app/backend_data/backups/
 # Keeps the last 7 daily backups
 
@@ -7,7 +7,7 @@ set -e
 
 BACKUP_DIR="/app/backend_data/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-FILENAME="projectscribe_${TIMESTAMP}.sql.gz"
+FILENAME="workspaceos_${TIMESTAMP}.sql.gz"
 
 # Extract DB credentials from DATABASE_URL
 # Format: postgresql+asyncpg://user:pass@host:port/dbname
@@ -33,8 +33,8 @@ echo "Backup complete: $BACKUP_DIR/$FILENAME ($SIZE)"
 
 # Rotate: keep only the last 7 backups
 cd "$BACKUP_DIR"
-ls -t projectscribe_*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm
-COUNT=$(ls projectscribe_*.sql.gz 2>/dev/null | wc -l)
+ls -t workspaceos_*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm
+COUNT=$(ls workspaceos_*.sql.gz 2>/dev/null | wc -l)
 echo "Retained backups: $COUNT"
 
 # Also backup the Fernet encryption key (needed to decrypt app_settings)

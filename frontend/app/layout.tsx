@@ -16,10 +16,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "ProjectScribe",
-    template: "%s | ProjectScribe",
+    default: "WorkspaceOS",
+    template: "%s | WorkspaceOS",
   },
-  description: "AI co-founder for project management, content, and research",
+  description: "Configurable single-surface workbench framework",
 };
 
 export default function RootLayout({

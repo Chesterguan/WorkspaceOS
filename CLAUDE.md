@@ -3,14 +3,14 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-ProjectScribe — AI co-founder platform for developer projects. Multi-agent roundtable advisory (8 business + 6 academic advisors), paper pipeline with roundtable review, universal file ingest with AI auto-tagging, wiki layer (Karpathy LLM Wiki pattern), work log generator for supervisors, and publishing to 5 platforms.
+WorkspaceOS — configurable single-surface workbench framework. ProjectScribe (the maintainer's daily-driver AI co-founder platform — multi-agent roundtable advisory, paper pipeline, file ingest, wiki layer, worklog generator, multi-platform publishing) is the reference domain instance: its personas, taxonomies, and prompts live under `config/` and drive the framework via `config/domain.yaml`.
 
 ## Architecture
 - Frontend: Next.js 16 (App Router) + Tailwind + shadcn/ui → port 4000 (demo) / 3989 (main)
 - Backend: Python FastAPI (async) → port 9000 (demo) / 8989 (main)
 - Database: PostgreSQL 15 + pgvector (768-dim) → Docker internal
 - AI: Hybrid — Ollama (local/privacy), Gemini Flash (generation), OpenAI GPT-4o (review)
-- Deployment: Docker Compose with 3 services on `projectscribe` network + backend_data volume
+- Deployment: Docker Compose with 3 services on `workspaceos` network + backend_data volume
 - Auth: JWT (access + refresh tokens) + X-API-Key fallback for scripts
 
 ## Key Modules

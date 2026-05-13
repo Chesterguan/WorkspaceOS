@@ -51,7 +51,7 @@ export function MacOutlookBridgeCard() {
           For corporate Microsoft accounts that block third-party app
           registration. A small helper script runs on your Mac every 6
           hours, reads Apple Mail + Calendar via AppleScript, and pushes
-          events + messages into ProjectScribe. Teams chat is not
+          events + messages into the backend. Teams chat is not
           supported via this path.
         </CardDescription>
 
@@ -70,7 +70,7 @@ export function MacOutlookBridgeCard() {
           </div>
           <p className="text-[11px] text-muted-foreground">
             Run from the project root. The installer will prompt for your
-            login, write config to <code>~/.projectscribe-bridge.json</code>,
+            login, write config to <code>~/.workspaceos-bridge.json</code>,
             and register a launchd agent that runs every 6 hours.
           </p>
         </div>

@@ -1,6 +1,6 @@
 """Serve the active domain config to the frontend.
 
-Exposes the loaded config/scribe.yaml in a resolved + denormalized shape so
+Exposes the loaded config/domain.yaml in a resolved + denormalized shape so
 the bench UI can render the rail, advisor pickers, and taxonomy palettes
 without follow-up calls.
 """

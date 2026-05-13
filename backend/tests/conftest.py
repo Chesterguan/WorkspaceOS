@@ -1,5 +1,5 @@
 """
-Pytest fixtures for ProjectScribe API integration tests.
+Pytest fixtures for WorkspaceOS API integration tests.
 
 Pure HTTP tests against the running Docker backend.
 No app imports — avoids DB connection pool conflicts.

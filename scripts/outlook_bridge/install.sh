@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# ProjectScribe Outlook Bridge — installer
+# WorkspaceOS Outlook Bridge — installer
 #
 # Prompts for backend URL + login, obtains a JWT via /auth/login, writes
-# a 0600 config file at ~/.projectscribe-bridge.json, copies the bridge
+# a 0600 config file at ~/.workspaceos-bridge.json, copies the bridge
 # into a stable user-owned location, and generates a launchd plist that
 # fires it every 30 minutes.
 #
-# Why the copy? If ProjectScribe lives on an external volume
+# Why the copy? If the repo lives on an external volume
 # (`/Volumes/...`), launchd's python3 is denied access by macOS TCC — we
 # saw this first-hand: ~150 logged failures with "Operation not
 # permitted". Copying bridge.py + sync.applescript into
@@ -27,14 +27,14 @@ if [[ ! -f "$SRC_BRIDGE_PY" || ! -f "$SRC_APPLESCRIPT" ]]; then
 fi
 
 # Installed location — stable, user-owned, no TCC issues
-INSTALL_DIR="$HOME/Library/Application Support/projectscribe-bridge"
+INSTALL_DIR="$HOME/Library/Application Support/workspaceos-bridge"
 INSTALLED_BRIDGE_PY="$INSTALL_DIR/bridge.py"
 INSTALLED_APPLESCRIPT="$INSTALL_DIR/sync.applescript"
 
-CONFIG_PATH="$HOME/.projectscribe-bridge.json"
-PLIST_LABEL="com.projectscribe.outlookbridge"
+CONFIG_PATH="$HOME/.workspaceos-bridge.json"
+PLIST_LABEL="com.workspaceos.outlookbridge"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
-LOG_PATH="$HOME/Library/Logs/projectscribe-bridge.log"
+LOG_PATH="$HOME/Library/Logs/workspaceos-bridge.log"
 INTERVAL_SEC=21600  # 6 hours
 
 # Resolve an absolute python3 path up-front. Baking the resolved path
@@ -47,7 +47,7 @@ if [[ -z "$PYTHON3" ]]; then
 fi
 
 echo "=============================================="
-echo " ProjectScribe Outlook Bridge — installer"
+echo " WorkspaceOS Outlook Bridge — installer"
 echo "=============================================="
 echo "  python3: $PYTHON3"
 echo "  install dir: $INSTALL_DIR"
@@ -63,9 +63,9 @@ default_key="dev-secret-key"
 read -r -p "API key [$default_key]: " API_KEY
 API_KEY="${API_KEY:-$default_key}"
 
-read -r -p "ProjectScribe email: " EMAIL
+read -r -p "Backend email: " EMAIL
 # Silence the password prompt
-read -r -s -p "ProjectScribe password: " PASSWORD
+read -r -s -p "Backend password: " PASSWORD
 echo
 
 # ── Login to obtain JWT ───────────────────────────────────────────────────

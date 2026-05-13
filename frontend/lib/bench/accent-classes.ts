@@ -1,6 +1,6 @@
 // Static map so Tailwind purge keeps these class strings — dynamic class
 // names like `bg-${accent}-500/20` get dropped by the JIT pass and the
-// rail icons end up unstyled. Maps the accent name (from scribe.yaml) to
+// rail icons end up unstyled. Maps the accent name (from domain.yaml) to
 // the on/off classes used for the rail buttons.
 export const ACCENT_CLASSES: Record<string, { active: string; inactive: string }> = {
   violet: {

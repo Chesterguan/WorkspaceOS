@@ -1,8 +1,8 @@
 """Loads domain config files at boot and exposes typed accessors.
 
 Lifecycle:
-  - On startup, load_on_startup() reads config/scribe.yaml from CONFIG_DIR
-  - If missing, copies config/presets/indie-hacker.yaml to scribe.yaml
+  - On startup, load_on_startup() reads config/domain.yaml from CONFIG_DIR
+  - If missing, copies config/presets/indie-hacker.yaml to domain.yaml
   - Parses + validates against Pydantic schemas
   - Caches in module-level singleton
 
@@ -39,10 +39,10 @@ class DomainConfigLoader:
 
     def load(self) -> None:
         """Read + parse + validate. Call once at startup."""
-        scribe_path = self.config_dir / "scribe.yaml"
-        if not scribe_path.exists():
-            self._install_default_preset(scribe_path)
-        with open(scribe_path) as f:
+        config_path = self.config_dir / "domain.yaml"
+        if not config_path.exists():
+            self._install_default_preset(config_path)
+        with open(config_path) as f:
             raw = yaml.safe_load(f)
         self._root = DomainConfig.model_validate(raw)
         logger.info(

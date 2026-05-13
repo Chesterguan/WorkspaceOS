@@ -1,8 +1,8 @@
-# Outlook for Mac → ProjectScribe bridge
+# Outlook for Mac → WorkspaceOS bridge
 
 A tiny host-side helper that queries **Outlook for Mac** via AppleScript
-and POSTs recent calendar events + Inbox messages into ProjectScribe's
-`/skills/local-ingest/items` endpoint.
+and POSTs recent calendar events + Inbox messages into the WorkspaceOS
+backend's `/skills/local-ingest/items` endpoint.
 
 Runs entirely locally — no Microsoft Graph, no Azure app registration,
 no IT involvement. If you're already signed in to Outlook for Mac, the
@@ -22,9 +22,9 @@ cd scripts/outlook_bridge
 The installer prompts for:
 - API base URL (default `http://localhost:8989/api/v1`)
 - API key (default `dev-secret-key`)
-- Your ProjectScribe email + password
+- Your backend email + password
 
-It logs in via `/auth/login`, writes `~/.projectscribe-bridge.json`
+It logs in via `/auth/login`, writes `~/.workspaceos-bridge.json`
 (chmod 600), and loads a launchd agent that runs `bridge.py` every
 30 minutes.
 
@@ -35,7 +35,7 @@ It logs in via `/auth/login`, writes `~/.projectscribe-bridge.json`
 /usr/bin/python3 scripts/outlook_bridge/bridge.py
 
 # Watch the log
-tail -f ~/Library/Logs/projectscribe-bridge.log
+tail -f ~/Library/Logs/workspaceos-bridge.log
 ```
 
 Each ingested item shows up in the project's **Activity Feed** as
@@ -49,7 +49,7 @@ auto-created **Inbox** project.
 ```
 
 Removes the launchd agent. The config file at
-`~/.projectscribe-bridge.json` is left in place for easy reinstalls.
+`~/.workspaceos-bridge.json` is left in place for easy reinstalls.
 Delete it by hand to start over cleanly.
 
 ## Files

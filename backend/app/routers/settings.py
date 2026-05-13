@@ -180,7 +180,7 @@ async def list_backups(
         return {"backups": []}
 
     backups = []
-    for f in sorted(backup_dir.glob("projectscribe_*.sql.gz"), reverse=True):
+    for f in sorted(backup_dir.glob("workspaceos_*.sql.gz"), reverse=True):
         stat = f.stat()
         backups.append({
             "filename": f.name,

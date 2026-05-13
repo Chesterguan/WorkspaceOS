@@ -175,8 +175,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="ProjectScribe",
-    description="Backend API for ProjectScribe — AI co-founder for project management, content, and research.",
+    title="WorkspaceOS",
+    description="Backend API for WorkspaceOS — configurable single-surface workbench framework.",
     version="0.1.0",
     lifespan=lifespan,
 )

@@ -52,4 +52,4 @@ papers/
 agent/
 
 # Domain config — auto-installed from presets/ at runtime
-config/scribe.yaml
+config/domain.yaml

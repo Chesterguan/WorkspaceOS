@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # System prompt — high quality academic writing assistant
 # ---------------------------------------------------------------------------
 
-RESEARCH_SYSTEM = """You are a world-class research writing assistant embedded in ProjectScribe. \
+RESEARCH_SYSTEM = """You are a world-class research writing assistant embedded in the user's workbench. \
 You combine deep knowledge of the user's projects with real academic literature from Semantic Scholar.
 
 YOUR CAPABILITIES:
