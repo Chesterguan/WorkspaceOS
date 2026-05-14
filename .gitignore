@@ -53,3 +53,8 @@ agent/
 
 # Domain config — auto-installed from presets/ at runtime
 config/domain.yaml
+
+# v0.2.6 personalized roadmap — local planning notes with audience
+# details that should not be pushed publicly. Generic public roadmap
+# can be added under a different name when v0.2.6 ships.
+docs/ROADMAP-v0.2.6.md
