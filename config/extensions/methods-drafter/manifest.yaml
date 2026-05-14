@@ -1,0 +1,42 @@
+id: methods-drafter
+name: Methods Section Drafter
+description: |
+  v0.2.6 — drafts a publication-style Methods section for a paper,
+  grounded in the project's actual lab context: experiments,
+  constructs (from Benchling), strains, OT-2 protocols, and the
+  user's custom GitHub tools. The drafter cites real construct
+  registry IDs and real GitHub URLs from the knowledge graph
+  instead of inventing names.
+
+  Default style is "plant_synbio" — emphasises cultivar / vector /
+  selection / regeneration / validation language. Switch to
+  "generic" via the slash command payload for other fields.
+
+  Result is saved as a BlogPost on the project tagged
+  `paper` + `methods_draft`. Find it on the Papers surface.
+version: 0.1.0
+author: workspaceos
+
+matches:
+  domain_keywords: []   # opt-in only — user enables via Settings
+
+capabilities:
+  - kind: slash_command
+    name: draft_methods
+    description: |
+      Draft a Methods section for the current project's paper using
+      everything in the knowledge graph as ground truth.
+    config:
+      label: "Draft methods section"
+      keywords:
+        - methods
+        - draft
+        - paper
+        - methods section
+        - draft methods
+      icon: "edit"
+      handler_kind: api_call
+      handler_target: "/capabilities/runners/draft_methods/trigger"
+      # Default style; can be overridden by passing `style` in the
+      # trigger payload from the frontend.
+      style: "plant_synbio"

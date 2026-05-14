@@ -93,5 +93,9 @@ def list_runners() -> list[str]:
 # In-tree defaults
 register_slash_runner("trigger_local_files_scan", _trigger_local_files_scan)
 
+# v0.2.6 — Methods drafter (bio-research / writing capability)
+from app.capabilities.methods_drafter import draft_methods_handler  # noqa: E402
+register_slash_runner("draft_methods", draft_methods_handler)
+
 # v0.3 activation: uncomment the next line.
 # discover_entry_points()
