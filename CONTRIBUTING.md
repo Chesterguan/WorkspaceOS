@@ -181,26 +181,164 @@ an "Extension: <Your Name> v0.1.0" badge with the match score.
   trigger your extension's match.
 - Add a one-liner to README's "Shipped extensions" table.
 
-## Reserving capability extensions for Phase 2
+## Authoring capability extensions (Phase 2)
 
-If you're writing an extension that you want to eventually wire to an
-ingest source / slash command / surface widget, you can declare
-capabilities in `manifest.yaml` now even though the runtime ignores
-them in Phase 1. This keeps the manifest forward-compatible:
+Three capability kinds are runtime-active today: `ingest_source`,
+`slash_command`, `action_button`. `surface_widget` is reserved
+schema-only. Capability code lives in the framework
+(`backend/app/capabilities/`), registered by name in `registry.py` /
+`slash.py` / `actions.py`. Manifests reference runners by name —
+this is the trust model: code is reviewed in PR, not file-dropped.
+
+### Adding a new `ingest_source` runner
+
+1. Subclass `IngestSource` in `backend/app/capabilities/<name>.py`:
+
+```python
+from app.capabilities.base import IngestContext, IngestSource
+
+class GmailIngest(IngestSource):
+    label = "gmail"
+    default_poll_interval_seconds = 600       # 10 min
+
+    async def run(self, config: dict, ctx: IngestContext) -> int:
+        # Pull from your source.
+        # For each new item:
+        inserted = await ctx.upsert_node(
+            node_type="email",                # custom node type
+            title=msg["subject"],
+            content=msg["snippet"],
+            external_id=msg["id"],            # stable dedup handle
+            metadata={"from": msg["from"]},
+        )
+        if inserted:
+            ctx.log("info", f"Ingested email: {msg['subject'][:40]}")
+        return ingested_count
+```
+
+2. Register it in `backend/app/capabilities/registry.py`:
+
+```python
+from app.capabilities.gmail import GmailIngest
+
+INGEST_SOURCES: Dict[str, Type[IngestSource]] = {
+    "local_files": LocalFilesIngest,
+    "gmail": GmailIngest,                     # ← add
+}
+```
+
+3. Author an extension that uses it:
 
 ```yaml
+# config/extensions/gmail-sync/manifest.yaml
+id: gmail-sync
+name: Gmail Sync
+version: 0.1.0
 capabilities:
   - kind: ingest_source
-    name: gmail
-    description: Pull emails into the worklog activity feed
+    name: gmail                               # ← matches registry key
     config:
-      poll_interval_minutes: 30
+      poll_interval_seconds: 600
       label_filter: ["Important"]
 ```
 
-Capability kinds reserved: `ingest_source`, `slash_command`,
-`action_button`, `surface_widget`. See
-`backend/app/schemas/extension.py` for the canonical type.
+The scheduler picks it up on next boot. `ctx.log()` events appear in
+the bench TUI log; `ctx.upsert_node()` inserts are visible in the
+Knowledge surface.
+
+### Adding a new `slash_command`
+
+Two flavors:
+
+**`handler_kind: navigate`** — pure routing, no backend code needed.
+Just declare it in your manifest:
+
+```yaml
+- kind: slash_command
+  name: open_papers
+  config:
+    label: "Open Papers"
+    keywords: [papers, p]
+    handler_kind: navigate
+    handler_target: /bench?surface=papers
+```
+
+**`handler_kind: api_call`** — backend handler does the work. Register
+an async function in `backend/app/capabilities/slash.py`:
+
+```python
+async def _resync_repos(payload, db, user_id):
+    # Do the thing.
+    return {"ok": True, "toast": "Resynced 3 repos."}
+
+SLASH_RUNNERS: Dict[str, SlashHandler] = {
+    "resync_repos": _resync_repos,
+}
+```
+
+Then in manifest:
+
+```yaml
+- kind: slash_command
+  name: resync_repos
+  config:
+    label: "Resync repos"
+    keywords: [git, sync, repo]
+    handler_kind: api_call
+    handler_target: /capabilities/runners/resync_repos/trigger
+```
+
+Handler return shape: `{"ok": bool, "toast": "msg shown to user"}`.
+
+### Adding a new `action_button`
+
+Action handlers receive a `target_id` (the item the user clicked on)
+in the payload. Register in `backend/app/capabilities/actions.py`:
+
+```python
+async def _send_to_slack(payload, db, user_id):
+    node_id = uuid.UUID(payload["target_id"])
+    node = await _get_user_node(db, user_id, node_id)
+    if node is None:
+        return {"ok": False, "error": "Node not found"}
+    # … POST to Slack …
+    return {"ok": True, "toast": f"Sent to #notes."}
+
+ACTION_HANDLERS = {
+    "send_to_slack": _send_to_slack,
+}
+```
+
+Manifest:
+
+```yaml
+- kind: action_button
+  name: send_to_slack
+  config:
+    label: "Send to Slack"
+    target: knowledge_node               # which item kind to attach to
+    handler_kind: api_call
+    visible_when:                        # AND-of-ORs, all optional
+      node_type: [decision, insight]
+```
+
+`visible_when` is an AND across keys; each value is either a single
+match or an array of accepted values (OR within key). Empty
+`visible_when: {}` = always show.
+
+Targets supported today: `knowledge_node`. More targets
+(`chat_message`, `draft`, `paper`) require small per-renderer
+plumbing — happy to take PRs.
+
+### Discovery + UX
+
+Anything you ship under `capabilities:` automatically surfaces in:
+
+- **Settings → Capabilities tab** with a `runtime ready` / `declared`
+  badge so users know what's wired vs. forward-compatible-only.
+- **⌘K palette** (slash_commands).
+- **Item context** (action_buttons render on the target item kind,
+  gated by `visible_when`).
 
 ## Core contributions
 

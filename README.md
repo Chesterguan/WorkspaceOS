@@ -171,68 +171,93 @@ for the bucket stub.
 All API keys can be set at runtime through the Settings page
 (Fernet-encrypted in the DB) instead of `.env`.
 
-## Capability extensions (v0.2.0)
+## Capability extensions (v0.2.1)
 
-Beyond content (personas / taxonomies / prompts), extensions can now
-ship **capabilities** — code that runs inside the host and feeds the
-bench from external sources. The capability runner schedules each one
-as an asyncio task; runners emit events into the bench's TUI log and
-insert nodes directly into the knowledge graph.
+Beyond content (personas / taxonomies / prompts), extensions ship
+**capabilities** — runtime hooks that pull data, add palette entries,
+and put context buttons on items. Capability code lives in the
+framework (`backend/app/capabilities/`), registered by name. Manifests
+declare which runners to enable.
 
-Two capabilities ship out of the box:
+Three capability kinds are runtime-active today:
 
-- **`local-files-watcher`** (`kind: ingest_source`, runner:
-  `local_files`). Polls a directory under the workspace mount every
-  30s. Every new file becomes a `file_ingested` knowledge node + an
-  event in the bench log. Set `WORKSPACE_HOST_PATH` in `.env` to point
-  at your watched directory.
-- **`macos-mail`** (`kind: ingest_source`, runner: host-side bridge
-  via `scripts/outlook_bridge/install.sh`). Reads Apple Mail + Outlook
-  for Mac through AppleScript and POSTs items into the backend's
-  `/skills/local-ingest/items` endpoint. The bridge runs via launchd
-  every 6 hours; no Docker side-effects.
+- **`ingest_source`** — async runner polled on a schedule. Emits
+  bench events + inserts knowledge graph nodes. Example:
+  `local-files-watcher` watches a directory every 30s and creates a
+  `file_ingested` node per new file.
+- **`slash_command`** — palette entry (⌘K). Two handler kinds:
+  `api_call` triggers a registered backend runner; `navigate` pushes
+  a route. Example: "Scan local files now" (api_call) and "Open
+  knowledge graph" (navigate).
+- **`action_button`** — contextual button rendered on a target item
+  (currently `knowledge_node`). `visible_when` filters by the item's
+  fields. Example: "Mark as decision" shows on claim/hypothesis/
+  insight/question nodes; "Archive" shows on all nodes.
 
-**Authoring a third capability** is a manifest declaration + a Python
-runner class registered in `backend/app/capabilities/registry.py`:
+Shipped extensions:
+
+- **`local-files-watcher`** — `ingest_source: local_files`. Walk a
+  directory under `WORKSPACE_HOST_PATH`, dedup by mtime+size, cap 100
+  files/tick, skip dot-dirs + `node_modules` + `.git`.
+- **`macos-mail`** — `ingest_source: macos_mail`. Declared; runs as a
+  host-side AppleScript bridge via
+  `scripts/outlook_bridge/install.sh`. Reads Apple Mail + Outlook for
+  Mac, POSTs to `/skills/local-ingest/items`. No in-container code
+  because Mail.app isn't accessible from Docker.
+- **`bench-extras`** — utility pack: 2 slash commands + 2 action
+  buttons. Use as the working example when authoring your own.
+
+### Discovery — where users find capabilities
+
+| Where | Shows |
+|---|---|
+| **Settings → Capabilities tab** | Read-only list of every declared capability grouped by kind, with `runtime ready` / `declared` badges and source extension. The "what's installed" view. |
+| **⌘K command palette** | Slash commands appear inline with built-in entries. Type to filter; click to fire. |
+| **In context** | Action buttons render on the item they target — e.g. an "Extension actions" row on the knowledge node detail panel. Gated by `visible_when` so menus stay clean. |
+
+### Authoring capabilities
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full author guide.
+Quick shape per kind:
 
 ```yaml
-# config/extensions/my-thing/manifest.yaml
-id: my-thing
-name: My Thing
-version: 0.1.0
-matches:
-  domain_keywords: []
+# config/extensions/your-id/manifest.yaml
 capabilities:
+  # 1. Pull external data into the bench on a schedule.
   - kind: ingest_source
-    name: my_runner_name     # ← key in capabilities/registry.py
+    name: my_runner                   # ← key in backend/app/capabilities/registry.py
     config:
       poll_interval_seconds: 60
-      # whatever your runner needs
+      # your runner's config fields
+
+  # 2. Palette entry (⌘K).
+  - kind: slash_command
+    name: do_thing
+    config:
+      label: "Do the thing"
+      keywords: [thing, do]
+      icon: zap
+      # handler_kind: api_call    → POSTs to handler_target
+      # handler_kind: navigate    → router.push(handler_target)
+      handler_kind: api_call
+      handler_target: /capabilities/runners/do_thing/trigger
+
+  # 3. Button on a specific item kind.
+  - kind: action_button
+    name: tag_with_x
+    config:
+      label: "Tag with X"
+      target: knowledge_node          # which item renderer this attaches to
+      handler_kind: api_call
+      visible_when:                   # AND-of-ORs filter
+        node_type: [claim, hypothesis]
 ```
 
-```python
-# backend/app/capabilities/my_runner.py
-from app.capabilities.base import IngestContext, IngestSource
-
-class MyRunner(IngestSource):
-    label = "my-thing"
-    default_poll_interval_seconds = 60
-
-    async def run(self, config: dict, ctx: IngestContext) -> int:
-        # … pull from your source …
-        await ctx.upsert_node(
-            node_type="my_node_kind",
-            title="Something",
-            content="...",
-            external_id="stable-handle",
-        )
-        ctx.log("info", "ingested 1 item")
-        return 1
-```
-
-Then add to the registry and PR it in. Trust model is "registry =
-audit surface" — capability code ships with the framework, not via
-arbitrary file-drop.
+Then register the Python runner / handler in
+`backend/app/capabilities/registry.py` (or `slash.py` / `actions.py`)
+and PR. Trust model = "registry as audit surface": capability code
+ships with the framework, manifests reference runners by name. No
+arbitrary file-drop, no `eval`, no extension-injected JSX.
 
 ## Roadmap
 
