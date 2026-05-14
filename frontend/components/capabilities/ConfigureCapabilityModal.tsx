@@ -193,8 +193,18 @@ export function ConfigureCapabilityModal({
 
   // a11y plumbing: Escape closes, focus returns to the trigger that
   // opened the modal, and the dialog is announced by its h2 title.
+  //
+  // We deliberately run this effect mount-only (`[]` deps). Parents
+  // typically pass `onClose={() => setX(null)}` — a fresh lambda each
+  // render — and if we put `onClose` in the deps the effect would
+  // re-fire on every parent rerender, stealing focus mid-typing and
+  // overwriting `triggerRef` with whatever the user last touched.
+  // Reading `onClose` through a ref keeps it current without that
+  // re-binding cost.
   const panelRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     triggerRef.current = (document.activeElement as HTMLElement) || null;
@@ -207,17 +217,20 @@ export function ConfigureCapabilityModal({
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     }
     document.addEventListener('keydown', onKey);
+    const captured = triggerRef.current;
     return () => {
       document.removeEventListener('keydown', onKey);
       // Return focus to whatever opened the modal — keyboard users
-      // shouldn't have to re-find their place after Close.
-      triggerRef.current?.focus?.();
+      // shouldn't have to re-find their place after Close. Use the
+      // captured value so we don't get fooled by mid-life overwrites.
+      captured?.focus?.();
     };
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div

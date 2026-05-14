@@ -200,7 +200,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2.5">
           <MessageSquare className="w-4 h-4 text-primary" />
-          <span className="text-sm font-semibold">Co-Founder AI</span>
+          <span className="text-sm font-semibold">Advisor</span>
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/25 text-primary">
             <Users className="w-3 h-3" />
             <span className="text-[10px] font-semibold tracking-wide uppercase">Panel</span>

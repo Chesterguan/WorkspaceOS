@@ -110,8 +110,8 @@ export function KnowledgeGraph({ nodes, onSelect }: Props) {
         <p>No knowledge nodes yet.</p>
         <p>
           Click <span className="font-medium text-foreground">New</span> to create one,
-          or save a decision/claim from a roundtable conversation using the bookmark icon
-          on any advisor reply.
+          or save a decision/claim from an advisor panel conversation using the bookmark
+          icon on any reply.
         </p>
       </div>
     );

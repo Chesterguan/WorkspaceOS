@@ -322,7 +322,8 @@ async def put_capability_config(
         elif isinstance(default, float) and isinstance(v, str):
             try:
                 parsed = float(v.strip())
-                if parsed != parsed or parsed in (float("inf"), float("-inf")):
+                import math as _math
+                if _math.isnan(parsed) or _math.isinf(parsed):
                     # nan/inf/-inf — reject by leaving the original string
                     pass
                 else:
