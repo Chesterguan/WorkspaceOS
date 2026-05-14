@@ -1,0 +1,29 @@
+id: preprints
+name: bioRxiv / medRxiv Preprint Ingest
+description: Polls bioRxiv and/or medRxiv daily for new preprints and adds
+  keyword-matching papers as `paper_reference` nodes in your knowledge graph —
+  the same type as Zotero items, so the research panel and paper pipeline pick
+  them up automatically. Matching is keyword-filtered (title + abstract +
+  category), so you control exactly what gets ingested. An empty keywords list
+  means nothing is imported — add at least one keyword in Settings to enable.
+version: 0.1.0
+author: workspaceos
+
+matches:
+  domain_keywords: []   # opt-in only — user must configure keywords
+
+capabilities:
+  - kind: ingest_source
+    name: preprint_ingest
+    description: |
+      Polls bioRxiv (and optionally medRxiv) once per day for preprints
+      matching your keyword list. Each hit becomes a paper_reference node
+      with title, first author, date, category, DOI, and abstract.
+      To enable: add at least one entry to the keywords list below.
+    config:
+      sources:
+        - biorxiv              # add "medrxiv" to also poll medRxiv
+      keywords: []             # e.g. ["synthetic biology", "plant cell wall"]
+      days_back: 7             # calendar days back to query each tick
+      max_per_tick: 50         # cap to prevent floods on first run
+      poll_interval_seconds: 86400   # 24 hours
