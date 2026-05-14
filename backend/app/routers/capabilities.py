@@ -283,6 +283,7 @@ async def put_capability_config(
     existing = await cs.get_overlay(extension_id, capability_name)
 
     cleaned: Dict[str, Any] = {}
+    manifest_config = cap.config or {}
     for k, v in (payload.get("config") or {}).items():
         if k in cs.SENSITIVE_KEYS and v == "***":
             # Preserve existing value for fields the UI displayed as
@@ -290,6 +291,23 @@ async def put_capability_config(
             if k in existing:
                 cleaned[k] = existing[k]
             continue
+        # Type-coerce based on the manifest's default for this field.
+        # Frontend `<input type=text>` always sends strings; storing
+        # "30" as the poll interval would break runners that do int
+        # arithmetic on the value.
+        default = manifest_config.get(k)
+        if isinstance(default, bool) and isinstance(v, str):
+            v = v.strip().lower() in ("true", "1", "yes")
+        elif isinstance(default, int) and not isinstance(default, bool) and isinstance(v, str):
+            try:
+                v = int(v.strip())
+            except (TypeError, ValueError):
+                pass
+        elif isinstance(default, float) and isinstance(v, str):
+            try:
+                v = float(v.strip())
+            except (TypeError, ValueError):
+                pass
         cleaned[k] = v
 
     await cs.set_overlay(extension_id, capability_name, cleaned)

@@ -216,6 +216,17 @@ export function ConfigureCapabilityModal({
         </div>
 
         <div className="p-4 space-y-3">
+          {/* Decoy inputs — Chromium autofill heuristic looks for a
+              text+password pair and fills the text with the user's
+              email regardless of autoComplete="off". By putting the
+              first password-typed input here (off-screen), the
+              autofill targets these and leaves the real fields alone.
+              Standard workaround used by many SaaS settings pages. */}
+          <div style={{ position: 'absolute', top: -1000, left: -1000, opacity: 0 }} aria-hidden="true">
+            <input type="text" name="username" tabIndex={-1} autoComplete="username" />
+            <input type="password" name="password" tabIndex={-1} autoComplete="current-password" />
+          </div>
+
           {loading ? (
             <p className="text-xs text-muted-foreground">Loading…</p>
           ) : fieldKeys.length === 0 ? (
@@ -244,6 +255,16 @@ export function ConfigureCapabilityModal({
                     value={value}
                     onChange={(e) => setField(key, e.target.value)}
                     placeholder={isSensitive && value === '***' ? '***' : ''}
+                    // Disable browser autofill — otherwise the browser
+                    // happily fills library_id with the user's email,
+                    // names like "tenant" with anything in autofill,
+                    // etc. These are all narrow config values, not
+                    // saved-credential fields the browser should help
+                    // with.
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
+                    name={`cap-${key}-${Math.random().toString(36).slice(2, 7)}`}
                     className="bg-card/40 border-border/60 h-9 text-sm font-mono"
                   />
                   {help[key] && (

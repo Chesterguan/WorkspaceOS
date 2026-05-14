@@ -3,6 +3,7 @@
 // to send the answers as JSON in the request body, and EventSource is
 // GET-only.
 
+import { mutate } from 'swr';
 import type { GeneratedConfig, OnboardingAnswers } from './types';
 
 const BASE_URL =
@@ -42,6 +43,26 @@ export async function applyConfig(rawFiles: Record<string, string>): Promise<voi
     const body = await res.text();
     throw new Error(`apply ${res.status}: ${body}`);
   }
+  // Apply flipped tutorial_completed=true server-side. Write the
+  // optimistic value into the SWR cache directly so the next /bench
+  // mount reads fresh state without waiting for a network round-trip.
+  // Without this, useFirstRunRedirect can read a stale `false` from a
+  // prior mount and bounce the user right back to /onboarding.
+  //
+  // `mutate(key, value, { revalidate: true })` writes the value AND
+  // schedules a background refetch — belt and braces against any
+  // server-side state we haven't anticipated.
+  await mutate(
+    '/config/onboarding/me',
+    (current?: OnboardingState): OnboardingState => ({
+      tutorial_completed: true,
+      onboarding_answers: current?.onboarding_answers ?? null,
+    }),
+    { revalidate: true },
+  );
+  // Domain config changed too — invalidate so the bench rail picks up
+  // any new surfaces immediately.
+  await mutate('/config/domain');
 }
 
 // --- SSE consumer for /config/generate ---
