@@ -1,0 +1,31 @@
+id: github-tools
+name: Personal GitHub Tool Catalog
+description: |
+  Pulls your public GitHub repositories and adds each one as a `tool`
+  knowledge node — repo name, description, language, star count, and
+  a truncated README. Makes your own tools visible to the knowledge
+  panel and, in a later release, citable by /draft_methods when it
+  writes a methods section for a paper. Set `usernames` to your GitHub
+  handle(s). Supply a personal access token to raise the rate limit
+  from 60 to 5000 requests per hour.
+version: 0.1.0
+author: workspaceos
+
+matches:
+  domain_keywords: []   # opt-in only
+
+capabilities:
+  - kind: ingest_source
+    name: github_user_tools
+    description: |
+      Syncs public repos for each listed GitHub username once per day.
+      Each repo becomes a `tool` node (skipping forks and archived repos
+      by default). Provide a GitHub personal access token to avoid the
+      60-request/hour unauthenticated rate limit.
+    config:
+      usernames: []                 # list of GitHub handles to track
+      token: ""                     # optional GitHub personal access token
+      include_forks: false          # forks usually aren't authored work
+      include_archived: false       # archived repos rarely "active tools"
+      max_repos_per_user: 50        # cap to prevent floods
+      poll_interval_seconds: 86400  # 24 h — repos don't change fast

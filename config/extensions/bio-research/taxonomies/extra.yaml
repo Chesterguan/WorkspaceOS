@@ -24,3 +24,13 @@ node_types:
     label: Interview
     color: "#14b8a6"
     description: A conversation with a customer / collaborator / partner that surfaced signal
+
+  - id: protocol
+    label: Protocol
+    color: "#06b6d4"
+    description: An OT-2 (or similar) automation protocol — labware layout, instrument setup, and source code
+
+  - id: tool
+    label: Tool
+    color: "#a78bfa"
+    description: A software tool or GitHub repository — language, stars, and README excerpt
