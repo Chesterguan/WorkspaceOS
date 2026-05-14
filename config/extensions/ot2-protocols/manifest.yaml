@@ -1,0 +1,49 @@
+id: ot2-protocols
+name: OT-2 Protocol Catalog
+description: |
+  Walks a directory of Opentrons OT-2 Python protocol files and creates
+  one `protocol` knowledge node per file. Nodes include protocol name,
+  author, API level, labware/module/instrument lists, and the first 8000
+  characters of source.
+
+  Files are filtered to .py files that import opentrons and define a
+  `run(` function. Unrelated Python files in the same directory are
+  skipped automatically.
+
+  Re-ingested on content change: if a protocol file is edited between
+  ticks, its existing node is updated in-place rather than duplicated.
+
+  Path note: `watch_path` is the path *inside the backend container*.
+  By default /protocols is not automatically bind-mounted. Options:
+    1. Place protocol files under WORKSPACE_HOST_PATH (mapped to
+       /projects in the container) and set watch_path to
+       /projects/protocols or similar.
+    2. Add a dedicated bind mount in docker-compose.yml, e.g.:
+         volumes:
+           - /your/local/protocols:/protocols:ro
+       and keep watch_path at /protocols (the default).
+version: 0.1.0
+author: workspaceos
+
+# Opt-in only — user enables by adding the extension to their config.
+# No domain auto-selection: not every bio lab uses OT-2.
+matches:
+  domain_keywords: []
+
+capabilities:
+  - kind: ingest_source
+    name: ot2_protocols
+    description: |
+      Scans watch_path for OT-2 protocol .py files on a configurable
+      schedule, emitting a `protocol` knowledge node per file so that
+      /draft_methods and the Knowledge surface can reference protocols.
+    config:
+      # Path inside the backend container. See description above for
+      # how to bind-mount your protocol library here.
+      watch_path: /protocols
+      # Walk subdirectories (useful for organised protocol libraries).
+      recursive: true
+      # Safety cap: stop after this many files per tick.
+      max_files_per_tick: 100
+      # How often to scan — 30 min is fine for a local directory.
+      poll_interval_seconds: 1800
