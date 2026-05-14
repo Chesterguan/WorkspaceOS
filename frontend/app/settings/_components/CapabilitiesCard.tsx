@@ -6,8 +6,20 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Activity, Command, MousePointerClick } from 'lucide-react';
+import { Activity, Command, MousePointerClick, ExternalLink } from 'lucide-react';
 import { useAllCapabilities, type CapabilityListing } from '@/lib/capabilities';
+
+// Extension id → docs path on the GitHub repo. Used to wire each
+// capability listing to its setup guide. Update when new extensions
+// ship with non-trivial configuration.
+const SETUP_GUIDE_PATHS: Record<string, string> = {
+  'local-files-watcher': 'docs/extensions/local-files.md',
+  'macos-mail':          'docs/extensions/macos-mail.md',
+  benchling:             'docs/extensions/benchling.md',
+  zotero:                'docs/extensions/zotero.md',
+};
+const SETUP_GUIDE_INDEX = 'docs/extensions/SETUP.md';
+const REPO_URL = 'https://github.com/Chesterguan/WorkspaceOS/blob/main';
 
 const KIND_META: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; blurb: string }> = {
   ingest_source: {
@@ -33,13 +45,27 @@ export function CapabilitiesCard() {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Installed capabilities</CardTitle>
-        <CardDescription className="text-xs">
-          Every capability declared by a loaded extension. Items marked
-          “runtime ready” have a registered handler; “declared” means the
-          manifest is forward-compatible but the runtime hasn’t shipped
-          yet.
-        </CardDescription>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">Installed capabilities</CardTitle>
+            <CardDescription className="text-xs">
+              Every capability declared by a loaded extension. Items marked
+              <span className="mx-1 text-emerald-300">runtime ready</span>
+              have a registered handler; <span className="mx-1 text-amber-300">declared</span>
+              means the manifest is forward-compatible but the runtime
+              hasn&apos;t shipped yet. Each row links to its setup guide.
+            </CardDescription>
+          </div>
+          <a
+            href={`${REPO_URL}/${SETUP_GUIDE_INDEX}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] text-violet-300 hover:text-violet-200 whitespace-nowrap inline-flex items-center gap-1"
+          >
+            All setup guides
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
       </CardHeader>
       <CardContent className="space-y-5">
         {isLoading && (
@@ -89,6 +115,7 @@ function CapabilityRow({ cap }: { cap: CapabilityListing }) {
   const label =
     (cap.config as { label?: string })?.label ||
     cap.name.replace(/_/g, ' ');
+  const guidePath = SETUP_GUIDE_PATHS[cap.extension];
   return (
     <li className="flex items-start gap-2 text-xs">
       <div className="flex-1 min-w-0">
@@ -107,6 +134,18 @@ function CapabilityRow({ cap }: { cap: CapabilityListing }) {
           <span className="text-[10px] text-muted-foreground">
             from {cap.extension}
           </span>
+          {guidePath && (
+            <a
+              href={`${REPO_URL}/${guidePath}`}
+              target="_blank"
+              rel="noreferrer"
+              title={`Setup guide for ${cap.extension}`}
+              className="inline-flex items-center gap-0.5 text-[10px] text-violet-300 hover:text-violet-200"
+            >
+              setup guide
+              <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          )}
         </div>
         {cap.description && (
           <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
