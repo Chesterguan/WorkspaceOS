@@ -43,7 +43,7 @@ class BenchlingImport(IngestSource):
         api_key = config.get("api_key") or ""
         tenant = (config.get("tenant") or "").strip().rstrip("/")
         if not api_key or not tenant:
-            ctx.log("warn", "benchling-import: missing api_key or tenant in config")
+            ctx.log("warn", "Benchling import paused — set API key and tenant in Settings to enable.")
             return 0
         days_back = int(config.get("days_back") or 14)
         page_size = min(int(config.get("page_size") or 50), 100)

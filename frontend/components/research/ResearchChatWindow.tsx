@@ -215,10 +215,10 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
         <div className="flex items-center gap-2.5">
           <BookOpen className="w-4 h-4 text-violet-400" />
           <span className="text-sm font-semibold">Research Assistant</span>
-          {/* Roundtable badge */}
+          {/* Panel badge — describes the multi-respondent pattern */}
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/25 text-violet-500 dark:text-violet-400">
             <Users className="w-3 h-3" />
-            <span className="text-[10px] font-semibold tracking-wide uppercase">Roundtable</span>
+            <span className="text-[10px] font-semibold tracking-wide uppercase">Panel</span>
           </div>
         </div>
 
@@ -336,7 +336,7 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
             )}
           >
             <Users className="w-3.5 h-3.5" />
-            Roundtable
+            Panel
           </button>
           {reviewers.map((reviewer) => (
             <button
@@ -453,7 +453,7 @@ function ResearchRoundtableGroup({ messages }: ResearchRoundtableGroupProps) {
       <div className="flex items-center gap-2 px-1">
         <Users className="w-3.5 h-3.5 text-muted-foreground" />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Research Roundtable
+          Research Panel
         </span>
         <div className="flex -space-x-1.5">
           {reviewerIds.map((id) => {

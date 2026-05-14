@@ -242,7 +242,7 @@ async def apply_config(
     files_written = [str(p.relative_to(config_dir_resolved)) for p, _ in safe_writes]
     emit_event(
         "success", "wizard",
-        f"Workbench applied — {len(files_written)} files written, config reloaded",
+        f"Workbench setup complete · {len(files_written)} config files saved",
         meta={"files": files_written},
     )
 

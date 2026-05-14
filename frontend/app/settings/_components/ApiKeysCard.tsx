@@ -210,7 +210,7 @@ const GROUPS: GroupMeta[] = [
     id: "ai",
     title: "AI Provider",
     description:
-      "Set the key for whichever provider you want to use. Gemini is the default for cloud generation; switch via CLOUD_AI_PROVIDER in .env.",
+      "Set the key for whichever provider you want to use. Gemini is the default for cloud generation; switch via CLOUD_AI_PROVIDER in .env. Want no cloud at all? Install Ollama (free, local) — README has model recommendations.",
   },
   {
     id: "publishing",

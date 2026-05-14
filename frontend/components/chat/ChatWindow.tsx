@@ -203,7 +203,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
           <span className="text-sm font-semibold">Co-Founder AI</span>
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/25 text-primary">
             <Users className="w-3 h-3" />
-            <span className="text-[10px] font-semibold tracking-wide uppercase">Roundtable</span>
+            <span className="text-[10px] font-semibold tracking-wide uppercase">Panel</span>
           </div>
         </div>
         <Button

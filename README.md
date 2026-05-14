@@ -209,6 +209,68 @@ for the bucket stub.
 All API keys can be set at runtime through the Settings page
 (Fernet-encrypted in the DB) instead of `.env`.
 
+## Running AI locally with Ollama (optional)
+
+By default WorkspaceOS sends generation/review prompts to Gemini (or
+whichever `CLOUD_AI_PROVIDER` you pick) and uses Ollama for embeddings
+if you've installed it. If you want **everything local** — no cloud
+calls for any AI operation — install Ollama and pull a chat model
+sized to your hardware.
+
+**Install**:
+
+```bash
+# macOS / Linux
+curl -fsSL https://ollama.com/install.sh | sh
+# or download the installer from https://ollama.com/download
+ollama serve   # leave running in a terminal
+```
+
+**Pull recommended models**:
+
+```bash
+# Embeddings — small, fast, used for all semantic search (~274 MB)
+ollama pull nomic-embed-text
+
+# Chat — pick ONE based on how much RAM you have:
+ollama pull qwen2.5:3b        #  4–8 GB RAM, fast, decent for extraction
+ollama pull qwen2.5:7b        # 16 GB RAM (recommended default)
+ollama pull qwen2.5:14b       # 32 GB RAM, near cloud-quality for chat
+ollama pull llama3.3:70b      # 64 GB RAM + GPU, full cloud-replacement
+```
+
+`qwen2.5` is recommended for structured-output tasks (extraction,
+classification) — it follows JSON-shaped prompts more reliably than
+similarly-sized Llama variants. For long-form writing (drafts,
+papers), `qwen2.5:14b` and up are competitive; below that the cloud
+provider noticeably wins.
+
+**Point WorkspaceOS at it** — set in `.env`:
+
+```bash
+OLLAMA_BASE_URL=http://host.docker.internal:11434   # macOS Docker default
+OLLAMA_CHAT_MODEL=qwen2.5:7b                        # match what you pulled
+OLLAMA_EMBED_MODEL=nomic-embed-text
+
+# Stay local end-to-end (otherwise only embeddings/extraction are local):
+LOCAL_AI_PROVIDER=ollama
+CLOUD_AI_PROVIDER=ollama
+```
+
+**Trade-offs to know**:
+
+- **Quality**: small Ollama models (≤7B) write noticeably blander
+  drafts than Gemini/Claude. Use `qwen2.5:14b` or larger if you care
+  about prose quality on local-only.
+- **Latency**: a 7B model on an M2 Mac generates ~30–60 tokens/sec;
+  a chat reply takes seconds, paper review takes minutes. Cloud is
+  usually faster.
+- **First load**: each model loads into RAM on first use of a session
+  (~10–30 seconds). Keep `ollama serve` running to avoid cold starts.
+- **GPU**: not strictly required, but `qwen2.5:14b` and up are
+  painfully slow without one. M-series Macs use the integrated GPU
+  automatically.
+
 ## Capability extensions (v0.2.1)
 
 Beyond content (personas / taxonomies / prompts), extensions ship

@@ -46,7 +46,7 @@ class ZoteroSync(IngestSource):
             ctx.log("warn", f"zotero-sync: invalid library_type {library_type!r}")
             return 0
         if not api_key or not library_id:
-            ctx.log("warn", "zotero-sync: missing api_key or library_id in config")
+            ctx.log("warn", "Zotero sync paused — set API key and library ID in Settings to enable.")
             return 0
         items_limit = min(int(config.get("items_limit") or 100), 100)
 
