@@ -28,7 +28,7 @@ from app.capabilities.base import IngestContext, IngestSource
 from app.capabilities.registry import INGEST_SOURCES
 from app.database import AsyncSessionLocal
 from app.models.user import User
-from app.services import extensions as ext_service
+from app.services import capability_settings_service, extensions as ext_service
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +52,19 @@ async def _resolve_default_user_id() -> Optional[uuid.UUID]:
 
 async def _runner_loop(
     runner: IngestSource,
-    config: Dict[str, Any],
+    manifest_config: Dict[str, Any],
+    extension_id: str,
+    capability_name: str,
     source_label: str,
     interval_seconds: int,
 ) -> None:
-    """One runner's lifetime. Polls until cancelled."""
+    """One runner's lifetime. Polls until cancelled.
+
+    `manifest_config` is the static config from the extension's
+    manifest. The DB overlay (set via Settings → Capabilities →
+    Configure) is merged on top each tick — so saving new credentials
+    in the UI takes effect on the next poll, no restart needed.
+    """
     user_id = await _resolve_default_user_id()
     if user_id is None:
         logger.info(
@@ -73,7 +81,13 @@ async def _runner_loop(
     consecutive_errors = 0
     while True:
         try:
-            count = await runner.run(config, ctx)
+            overlay = await capability_settings_service.get_overlay(
+                extension_id, capability_name,
+            )
+            effective = capability_settings_service.effective_config(
+                manifest_config, overlay,
+            )
+            count = await runner.run(effective, ctx)
             consecutive_errors = 0
             if count:
                 logger.debug("capability %s: ingested %d items", source_label, count)
@@ -113,7 +127,14 @@ def start_all() -> None:
             )
             source_label = f"{ext.manifest.id}:{cap.name}"
             task = asyncio.create_task(
-                _runner_loop(runner, config, source_label, interval),
+                _runner_loop(
+                    runner,
+                    config,
+                    ext.manifest.id,
+                    cap.name,
+                    source_label,
+                    interval,
+                ),
                 name=f"ingest_runner:{source_label}",
             )
             _tasks.append(task)

@@ -259,13 +259,29 @@ Shipped extensions:
 - **`bench-extras`** — utility pack: 2 slash commands + 2 action
   buttons. Use as the working example when authoring your own.
 
-### Discovery — where users find capabilities
+### Discovery + setup — where users find and configure capabilities
 
 | Where | Shows |
 |---|---|
-| **Settings → Capabilities tab** | Read-only list of every declared capability grouped by kind, with `runtime ready` / `declared` badges and source extension. The "what's installed" view. |
+| **Settings → Capabilities tab** | Every declared capability grouped by kind. Each ingest source has a **Configure** button → modal form with field-level help, auto-fill, and a test-connection check. Encrypted at rest. No YAML editing, no restart. Link to the docs setup guide right next to each row. |
 | **⌘K command palette** | Slash commands appear inline with built-in entries. Type to filter; click to fire. |
 | **In context** | Action buttons render on the item they target — e.g. an "Extension actions" row on the knowledge node detail panel. Gated by `visible_when` so menus stay clean. |
+
+### Configuring a capability — the easy path
+
+1. Open **Settings → Capabilities**.
+2. Find the ingest source you want (e.g. **Zotero**). Click **configure**.
+3. Modal shows the fields with inline help. Paste your API key.
+4. Click **Auto-fill** (where supported — e.g. Zotero introspects the
+   key and fills `library_id` + `library_type` automatically).
+5. Click **Test** — the runner fires once and reports success / the
+   specific error if anything's off.
+6. Click **Save** — the overlay is Fernet-encrypted in the DB. The
+   next poll tick uses the new config; no restart.
+
+**For technical users** the YAML path still works: edit
+`config/extensions/<id>/manifest.yaml` and restart. DB overlay wins
+when both are set.
 
 ### Authoring capabilities
 

@@ -1,13 +1,15 @@
 'use client';
 
-// Settings → Capabilities. Read-only overview of what's installed.
-// Three groupings (ingest_source / slash_command / action_button)
-// with each entry showing source extension + a runtime badge.
+// Settings → Capabilities. Lists installed capabilities, grouped by
+// kind. Each ingest_source row has a Configure button → modal form
+// that edits the encrypted DB overlay (no YAML editing, no restart).
 
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Activity, Command, MousePointerClick, ExternalLink } from 'lucide-react';
+import { Activity, Command, MousePointerClick, ExternalLink, Settings2 } from 'lucide-react';
 import { useAllCapabilities, type CapabilityListing } from '@/lib/capabilities';
+import { ConfigureCapabilityModal } from '@/components/capabilities/ConfigureCapabilityModal';
 
 // Extension id → docs path on the GitHub repo. Used to wire each
 // capability listing to its setup guide. Update when new extensions
@@ -39,8 +41,15 @@ const KIND_META: Record<string, { label: string; icon: React.ComponentType<{ cla
   },
 };
 
+interface ConfigureTarget {
+  extensionId: string;
+  capabilityName: string;
+  label: string;
+}
+
 export function CapabilitiesCard() {
   const { data, error, isLoading } = useAllCapabilities();
+  const [configuring, setConfiguring] = useState<ConfigureTarget | null>(null);
 
   return (
     <Card>
@@ -99,7 +108,20 @@ export function CapabilitiesCard() {
               ) : (
                 <ul className="space-y-1.5 pl-5">
                   {items.map((cap) => (
-                    <CapabilityRow key={`${cap.extension}/${cap.name}`} cap={cap} />
+                    <CapabilityRow
+                      key={`${cap.extension}/${cap.name}`}
+                      cap={cap}
+                      onConfigure={
+                        cap.kind === 'ingest_source' && cap.runner_registered
+                          ? () => setConfiguring({
+                              extensionId: cap.extension,
+                              capabilityName: cap.name,
+                              label: (cap.config as { label?: string })?.label
+                                || cap.name.replace(/_/g, ' '),
+                            })
+                          : undefined
+                      }
+                    />
                   ))}
                 </ul>
               )}
@@ -107,11 +129,24 @@ export function CapabilitiesCard() {
           );
         })}
       </CardContent>
+      {configuring && (
+        <ConfigureCapabilityModal
+          extensionId={configuring.extensionId}
+          capabilityName={configuring.capabilityName}
+          capabilityLabel={configuring.label}
+          onClose={() => setConfiguring(null)}
+        />
+      )}
     </Card>
   );
 }
 
-function CapabilityRow({ cap }: { cap: CapabilityListing }) {
+function CapabilityRow({
+  cap, onConfigure,
+}: {
+  cap: CapabilityListing;
+  onConfigure?: () => void;
+}) {
   const label =
     (cap.config as { label?: string })?.label ||
     cap.name.replace(/_/g, ' ');
@@ -134,15 +169,26 @@ function CapabilityRow({ cap }: { cap: CapabilityListing }) {
           <span className="text-[10px] text-muted-foreground">
             from {cap.extension}
           </span>
+          {onConfigure && (
+            <button
+              type="button"
+              onClick={onConfigure}
+              title="Edit credentials + settings in the UI (encrypted at rest)"
+              className="inline-flex items-center gap-0.5 text-[10px] text-violet-300 hover:text-violet-200 underline-offset-2 hover:underline"
+            >
+              <Settings2 className="w-2.5 h-2.5" />
+              configure
+            </button>
+          )}
           {guidePath && (
             <a
               href={`${REPO_URL}/${guidePath}`}
               target="_blank"
               rel="noreferrer"
               title={`Setup guide for ${cap.extension}`}
-              className="inline-flex items-center gap-0.5 text-[10px] text-violet-300 hover:text-violet-200"
+              className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground"
             >
-              setup guide
+              docs
               <ExternalLink className="w-2.5 h-2.5" />
             </a>
           )}

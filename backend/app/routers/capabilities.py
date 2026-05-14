@@ -221,3 +221,166 @@ async def invoke_action(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"action failed: {exc}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Per-capability config — Settings → Configure form
+# ---------------------------------------------------------------------------
+
+
+def _find_capability(extension_id: str, capability_name: str):
+    """Locate a capability by (extension_id, name). 404 if missing."""
+    for ext in ext_service.get_all_extensions():
+        if ext.manifest.id != extension_id:
+            continue
+        for cap in ext.manifest.capabilities:
+            if cap.name == capability_name:
+                return ext, cap
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"capability {extension_id}/{capability_name} not found",
+    )
+
+
+@router.get("/{extension_id}/{capability_name}/config")
+async def get_capability_config(
+    extension_id: str,
+    capability_name: str,
+    _: str = Depends(verify_api_key),
+) -> Dict[str, Any]:
+    """Return the effective config for this capability, sensitive
+    values masked. Frontend uses this to prefill the Configure form."""
+    from app.services import capability_settings_service as cs
+    _, cap = _find_capability(extension_id, capability_name)
+    overlay = await cs.get_overlay(extension_id, capability_name)
+    effective = cs.effective_config(cap.config or {}, overlay)
+    return {
+        "extension_id": extension_id,
+        "capability_name": capability_name,
+        "config": cs.redact_for_display(effective),
+        # Which keys came from the user vs the manifest. Lets the
+        # frontend show a "saved" indicator on overlaid fields.
+        "overlay_keys": sorted(overlay.keys()),
+    }
+
+
+@router.put("/{extension_id}/{capability_name}/config")
+async def put_capability_config(
+    extension_id: str,
+    capability_name: str,
+    payload: Dict[str, Any],
+    _: str = Depends(verify_api_key),
+) -> Dict[str, Any]:
+    """Write the config overlay. Encrypted at rest.
+
+    Behavior: if a sensitive field comes through as exactly "***" we
+    treat it as "keep existing" — the frontend doesn't have the real
+    value (we redacted on GET), so it would otherwise overwrite a real
+    key with a literal "***".
+    """
+    from app.services import capability_settings_service as cs
+    _, cap = _find_capability(extension_id, capability_name)
+    existing = await cs.get_overlay(extension_id, capability_name)
+
+    cleaned: Dict[str, Any] = {}
+    for k, v in (payload.get("config") or {}).items():
+        if k in cs.SENSITIVE_KEYS and v == "***":
+            # Preserve existing value for fields the UI displayed as
+            # masked.
+            if k in existing:
+                cleaned[k] = existing[k]
+            continue
+        cleaned[k] = v
+
+    await cs.set_overlay(extension_id, capability_name, cleaned)
+    return {"saved": True, "overlay_keys": sorted(cleaned.keys())}
+
+
+@router.post("/{extension_id}/{capability_name}/test")
+async def test_capability_config(
+    extension_id: str,
+    capability_name: str,
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+    _: str = Depends(verify_api_key),
+) -> Dict[str, Any]:
+    """Run the capability once with current effective config; report
+    success / failure. Returns the same shape as the runner's run()
+    plus a `success` boolean."""
+    from app.capabilities.base import IngestContext
+    from app.capabilities.registry import INGEST_SOURCES
+    from app.services import capability_settings_service as cs
+
+    _, cap = _find_capability(extension_id, capability_name)
+    if cap.kind != "ingest_source":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Test is only supported for ingest_source capabilities.",
+        )
+    runner_cls = INGEST_SOURCES.get(cap.name)
+    if runner_cls is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"runner {cap.name!r} not registered",
+        )
+
+    user_id = parse_jwt_user_uuid(jwt_user_id) if jwt_user_id else None
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Test requires a JWT (results attribute to your user).",
+        )
+
+    overlay = await cs.get_overlay(extension_id, capability_name)
+    effective = cs.effective_config(cap.config or {}, overlay)
+
+    runner = runner_cls()
+    ctx = IngestContext(user_id=user_id, source=f"{extension_id}:{cap.name}:test")
+    try:
+        count = await runner.run(effective, ctx)
+        return {"success": True, "ingested": count,
+                "message": f"Test tick succeeded — {count} new item(s)."}
+    except Exception as exc:
+        logger.exception("test_capability_config failed")
+        return {"success": False, "ingested": 0, "message": str(exc)}
+
+
+@router.post("/{extension_id}/{capability_name}/auto-fill")
+async def auto_fill_capability_config(
+    extension_id: str,
+    capability_name: str,
+    payload: Dict[str, Any],
+    _: str = Depends(verify_api_key),
+) -> Dict[str, Any]:
+    """Given a partial config (typically just an API key), introspect
+    the provider's own API to derive other fields. Currently supports:
+
+      zotero_sync: api_key → library_id + library_type
+
+    Returns {derived: {...}, message: "..."}. Frontend merges
+    `derived` into the form. Auto-fill is opt-in — user clicks the
+    button. We never auto-save.
+    """
+    import httpx
+    if capability_name == "zotero_sync":
+        api_key = (payload.get("config") or {}).get("api_key", "").strip()
+        if not api_key or api_key == "***":
+            return {"derived": {}, "message": "Provide an api_key first."}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                f"https://api.zotero.org/keys/{api_key}",
+                headers={"Zotero-API-Version": "3"},
+            )
+        if r.status_code != 200:
+            return {"derived": {}, "message": f"Zotero auth failed ({r.status_code})."}
+        data = r.json()
+        user_id = str(data.get("userID") or "").strip()
+        if not user_id:
+            return {"derived": {}, "message": "Zotero key valid but no userID returned."}
+        return {
+            "derived": {"library_id": user_id, "library_type": "user"},
+            "message": f"Resolved library_id = {user_id} (user library).",
+        }
+    return {
+        "derived": {},
+        "message": "Auto-fill isn't supported for this capability — fill the fields by hand.",
+    }
