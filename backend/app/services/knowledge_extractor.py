@@ -38,6 +38,41 @@ def _allowed_extraction_types() -> tuple:
     return (tax.node_type_ids, tax.edge_type_ids)
 
 
+def _allowed_node_types_for_manual() -> Optional[set]:
+    """Union of node-type IDs declared by the active surface taxonomy
+    AND every installed extension's taxonomy_extra. Looser than
+    `_allowed_extraction_types` because manual promotion shouldn't
+    block on capability-introduced node types (tool, protocol, ...)
+    just because the user hasn't re-run onboarding to merge them
+    into the active surface taxonomy yet.
+
+    Returns None when there's no taxonomy anywhere — treat as
+    "accept anything" so a misconfigured deploy doesn't soft-brick
+    manual promotion.
+    """
+    types: set = set()
+    surface_types, _ = _allowed_extraction_types()
+    if surface_types is not None:
+        types.update(surface_types)
+    try:
+        from app.services.extensions import get_all_extensions
+        import yaml as _yaml
+        for ext in get_all_extensions():
+            if not ext.taxonomy_extra:
+                continue
+            try:
+                data = _yaml.safe_load(ext.taxonomy_extra) or {}
+            except Exception:
+                continue
+            for n in (data.get("node_types") or []):
+                nid = n.get("id") if isinstance(n, dict) else None
+                if nid:
+                    types.add(nid)
+    except Exception:
+        logger.exception("failed to merge extension taxonomies for manual promote")
+    return types or None
+
+
 async def _classify_extractable(ai: Any, user: str, ai_response: str) -> bool:
     """Stage 1: cheap YES/NO check. Anything that doesn't normalize to YES → False."""
     ext = _extraction_refs()
@@ -398,7 +433,16 @@ async def promote_manual(
     if not title or not content:
         raise ValueError("title and content required for manual promotion")
     nt = suggested_type or "insight"
-    node_types, _ = _allowed_extraction_types()
+    # Manual promotion accepts any node type declared by either:
+    #   - the active surface's taxonomy, or
+    #   - any *installed* extension's taxonomy_extra
+    # Capabilities (e.g. ingest sources) created in v0.2.6 declare new
+    # node types in their bundled taxonomies (tool, protocol, ...).
+    # Restricting manual promotion to only the active surface's
+    # taxonomy would forbid promoting those types — even though the
+    # ingest pipeline freely creates them via upsert_node. Allowing
+    # extension-declared types here removes that asymmetry.
+    node_types = _allowed_node_types_for_manual()
     if node_types is not None and nt not in node_types:
         raise ValueError(f"node_type must be one of {sorted(node_types)}")
 

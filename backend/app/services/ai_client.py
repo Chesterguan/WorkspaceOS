@@ -121,7 +121,17 @@ class GeminiClient(AIClient):
                 json=payload,
                 headers=headers,
             )
-            response.raise_for_status()
+            # Surface the upstream body on non-2xx — vanilla
+            # raise_for_status hides Gemini's specific error reason
+            # (model name, safety filter, token cap) so callers see
+            # only "400 Bad Request" and can't act on it.
+            if response.status_code >= 400:
+                body_preview = response.text[:500]
+                raise httpx.HTTPStatusError(
+                    f"Gemini {response.status_code}: {body_preview}",
+                    request=response.request,
+                    response=response,
+                )
         return response.json()["choices"][0]["message"]["content"]
 
     async def embed(self, text: str) -> List[float]:
