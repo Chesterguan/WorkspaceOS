@@ -4,12 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProjects } from '@/lib/hooks/useProjects';
 import { useKnowledgeNodes } from '@/lib/hooks/useKnowledge';
+import {
+  useSlashCommands,
+  useCapabilityDispatcher,
+} from '@/lib/capabilities';
 
 interface PaletteItem {
   id: string;
   label: string;
   hint?: string;
-  group: 'surfaces' | 'projects' | 'actions' | 'knowledge';
+  group: 'surfaces' | 'projects' | 'actions' | 'knowledge' | 'commands';
   run: () => void;
 }
 
@@ -30,6 +34,8 @@ export function CommandPalette({
 
   const { data: projects = [] } = useProjects();
   const { data: nodes = [] } = useKnowledgeNodes({ limit: 50 });
+  const { data: slashCommands = [] } = useSlashCommands();
+  const dispatch = useCapabilityDispatcher();
 
   useEffect(() => {
     if (open) {
@@ -66,6 +72,22 @@ export function CommandPalette({
     // Quick actions
     { id: 'new-project', label: 'New project', hint: 'create', group: 'actions',
       run: () => { onNewProject(); onClose(); } },
+
+    // Dynamic slash_command capabilities from loaded extensions
+    ...slashCommands.map((cmd) => ({
+      id: `cmd-${cmd.id}`,
+      label: cmd.label,
+      hint: cmd.source_extension,
+      group: 'commands' as const,
+      run: async () => {
+        onClose();
+        await dispatch(
+          cmd.handler_kind,
+          cmd.handler_target,
+          (path) => router.push(path),
+        );
+      },
+    })),
 
     // Projects
     ...projects.map((p) => ({

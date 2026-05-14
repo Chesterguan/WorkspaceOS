@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { knowledge } from '@/lib/api';
 import type { KnowledgeNode } from '@/lib/types';
 import { nodeColor, nodeLabel, useKnowledgeTaxonomy } from '@/lib/knowledge-style';
+import { NodeCapabilityActions } from '@/components/knowledge/NodeCapabilityActions';
 
 interface Props {
   node: KnowledgeNode;
@@ -83,7 +84,7 @@ export function NodeDetailPanel({ node, onClose, onChanged }: Props) {
         </div>
       )}
 
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <button
           disabled={busy}
           onClick={archive}
@@ -98,6 +99,14 @@ export function NodeDetailPanel({ node, onClose, onChanged }: Props) {
         >
           Delete
         </button>
+      </div>
+
+      {/* Dynamic action_button capabilities from extensions */}
+      <div className="mt-3 pt-3 border-t border-border/40">
+        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+          Extension actions
+        </div>
+        <NodeCapabilityActions node={node} onChanged={onChanged} />
       </div>
     </aside>
   );

@@ -13,6 +13,7 @@ import { ArrowLeft } from "lucide-react";
 import { ApiKeysCard } from "./_components/ApiKeysCard";
 import { UsageCard } from "./_components/UsageCard";
 import { BackupCard } from "./_components/BackupCard";
+import { CapabilitiesCard } from "./_components/CapabilitiesCard";
 import { MacOutlookBridgeCard } from "./_components/MacOutlookBridgeCard";
 import { MicrosoftCard } from "./_components/MicrosoftCard";
 import { GoogleCard } from "./_components/GoogleCard";
@@ -42,6 +43,18 @@ export default function SettingsPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-8 py-8 space-y-8">
+        {/* Capabilities section — Phase 2 extension hooks */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Capabilities</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Plug-in hooks declared by your installed extensions.
+            </p>
+          </div>
+          <Separator className="bg-border" />
+          <CapabilitiesCard />
+        </section>
+
         {/* AI & API Keys section */}
         <section className="space-y-4">
           <div>

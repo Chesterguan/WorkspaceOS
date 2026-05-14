@@ -1,0 +1,65 @@
+id: bench-extras
+name: Bench Extras
+description: Small quality-of-life capabilities shipped with the framework
+  — palette shortcuts and node actions that demonstrate the slash_command
+  and action_button extension kinds. Useful as a working example for
+  anyone authoring their own.
+version: 0.1.0
+author: workspaceos
+
+# Always-on utility — no auto-match against domains.
+matches:
+  domain_keywords: []
+
+capabilities:
+  # ── Slash commands ───────────────────────────────────────────────────
+
+  - kind: slash_command
+    name: trigger_local_files_scan
+    description: Force the local-files watcher to scan its directory
+      immediately, instead of waiting for the next 30s poll.
+    config:
+      label: "Scan local files now"
+      keywords: [scan, files, ingest, local, refresh]
+      icon: refresh-cw
+      handler_kind: api_call
+      handler_target: /capabilities/runners/trigger_local_files_scan/trigger
+
+  - kind: slash_command
+    name: open_knowledge_graph
+    description: Navigate to the Knowledge surface from anywhere in
+      the bench — useful when you're deep in chat and want to see the
+      graph view of what just got extracted.
+    config:
+      label: "Open knowledge graph"
+      keywords: [knowledge, graph, k, nodes]
+      icon: network
+      handler_kind: navigate
+      handler_target: /bench?surface=knowledge
+
+  # ── Action buttons (knowledge_node target) ──────────────────────────
+
+  - kind: action_button
+    name: mark_as_decision
+    description: Re-type a knowledge node as `decision`. The auto-extractor
+      sometimes tags clear decisions as claims; this lets the user fix it
+      with one click.
+    config:
+      label: "Mark as decision"
+      icon: check-circle
+      target: knowledge_node
+      handler_kind: api_call
+      visible_when:
+        node_type: [claim, hypothesis, insight, question]
+
+  - kind: action_button
+    name: archive_node
+    description: Soft-delete a node — keeps the row in the DB for
+      provenance but hides it from the graph view. Useful for clearing
+      out noisy ingested items.
+    config:
+      label: "Archive"
+      icon: archive
+      target: knowledge_node
+      handler_kind: api_call
+      visible_when: {}
