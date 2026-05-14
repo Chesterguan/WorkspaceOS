@@ -254,6 +254,8 @@ from app.routers import events as events_router
 app.include_router(events_router.router, prefix=API_PREFIX)
 from app.routers import capabilities as capabilities_router
 app.include_router(capabilities_router.router, prefix=API_PREFIX)
+from app.routers import feedback as feedback_router
+app.include_router(feedback_router.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["health"])

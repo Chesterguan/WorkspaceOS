@@ -312,6 +312,19 @@ arbitrary file-drop, no `eval`, no extension-injected JSX.
 - **Custom surface types** — not on the roadmap. The 6 surface types
   cover the framework's scope. Surface code stays in core.
 
+## In-app feedback
+
+The bench has a floating **Feedback** button (bottom-right). Click it,
+write what broke or what you wished it did, and the backend files a
+GitHub issue on `Chesterguan/WorkspaceOS` (configurable via
+`FEEDBACK_REPO` in `.env`) with auto-captured page context — current
+surface, project id, URL, last 10 bench events. Issue labeled
+`user-feedback` + `bug` / `enhancement` / `question`.
+
+Needs `GITHUB_TOKEN` with `issues:write` scope. Disabled gracefully
+if the token is missing — the modal returns a clear error instead of
+silently failing.
+
 ## Status
 
 OSS-targeted, MIT licensed (see [LICENSE](LICENSE)). The bench, six

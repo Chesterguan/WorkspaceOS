@@ -24,6 +24,7 @@ import { FilesOverlay } from '@/components/bench/overlays/FilesOverlay';
 import { MemoryOverlay } from '@/components/bench/overlays/MemoryOverlay';
 import { PortfolioOverlay } from '@/components/bench/overlays/PortfolioOverlay';
 import { MobileSurfaceBar } from '@/components/bench/MobileSurfaceBar';
+import { FeedbackButton } from '@/components/feedback/FeedbackButton';
 
 /**
  * Inner component separated so useSearchParams (called inside useBenchState)
@@ -157,6 +158,7 @@ function BenchContent() {
     {state.overlay === 'portfolio' && (
       <PortfolioOverlay onClose={() => update({ overlay: null })} />
     )}
+    <FeedbackButton />
     </>
   );
 }

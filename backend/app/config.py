@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # GitHub
     github_token: str = ""
 
+    # In-app feedback button → GitHub issue. Defaults to the upstream
+    # WorkspaceOS repo; deployments can fork-redirect by overriding this
+    # in .env (FEEDBACK_REPO=owner/repo). Empty disables the feature.
+    feedback_repo: str = "Chesterguan/WorkspaceOS"
+
     # AI Provider selection (hybrid: local for privacy, cloud for quality)
     active_ai_provider: str = "openai"  # legacy compat
     local_ai_provider: str = "ollama"   # embeddings, extraction, consolidation
