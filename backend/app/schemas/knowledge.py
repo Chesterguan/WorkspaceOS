@@ -143,3 +143,49 @@ class GraphResponse(BaseModel):
 class SearchResultItem(BaseModel):
     node: KnowledgeNodeOut
     score: float
+
+
+# ---------------------------------------------------------------------------
+# Edge creation / linking
+# ---------------------------------------------------------------------------
+
+# Canonical edge types across all bio/AI taxonomies.
+# We accept these plus any custom types — only reject empty / >40 chars.
+_CANONICAL_EDGE_TYPES = {
+    "supports", "refutes", "tests", "derived_from", "derives_from",
+    "rejects", "related_to", "cites",
+}
+
+
+class EdgeCreateRequest(BaseModel):
+    source_node_id: uuid.UUID
+    target_node_id: uuid.UUID
+    edge_type: str
+
+    @field_validator("edge_type")
+    @classmethod
+    def validate_edge_type(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("edge_type must not be empty")
+        if len(v) > 40:
+            raise ValueError("edge_type must be 40 characters or fewer")
+        return v
+
+
+# ---------------------------------------------------------------------------
+# Node links response (GET /knowledge/nodes/{node_id}/links)
+# ---------------------------------------------------------------------------
+
+class LinkedEdge(BaseModel):
+    """One side of a link: the edge + the other node + direction tag."""
+    edge: KnowledgeEdgeOut
+    node: KnowledgeNodeOut
+    direction: str  # "out" | "in"
+
+    model_config = {"from_attributes": True}
+
+
+class NodeLinksResponse(BaseModel):
+    outgoing: List[LinkedEdge]
+    incoming: List[LinkedEdge]

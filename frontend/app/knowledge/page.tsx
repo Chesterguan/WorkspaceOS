@@ -58,11 +58,13 @@ export default function KnowledgePage() {
         {selected && (
           <NodeDetailPanel
             node={selected}
+            allNodes={nodes}
             onClose={() => setSelected(null)}
             onChanged={() => {
               mutate();
               setSelected(null);
             }}
+            onSelectNode={(n) => setSelected(n)}
           />
         )}
         <PromoteModal

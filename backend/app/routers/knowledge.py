@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db, get_optional_user_id, verify_api_key
 from app.models.knowledge import KnowledgeEdge, KnowledgeNode
 from app.schemas.knowledge import (
-    GraphResponse, KnowledgeEdgeOut, KnowledgeNodeOut,
-    NodeCreateRequest, NodeUpdateRequest, PromoteRequest, SourceRef,
-    allowed_node_types,
+    EdgeCreateRequest, GraphResponse, KnowledgeEdgeOut, KnowledgeNodeOut,
+    LinkedEdge, NodeCreateRequest, NodeLinksResponse, NodeUpdateRequest,
+    PromoteRequest, SourceRef, allowed_node_types,
 )
 from app.services import knowledge_extractor, knowledge_service
 
@@ -203,3 +203,157 @@ async def promote(
         suggested_type=body.suggested_type, title=body.title, content=body.content, db=db,
     )
     return node
+
+
+# ---------------------------------------------------------------------------
+# Edge CRUD
+# ---------------------------------------------------------------------------
+
+@router.post("/edges", response_model=KnowledgeEdgeOut,
+             status_code=status.HTTP_201_CREATED)
+async def create_edge(
+    body: EdgeCreateRequest,
+    auth_user_id: Optional[str] = Depends(get_optional_user_id),
+    _: str = Depends(verify_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a typed edge between two nodes owned by the authenticated user."""
+    user_id = _resolve_user_id(auth_user_id)
+
+    # Both nodes must belong to the requesting user.
+    src = (await db.execute(
+        select(KnowledgeNode).where(
+            KnowledgeNode.id == body.source_node_id,
+            KnowledgeNode.user_id == user_id,
+        )
+    )).scalar_one_or_none()
+    if src is None:
+        raise HTTPException(404, "source node not found")
+
+    tgt = (await db.execute(
+        select(KnowledgeNode).where(
+            KnowledgeNode.id == body.target_node_id,
+            KnowledgeNode.user_id == user_id,
+        )
+    )).scalar_one_or_none()
+    if tgt is None:
+        raise HTTPException(404, "target node not found")
+
+    edge = KnowledgeEdge(
+        user_id=user_id,
+        source_node_id=body.source_node_id,
+        target_node_id=body.target_node_id,
+        edge_type=body.edge_type,
+        created_by="manual",
+    )
+    db.add(edge)
+    try:
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        # Unique constraint violation → 409 Conflict
+        if "uq_knowledge_edges_triple" in str(exc) or "unique" in str(exc).lower():
+            raise HTTPException(409, "edge already exists")
+        raise
+    await db.refresh(edge)
+    return edge
+
+
+@router.delete("/edges/{edge_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_edge(
+    edge_id: uuid.UUID,
+    auth_user_id: Optional[str] = Depends(get_optional_user_id),
+    _: str = Depends(verify_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an edge by id. Only the owning user may delete."""
+    user_id = _resolve_user_id(auth_user_id)
+    edge = (await db.execute(
+        select(KnowledgeEdge).where(
+            KnowledgeEdge.id == edge_id,
+            KnowledgeEdge.user_id == user_id,
+        )
+    )).scalar_one_or_none()
+    if edge is None:
+        raise HTTPException(404, "edge not found")
+    await db.delete(edge)
+    await db.commit()
+
+
+@router.get("/nodes/{node_id}/links", response_model=NodeLinksResponse)
+async def get_node_links(
+    node_id: uuid.UUID,
+    auth_user_id: Optional[str] = Depends(get_optional_user_id),
+    _: str = Depends(verify_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all edges attached to a node, with the linked node embedded.
+
+    Response groups links into `outgoing` (this node is source) and
+    `incoming` (this node is target) so the UI can render both directions
+    without a second round-trip.
+    """
+    user_id = _resolve_user_id(auth_user_id)
+
+    # Confirm the node exists and belongs to the user.
+    node = (await db.execute(
+        select(KnowledgeNode).where(
+            KnowledgeNode.id == node_id,
+            KnowledgeNode.user_id == user_id,
+        )
+    )).scalar_one_or_none()
+    if node is None:
+        raise HTTPException(404, "node not found")
+
+    # Outgoing edges: this node is the source.
+    out_edges = (await db.execute(
+        select(KnowledgeEdge).where(
+            KnowledgeEdge.user_id == user_id,
+            KnowledgeEdge.source_node_id == node_id,
+        )
+    )).scalars().all()
+
+    # Incoming edges: this node is the target.
+    in_edges = (await db.execute(
+        select(KnowledgeEdge).where(
+            KnowledgeEdge.user_id == user_id,
+            KnowledgeEdge.target_node_id == node_id,
+        )
+    )).scalars().all()
+
+    # Collect all referenced node IDs so we can batch-load them.
+    target_ids = [e.target_node_id for e in out_edges]
+    source_ids = [e.source_node_id for e in in_edges]
+    all_ids = list(set(target_ids + source_ids))
+
+    linked_nodes: dict = {}
+    if all_ids:
+        rows = (await db.execute(
+            select(KnowledgeNode).where(
+                KnowledgeNode.id.in_(all_ids),
+                KnowledgeNode.user_id == user_id,
+            )
+        )).scalars().all()
+        linked_nodes = {n.id: n for n in rows}
+
+    outgoing: List[LinkedEdge] = []
+    for e in out_edges:
+        n = linked_nodes.get(e.target_node_id)
+        if n is not None:
+            outgoing.append(LinkedEdge(
+                edge=KnowledgeEdgeOut.model_validate(e),
+                node=KnowledgeNodeOut.model_validate(n),
+                direction="out",
+            ))
+
+    incoming: List[LinkedEdge] = []
+    for e in in_edges:
+        n = linked_nodes.get(e.source_node_id)
+        if n is not None:
+            incoming.append(LinkedEdge(
+                edge=KnowledgeEdgeOut.model_validate(e),
+                node=KnowledgeNodeOut.model_validate(n),
+                direction="in",
+            ))
+
+    return NodeLinksResponse(outgoing=outgoing, incoming=incoming)

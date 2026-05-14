@@ -1,6 +1,6 @@
 import useSWR from 'swr';
 import { knowledge } from '@/lib/api';
-import type { KnowledgeNode, KnowledgeGraph, NodeType } from '@/lib/types';
+import type { KnowledgeNode, KnowledgeGraph, NodeLinksResponse, NodeType } from '@/lib/types';
 
 
 export interface UseNodesParams {
@@ -25,6 +25,14 @@ export function useKnowledgeGraph(rootId: string | null, depth = 1) {
   const { data, error, isLoading, mutate } = useSWR<KnowledgeGraph>(
     rootId ? ['knowledge/graph', rootId, depth] as const : null,
     () => knowledge.getGraph(rootId!, depth),
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useNodeLinks(nodeId: string | null) {
+  const { data, error, isLoading, mutate } = useSWR<NodeLinksResponse>(
+    nodeId ? ['knowledge/nodes/links', nodeId] as const : null,
+    () => knowledge.getNodeLinks(nodeId!),
   );
   return { data, error, isLoading, mutate };
 }

@@ -6,14 +6,19 @@ import { knowledge } from '@/lib/api';
 import type { KnowledgeNode } from '@/lib/types';
 import { nodeColor, nodeLabel, useKnowledgeTaxonomy } from '@/lib/knowledge-style';
 import { NodeCapabilityActions } from '@/components/knowledge/NodeCapabilityActions';
+import { NodeLinksPanel } from '@/components/knowledge/NodeLinksPanel';
 
 interface Props {
   node: KnowledgeNode;
+  /** All currently visible nodes — passed to the link picker. */
+  allNodes: KnowledgeNode[];
   onClose: () => void;
   onChanged: () => void;
+  /** Navigate graph to a different node (from a linked-node pill click). */
+  onSelectNode: (node: KnowledgeNode) => void;
 }
 
-export function NodeDetailPanel({ node, onClose, onChanged }: Props) {
+export function NodeDetailPanel({ node, allNodes, onClose, onChanged, onSelectNode }: Props) {
   const [busy, setBusy] = useState(false);
   const taxonomy = useKnowledgeTaxonomy();
 
@@ -100,6 +105,14 @@ export function NodeDetailPanel({ node, onClose, onChanged }: Props) {
           Delete
         </button>
       </div>
+
+      {/* Linked nodes — outgoing + incoming edges */}
+      <NodeLinksPanel
+        node={node}
+        allNodes={allNodes}
+        onChanged={onChanged}
+        onSelectNode={onSelectNode}
+      />
 
       {/* Dynamic action_button capabilities from extensions */}
       <div className="mt-3 pt-3 border-t border-border/40">

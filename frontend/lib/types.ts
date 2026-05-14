@@ -1011,3 +1011,20 @@ export interface UpdateNodeRequest {
   archived?: boolean;
   project_id?: string | null;
 }
+
+export interface EdgeCreateRequest {
+  source_node_id: string;
+  target_node_id: string;
+  edge_type: EdgeType;
+}
+
+export interface LinkedEdge {
+  edge: KnowledgeEdge;
+  node: KnowledgeNode;
+  direction: 'out' | 'in';
+}
+
+export interface NodeLinksResponse {
+  outgoing: LinkedEdge[];
+  incoming: LinkedEdge[];
+}

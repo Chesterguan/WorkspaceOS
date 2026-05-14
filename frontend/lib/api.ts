@@ -89,6 +89,8 @@ import type {
   CreateNodeRequest,
   UpdateNodeRequest,
   PromoteNodeRequest,
+  EdgeCreateRequest,
+  NodeLinksResponse,
   DomainConfig,
 } from './types';
 
@@ -1069,6 +1071,21 @@ export const knowledge = {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  },
+
+  createEdge(body: EdgeCreateRequest): Promise<KnowledgeEdge> {
+    return apiFetch<KnowledgeEdge>('/knowledge/edges', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  deleteEdge(edgeId: string): Promise<void> {
+    return apiFetch<void>(`/knowledge/edges/${edgeId}`, { method: 'DELETE' });
+  },
+
+  getNodeLinks(nodeId: string): Promise<NodeLinksResponse> {
+    return apiFetch<NodeLinksResponse>(`/knowledge/nodes/${nodeId}/links`);
   },
 };
 
