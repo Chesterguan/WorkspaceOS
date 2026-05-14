@@ -1,5 +1,7 @@
 # WorkspaceOS
 
+> **English** · [简体中文](README.zh-CN.md)
+
 A configurable single-surface workbench framework for focused,
 long-running creative work.
 
