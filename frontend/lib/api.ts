@@ -120,13 +120,15 @@ async function apiFetch<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  // Auth: prefer JWT token from localStorage, fall back to env API key
+  // Auth: send JWT (for user identity) AND X-API-Key (for endpoints
+  // gated by require_admin) when both are available. WorkspaceOS is
+  // single-user — the logged-in user IS the admin, so the frontend
+  // carries both credentials. Endpoints choose which one matters:
+  // verify_api_key accepts either; require_admin only honors X-API-Key.
+  // Without this, JWT-only users get 403 on /settings/{keys,usage,backups}.
   const token = typeof window !== 'undefined' ? safeGetItem('auth_token') : null;
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  } else if (API_KEY) {
-    headers['X-API-Key'] = API_KEY;
-  }
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (API_KEY) headers['X-API-Key'] = API_KEY;
 
   const res = await fetch(url, { ...options, headers });
 

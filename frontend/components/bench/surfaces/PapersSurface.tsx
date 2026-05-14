@@ -20,7 +20,7 @@ export function PapersSurface({ projectId }: Props) {
     return (
       <EmptyProjectPicker
         surfaceLabel="papers"
-        hint="Single-project papers are scoped. To see a multi-project portfolio paper, pick 'Portfolio' from the header scope toggle (coming in a follow-up task)."
+        hint="Papers are scoped to a single project. Multi-project portfolio papers will land in a future release."
       />
     );
   }

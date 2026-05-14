@@ -36,7 +36,7 @@ export function FilesOverlay({ projectId: _projectId, onClose }: Props) {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-md mx-auto text-center text-sm text-muted-foreground space-y-2 mt-8">
           <p className="text-foreground">Files</p>
-          <p>Inline file ingest is coming soon. For the live demo this surface is a placeholder.</p>
+          <p>Browse and manage ingested files here. Inline file ingest is coming in a future release.</p>
         </div>
       </div>
     </div>
