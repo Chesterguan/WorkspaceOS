@@ -358,8 +358,8 @@ export function ApiKeysCard() {
             <div>
               <CardTitle className="text-base">AI & API Keys</CardTitle>
               <CardDescription className="text-xs mt-0.5">
-                Stored encrypted in the database. DB values override .env defaults.
-                Click ⓘ next to any key for step-by-step setup.
+                Saved keys are encrypted in the database and override any built-in defaults from <code>.env</code>.
+                Click <strong>Help</strong> next to any key for step-by-step setup.
               </CardDescription>
             </div>
           </div>
@@ -476,36 +476,47 @@ function SmartPaste({
         name={`smartpaste-${Math.random().toString(36).slice(2, 7)}`}
       />
       {value.trim() && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {detected ? (
-            <span className="text-[11px] text-violet-300">
-              Detected: <span className="font-semibold">{KEY_META[detected]?.label}</span>
-            </span>
-          ) : (
-            <span className="text-[11px] text-muted-foreground">
-              Couldn&apos;t auto-detect. Pick the slot manually:
-            </span>
-          )}
-          <select
-            value={target}
-            onChange={(e) => onTargetChange(e.target.value)}
-            className="h-7 text-xs bg-card/60 border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
-          >
-            <option value="">— pick a slot —</option>
-            {allKeys.map(([k, m]) => (
-              <option key={k} value={k}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <Button
-            size="sm"
-            className="h-7 text-xs bg-violet-500 hover:bg-violet-600"
-            onClick={onSave}
-            disabled={saving || !target}
-          >
-            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
-          </Button>
+        <div className="space-y-1.5">
+          {/* Detection status — aria-live so screen readers announce
+              the routing decision as the user pastes. */}
+          <div role="status" aria-live="polite" className="text-[11px]">
+            {detected ? (
+              <span className="text-violet-300">
+                Detected: <span className="font-semibold">{KEY_META[detected]?.label}</span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                Couldn&apos;t auto-detect. Pick the slot manually:
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-[11px] text-muted-foreground" htmlFor="smartpaste-target">
+              Save as:
+            </label>
+            <select
+              id="smartpaste-target"
+              value={target}
+              onChange={(e) => onTargetChange(e.target.value)}
+              className="h-7 text-xs bg-card/60 border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
+            >
+              <option value="">— pick a slot —</option>
+              {allKeys.map(([k, m]) => (
+                <option key={k} value={k}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-violet-500 hover:bg-violet-600"
+              onClick={onSave}
+              disabled={saving || !target}
+              title={target ? `Save into the ${KEY_META[target]?.label} slot` : "Pick a slot first"}
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+            </Button>
+          </div>
           {existing && existing.masked_value !== "Not set" && (
             <span className="text-[10px] text-amber-400">
               Will replace existing value ({existing.masked_value})
@@ -537,7 +548,7 @@ function KeyRow({
   onEdit, onChange, onSave, onCancel, onDelete,
 }: KeyRowProps) {
   const sourceLabel =
-    status.source === "db" ? "Saved" : status.masked_value !== "Not set" ? ".env" : "Missing";
+    status.source === "db" ? "Saved" : status.masked_value !== "Not set" ? "Default" : "Missing";
   const sourceClass =
     status.source === "db"
       ? "text-violet-400 border-violet-500/30"
@@ -619,12 +630,12 @@ function HelpPopover({ meta }: { meta: KeyMeta }) {
         render={
           <button
             type="button"
-            className="inline-flex items-center gap-0.5 text-[10px] font-medium text-violet-400 hover:text-violet-300 transition-colors px-1.5 py-0.5 rounded border border-violet-500/30 hover:border-violet-500/60 bg-violet-500/5"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-400 hover:text-violet-300 transition-colors px-2 py-1 rounded-md border border-violet-500/30 hover:border-violet-500/60 bg-violet-500/5"
             title={`How to get ${meta.label}`}
             aria-label={`How to get ${meta.label}`}
           >
             <HelpCircle className="w-3 h-3" />
-            How
+            Help
           </button>
         }
       />

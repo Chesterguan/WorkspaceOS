@@ -73,7 +73,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         ) : (
           <span className="text-xs font-medium text-muted-foreground">
-            {isUser ? "You" : "Co-Founder AI"}
+            {isUser ? "You" : "Advisor"}
           </span>
         )}
         <span className="text-xs text-muted-foreground/60">

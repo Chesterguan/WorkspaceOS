@@ -554,8 +554,8 @@ def _build_taxonomy(
 
 
 _SURFACES_BLUEPRINT: List[Dict[str, str]] = [
-    {"type": "roundtable", "id": "cofounder", "letter": "R", "label": "Roundtable", "accent": "violet"},
-    {"type": "roundtable", "id": "research", "letter": "A", "label": "Research", "accent": "blue"},
+    {"type": "roundtable", "id": "cofounder", "letter": "A", "label": "Advisor", "accent": "violet"},
+    {"type": "roundtable", "id": "research", "letter": "R", "label": "Research", "accent": "blue"},
     {"type": "list", "id": "drafts", "letter": "D", "label": "Drafts", "accent": "orange"},
     {"type": "list", "id": "papers", "letter": "P", "label": "Papers", "accent": "blue"},
     {"type": "graph", "id": "knowledge", "letter": "K", "label": "Knowledge", "accent": "teal"},

@@ -2,7 +2,7 @@ id: zotero
 name: Zotero Library Sync
 description: Read-only sync of your Zotero library into the knowledge
   graph. Each top-level item becomes a `paper_reference` node — title,
-  first author, year, DOI, venue. Lets the research roundtable and
+  first author, year, DOI, venue. Lets the research panel and
   paper pipeline anchor responses against papers you've actually read,
   without making you migrate citation libraries.
 version: 0.1.0

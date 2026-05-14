@@ -126,6 +126,20 @@ async function apiFetch<T>(
   // carries both credentials. Endpoints choose which one matters:
   // verify_api_key accepts either; require_admin only honors X-API-Key.
   // Without this, JWT-only users get 403 on /settings/{keys,usage,backups}.
+  //
+  // ⚠️  SECURITY (multi-user mode, not yet shipped):
+  //   `API_KEY` is `NEXT_PUBLIC_API_KEY`, which Next.js bundles into
+  //   the browser JS payload. Any logged-in user can read it from
+  //   devtools. In single-user mode this is fine — the only user is
+  //   the admin. The moment a second non-admin account exists, this
+  //   block silently grants them admin (they can call /settings/keys
+  //   etc. just by being logged in). Before turning on multi-user:
+  //     1. Move admin gating off the X-API-Key path entirely (e.g.
+  //        require_admin checks an `is_admin` claim on the JWT), OR
+  //     2. Gate this `if (API_KEY)` line on an `is_admin` flag in
+  //        localStorage that only admin login writes.
+  //   Tracked alongside the broader multi-tenant work. Do NOT remove
+  //   this comment until that decision is made.
   const token = typeof window !== 'undefined' ? safeGetItem('auth_token') : null;
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (API_KEY) headers['X-API-Key'] = API_KEY;

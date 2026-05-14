@@ -33,7 +33,7 @@ function navGroups(projectId: string): NavGroup[] {
     {
       items: [
         {
-          label: "Co-Founder",
+          label: "Advisor",
           href: `/projects/${projectId}/chat`,
           icon: MessageSquare,
         },

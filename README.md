@@ -248,7 +248,14 @@ provider noticeably wins.
 **Point WorkspaceOS at it** — set in `.env`:
 
 ```bash
-OLLAMA_BASE_URL=http://host.docker.internal:11434   # macOS Docker default
+# macOS / Windows Docker — host.docker.internal resolves to the host.
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+# Linux — host.docker.internal doesn't resolve by default. Either use
+# your host's LAN IP (typically 172.17.0.1 for the default bridge), or
+# add `--add-host=host.docker.internal:host-gateway` to the backend
+# service in docker-compose.yml and keep the line above.
+# OLLAMA_BASE_URL=http://172.17.0.1:11434
+
 OLLAMA_CHAT_MODEL=qwen2.5:7b                        # match what you pulled
 OLLAMA_EMBED_MODEL=nomic-embed-text
 

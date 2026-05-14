@@ -7,7 +7,7 @@
 //     values into the form (e.g. Zotero: API key → library_id).
 //   - Test: runs the capability once and reports success/failure.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -191,26 +191,60 @@ export function ConfigureCapabilityModal({
   const help = FIELD_HELP[capabilityName] || {};
   const autoFillOk = isAutoFillSupported(capabilityName);
 
+  // a11y plumbing: Escape closes, focus returns to the trigger that
+  // opened the modal, and the dialog is announced by its h2 title.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    triggerRef.current = (document.activeElement as HTMLElement) || null;
+    // Focus the first focusable element inside the panel so keyboard
+    // users land somewhere predictable.
+    const firstFocusable = panelRef.current?.querySelector<HTMLElement>(
+      'input[name^="cap-"], button:not([tabindex="-1"]), [href], select, textarea',
+    );
+    firstFocusable?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      // Return focus to whatever opened the modal — keyboard users
+      // shouldn't have to re-find their place after Close.
+      triggerRef.current?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4 overflow-y-auto"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
+      aria-labelledby="cfg-modal-title"
     >
       <div
+        ref={panelRef}
         className="w-full max-w-xl rounded-lg border border-border bg-card shadow-xl my-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold">Configure {capabilityLabel}</h2>
+            <h2 id="cfg-modal-title" className="text-sm font-semibold">Configure {capabilityLabel}</h2>
             <p className="text-[11px] text-muted-foreground">
               {extensionId} · {capabilityName}. Values save to encrypted DB —
               no need to edit YAML or restart.
             </p>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Close"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>

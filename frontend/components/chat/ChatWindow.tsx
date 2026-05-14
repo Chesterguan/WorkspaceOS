@@ -239,7 +239,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
               <Users className="w-7 h-7 text-primary" />
             </div>
             <div className="text-center space-y-1">
-              <p className="text-sm font-medium">Your co-founder roundtable is ready</p>
+              <p className="text-sm font-medium">Your advisor panel is ready</p>
               <p className="text-xs text-muted-foreground">
                 Ask anything — 3-4 advisors will weigh in from different perspectives, grounded in your actual project data.
               </p>
@@ -305,7 +305,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
             )}
           >
             <Users className="w-3.5 h-3.5" />
-            Roundtable
+            Panel
           </button>
           {advisors.map((advisor) => (
             <AdvisorCard
@@ -347,7 +347,7 @@ export function ChatWindow({ projectId }: ChatWindowProps) {
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="Ask your Co-Founder AI... (Enter to send, Shift+Enter for newline)"
+            placeholder="Ask the advisor panel… (Enter to send, Shift+Enter for newline)"
             rows={2}
             disabled={isSending}
             className="flex-1 resize-none bg-secondary/30 text-sm min-h-[2.5rem] max-h-40 leading-relaxed transition-all focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary/40"

@@ -435,7 +435,9 @@ export function ResearchChatWindow({ projectId }: ResearchChatWindowProps) {
 }
 
 // ─── ResearchRoundtableGroup ─────────────────────────────────────────────────
-// Groups multiple reviewer responses under a shared roundtable header.
+// Groups multiple reviewer responses under a shared panel header.
+// (Internal symbol name kept as "Roundtable" — matches the surface schema
+// type "roundtable" — but user-visible copy says "Panel".)
 
 interface ResearchRoundtableGroupProps {
   messages: ChatMessageType[];

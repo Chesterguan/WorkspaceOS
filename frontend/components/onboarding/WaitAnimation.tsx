@@ -17,7 +17,7 @@ const CHAPTERS = [
   {
     id: 'rail',
     title: 'Six surfaces, one bench',
-    body: 'Roundtable, Drafts, Papers, Knowledge, Worklog — each one is opt-in.',
+    body: 'Advisor, Research, Drafts, Papers, Knowledge, Worklog — each one is opt-in.',
     durationMs: 4000,
     svg: <RailAnimation />,
   },

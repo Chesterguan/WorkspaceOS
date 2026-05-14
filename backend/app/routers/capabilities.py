@@ -295,7 +295,23 @@ async def put_capability_config(
         # Frontend `<input type=text>` always sends strings; storing
         # "30" as the poll interval would break runners that do int
         # arithmetic on the value.
+        #
+        # Guardrails:
+        #   - Bound input length before int/float parsing. Python 3.11+
+        #     caps int() at 4300 digits by default but a 4299-digit string
+        #     still parses in O(n^2); float("1e9999") = inf which then
+        #     gets stored and could cause issues downstream.
+        #   - Reject non-finite floats (inf, -inf, nan).
+        #   - If the manifest has no default for this key, conservatively
+        #     attempt int/bool coercion from common patterns so brand-new
+        #     overlay-only fields don't silently store strings.
         default = manifest_config.get(k)
+        if isinstance(v, str) and len(v) > 64:
+            # Anything longer than 64 chars isn't a number/bool the user
+            # typed into a config input — store as-is and let validation
+            # downstream handle it.
+            cleaned[k] = v
+            continue
         if isinstance(default, bool) and isinstance(v, str):
             v = v.strip().lower() in ("true", "1", "yes")
         elif isinstance(default, int) and not isinstance(default, bool) and isinstance(v, str):
@@ -305,9 +321,36 @@ async def put_capability_config(
                 pass
         elif isinstance(default, float) and isinstance(v, str):
             try:
-                v = float(v.strip())
+                parsed = float(v.strip())
+                if parsed != parsed or parsed in (float("inf"), float("-inf")):
+                    # nan/inf/-inf — reject by leaving the original string
+                    pass
+                else:
+                    v = parsed
             except (TypeError, ValueError):
                 pass
+        elif isinstance(default, (list, dict)) and isinstance(v, str):
+            # The form serialises list/dict values as JSON. Parse it back
+            # if we can; otherwise keep as a string and let the runner
+            # surface the type mismatch.
+            try:
+                import json as _json
+                parsed = _json.loads(v)
+                if isinstance(parsed, type(default)):
+                    v = parsed
+            except (TypeError, ValueError):
+                pass
+        elif default is None and isinstance(v, str):
+            # No manifest default — best-effort coercion from string for
+            # the most common cases so overlay-only fields don't drift.
+            stripped = v.strip()
+            if stripped.lower() in ("true", "false"):
+                v = stripped.lower() == "true"
+            elif stripped.lstrip("-").isdigit() and len(stripped) < 20:
+                try:
+                    v = int(stripped)
+                except (TypeError, ValueError):
+                    pass
         cleaned[k] = v
 
     await cs.set_overlay(extension_id, capability_name, cleaned)

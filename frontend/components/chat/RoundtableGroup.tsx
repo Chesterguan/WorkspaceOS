@@ -55,7 +55,7 @@ export function RoundtableGroup({ messages }: RoundtableGroupProps) {
       <div className="flex items-center gap-2 px-1">
         <Users className="w-3.5 h-3.5 text-muted-foreground" />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Roundtable
+          Panel
         </span>
         <div className="flex -space-x-1.5">
           {participants.map((p) => (

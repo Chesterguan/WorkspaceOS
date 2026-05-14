@@ -638,7 +638,7 @@ export default function PortfolioPaperPage() {
                     onChange={(e) => setUseV2(e.target.checked)}
                     className="rounded border-border"
                   />
-                  Use v2 multi-agent pipeline (section-by-section with roundtable review)
+                  Use v2 multi-agent pipeline (section-by-section with panel review)
                 </label>
 
                 {/* Generate button */}

@@ -18,7 +18,7 @@ export function RoundtableReviewPanel({ reviews }: RoundtableReviewPanelProps) {
     <details className="mb-4 border rounded-lg" open>
       <summary className="p-3 cursor-pointer flex items-center gap-2 font-medium text-sm hover:bg-secondary/30 rounded-lg transition-colors">
         <Users className="h-4 w-4 text-violet-400" />
-        Roundtable Review ({reviews.length} reviewers, avg {avgScore}/10)
+        Panel Review ({reviews.length} reviewers, avg {avgScore}/10)
       </summary>
       <div className="p-3 space-y-3 border-t">
         {reviews.map((r) => (
