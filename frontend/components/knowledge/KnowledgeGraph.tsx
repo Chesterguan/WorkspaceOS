@@ -111,7 +111,7 @@ export function KnowledgeGraph({ nodes, onSelect }: Props) {
         <p>
           Click <span className="font-medium text-foreground">New</span> to create one,
           or save a decision/claim from an advisor panel conversation using the bookmark
-          icon on any reply.
+          icon on any advisor reply.
         </p>
       </div>
     );
