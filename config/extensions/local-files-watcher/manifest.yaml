@@ -1,0 +1,27 @@
+id: local-files-watcher
+name: Local Files Watcher
+description: Watches a directory under the workspace mount, emits a
+  file_ingested knowledge node per new file. Useful as a low-effort
+  way to feed the bench from a local notes folder, a build output
+  directory, or a synced cloud drive that's already bind-mounted.
+version: 0.1.0
+author: workspaceos
+
+# Pure utility — no persona / taxonomy / worklog content.
+# Matches: empty deliberately. The user opts in by dropping it into
+# config/extensions/, not via wizard auto-selection.
+matches:
+  domain_keywords: []
+
+capabilities:
+  - kind: ingest_source
+    name: local_files
+    description: Walks watch_path on a schedule, emits a node per new file.
+    config:
+      # Directory inside the backend container. WORKSPACE_HOST_PATH
+      # (in .env) maps to /projects/ by default — see docker-compose.yml.
+      watch_path: /projects
+      poll_interval_seconds: 30
+      max_files_per_tick: 100
+      # Skip files larger than this; we record existence, not bodies.
+      max_size_mb: 1.0

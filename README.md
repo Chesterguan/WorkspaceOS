@@ -171,14 +171,77 @@ for the bucket stub.
 All API keys can be set at runtime through the Settings page
 (Fernet-encrypted in the DB) instead of `.env`.
 
+## Capability extensions (v0.2.0)
+
+Beyond content (personas / taxonomies / prompts), extensions can now
+ship **capabilities** — code that runs inside the host and feeds the
+bench from external sources. The capability runner schedules each one
+as an asyncio task; runners emit events into the bench's TUI log and
+insert nodes directly into the knowledge graph.
+
+Two capabilities ship out of the box:
+
+- **`local-files-watcher`** (`kind: ingest_source`, runner:
+  `local_files`). Polls a directory under the workspace mount every
+  30s. Every new file becomes a `file_ingested` knowledge node + an
+  event in the bench log. Set `WORKSPACE_HOST_PATH` in `.env` to point
+  at your watched directory.
+- **`macos-mail`** (`kind: ingest_source`, runner: host-side bridge
+  via `scripts/outlook_bridge/install.sh`). Reads Apple Mail + Outlook
+  for Mac through AppleScript and POSTs items into the backend's
+  `/skills/local-ingest/items` endpoint. The bridge runs via launchd
+  every 6 hours; no Docker side-effects.
+
+**Authoring a third capability** is a manifest declaration + a Python
+runner class registered in `backend/app/capabilities/registry.py`:
+
+```yaml
+# config/extensions/my-thing/manifest.yaml
+id: my-thing
+name: My Thing
+version: 0.1.0
+matches:
+  domain_keywords: []
+capabilities:
+  - kind: ingest_source
+    name: my_runner_name     # ← key in capabilities/registry.py
+    config:
+      poll_interval_seconds: 60
+      # whatever your runner needs
+```
+
+```python
+# backend/app/capabilities/my_runner.py
+from app.capabilities.base import IngestContext, IngestSource
+
+class MyRunner(IngestSource):
+    label = "my-thing"
+    default_poll_interval_seconds = 60
+
+    async def run(self, config: dict, ctx: IngestContext) -> int:
+        # … pull from your source …
+        await ctx.upsert_node(
+            node_type="my_node_kind",
+            title="Something",
+            content="...",
+            external_id="stable-handle",
+        )
+        ctx.log("info", "ingested 1 item")
+        return 1
+```
+
+Then add to the registry and PR it in. Trust model is "registry =
+audit surface" — capability code ships with the framework, not via
+arbitrary file-drop.
+
 ## Roadmap
 
-- **Phase 2 — capability extensions.** Extensions ship code, not just
-  YAML. `ingest_source` (Gmail / Calendar / Slack / Notion sync),
-  `slash_command` (⌘K palette entry), `action_button` (per-node
-  context action), `surface_widget` (sub-component in an existing
-  surface). Manifest schema reserves the `capabilities: []` field
-  today; runtime activation arrives in Phase 2.
+- **More capability runners** — Gmail (OAuth), Calendar (CalDAV /
+  Google), Slack, Notion. Contributions welcome.
+- **Other capability kinds** — `slash_command` (⌘K palette entry),
+  `action_button` (per-node context action), `surface_widget`
+  (sub-component in an existing surface). Manifest schema reserves
+  these today; runtime activation arrives next.
 - **More content extensions** — `indie-founder`, `phd-student`,
   `engineering-manager`. Contributions welcome.
 - **Settings → "Personalize"** — re-run the wizard with prefilled

@@ -1,0 +1,36 @@
+id: macos-mail
+name: macOS Mail
+description: Pull Apple Mail messages + Outlook for Mac messages into
+  the bench's activity feed and knowledge graph. Uses a host-side
+  AppleScript bridge (the backend can't query Mail.app directly from
+  Docker). One-time install on the user's Mac, then the bridge runs
+  via launchd every 6 hours.
+version: 0.1.0
+author: workspaceos
+
+# Always-on utility — no domain matching. Users opt in by running the
+# host-side installer at scripts/outlook_bridge/install.sh.
+matches:
+  domain_keywords: []
+
+# Capability declaration. The runner here is a "host-side bridge" —
+# code lives on the user's Mac (scripts/outlook_bridge/), POSTs to the
+# backend's already-shipped /skills/local-ingest/items endpoint. The
+# in-container ingest runner is not used for this capability because
+# Mail.app is only accessible from the Mac side (AppleScript / TCC).
+#
+# We still declare the capability so the README + onboarding docs can
+# point users at it consistently with other ingest sources.
+capabilities:
+  - kind: ingest_source
+    name: macos_mail
+    description: |
+      Host-side bridge that reads Apple Mail + Outlook for Mac via
+      AppleScript and POSTs items to /skills/local-ingest/items.
+      Install with: cd scripts/outlook_bridge && ./install.sh
+    config:
+      # The bridge currently caps at 3 days of mail and 25 messages
+      # per account per run. See sync.applescript for the constants.
+      bridge_install_path: ./scripts/outlook_bridge/install.sh
+      poll_interval_minutes: 360
+      docs_path: ./scripts/outlook_bridge/README.md

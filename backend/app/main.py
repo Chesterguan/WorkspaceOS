@@ -161,9 +161,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Background auto-sync task scheduled")
     backup_task = asyncio.create_task(_daily_backup_loop())
     logger.info("Background backup task scheduled")
+
+    # Phase 2 capability plugins — ingest sources declared by extensions
+    from app.capabilities import ingest_runner
+    ingest_runner.start_all()
+
     yield
     sync_task.cancel()
     backup_task.cancel()
+    await ingest_runner.stop_all()
     try:
         await sync_task
     except asyncio.CancelledError:
