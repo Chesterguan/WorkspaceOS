@@ -6,8 +6,8 @@ app:
 surfaces:
   - type: roundtable
     id: cofounder
-    letter: "R"
-    label: "Roundtable"
+    letter: "A"
+    label: "Advisor"
     accent: violet
     personas: ./personas/cofounder.yaml
     extraction:
@@ -17,7 +17,7 @@ surfaces:
 
   - type: roundtable
     id: research
-    letter: "A"
+    letter: "R"
     label: "Research"
     accent: blue
     personas: ./personas/research.yaml

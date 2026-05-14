@@ -59,7 +59,7 @@ Estimated work: half a day per target.
 ### 3. surface_widget — the third runtime kind
 
 Today reserved schema-only. v0.2.2 ships the first runtime: a
-right-side panel slot in the Roundtable surface that extensions can
+right-side panel slot in the Advisor surface that extensions can
 fill. Useful for "current research question" displays, weekly goal
 reminders, etc.
 
@@ -160,7 +160,7 @@ v0.2.2 ships when:
    `bench-extras` ("Promote to knowledge node" reframed as a
    capability instead of hardcoded).
 3. One `surface_widget` runtime ships, with a working example in
-   `bench-extras` ("Today's open questions" panel on Roundtable).
+   `bench-extras` ("Today's open questions" panel on Advisor).
 4. CONTRIBUTING.md has screenshots and the new scaffolder script
    works from a clean checkout.
 

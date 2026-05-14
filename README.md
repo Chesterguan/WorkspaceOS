@@ -34,8 +34,8 @@ A bench with six opt-in surfaces, each driven by your domain config:
 
 | Letter | Surface     | What it does |
 |--------|-------------|--------------|
-| **R**  | Roundtable  | Chat with a cofounder advisor panel. 3–4 advisors weigh in per message. |
-| **A**  | Research    | Parallel critique from a research reviewer panel. 5–6 reviewers, distinct lenses. |
+| **A**  | Advisor     | Chat with a cofounder advisor panel. 3–4 advisors weigh in per message. |
+| **R**  | Research    | Parallel critique from a research reviewer panel. 5–6 reviewers, distinct lenses. |
 | **D**  | Drafts      | Blog and social drafts (per-project, paginated). |
 | **P**  | Papers      | Research papers — single + portfolio. Multi-agent v2 pipeline. |
 | **K**  | Knowledge   | Cross-project graph of decisions / claims / hypotheses extracted from chat. |

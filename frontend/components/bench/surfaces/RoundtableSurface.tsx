@@ -21,7 +21,7 @@ export function RoundtableSurface({ projectId, surfaceId }: Props) {
     return (
       <EmptyProjectPicker
         surfaceLabel="conversations"
-        hint="Roundtable history is project-scoped. Pick a project to start or continue a conversation."
+        hint="Conversations are project-scoped. Pick a project to start or continue one."
       />
     );
   }
