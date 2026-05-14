@@ -70,6 +70,11 @@ real time.
 
 ## Quick start
 
+**Prerequisite:** Docker. Install
+[Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS /
+Windows / Linux) or [OrbStack](https://orbstack.dev/) (faster on macOS).
+Make sure `docker compose` works in your terminal before continuing.
+
 ```bash
 git clone https://github.com/Chesterguan/WorkspaceOS.git
 cd WorkspaceOS

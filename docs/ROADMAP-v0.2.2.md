@@ -103,6 +103,53 @@ Estimated work: half a day.
 - Marketplace UI for browsing community extensions. Needs a registry
   service first.
 
+## v0.3 and v0.4 — the LEGO ceiling, broken adaptively
+
+The arch as of v0.2.1 is structured so v0.3 and v0.4 are *additive*,
+not refactors. Specifically:
+
+### v0.3 — capability runners as installable Python packages
+
+Today: a new `ingest_source` requires a PR into
+`backend/app/capabilities/registry.py`.
+
+After v0.3: `pip install workspaceos-gmail-ingest` and the runner
+auto-registers. Authors declare in their `pyproject.toml`:
+
+```toml
+[project.entry-points."workspaceos.ingest_sources"]
+gmail = "workspaceos_gmail_ingest:GmailIngest"
+```
+
+The framework already has `discover_entry_points()` stubs in
+`registry.py`, `slash.py`, `actions.py`, and `ai_client.py`. v0.3
+flips them from no-op to `importlib.metadata.entry_points(...)` scans.
+**Estimated work: 1 day.** No registry rewrite needed.
+
+### v0.4 — surface types as a registry
+
+Today: surfaces are dispatched by a `getSurfaceRenderer()` lookup in
+`frontend/lib/bench/surface-registry.ts`. The four in-tree renderers
+are registered in `register-surfaces.ts`.
+
+After v0.4: extensions ship their own React component + a manifest
+that imports it. A new surface type is one registration call, not a
+fork.
+
+The dispatch surface is already table-driven; v0.4 adds the manifest
+hook for extension-supplied renderers. **Estimated work: 1 week**
+(the registration mechanism is small, the trust-model design is the
+hard part).
+
+### v0.4 — composable wizard
+
+Today: 7 fixed questions. Wizard schema reserves
+`wizard_fragments: List[Dict]` on `ExtensionManifest` (declared, runtime
+ignored) so manifests authored today stay forward-compatible.
+
+After v0.4: extensions declare wizard fragments; user picks which
+extension's wizard variant to run.
+
 ## Stop conditions
 
 v0.2.2 ships when:

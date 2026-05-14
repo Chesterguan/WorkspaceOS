@@ -94,15 +94,42 @@ async def _archive_node(
     return {"ok": True, "toast": f"Archived “{node.title[:40]}”."}
 
 
-# name → handler. Frontend POSTs to /capabilities/actions/<name>/invoke.
-ACTION_HANDLERS: Dict[str, ActionHandler] = {
-    "mark_as_decision": _mark_as_decision,
-    "archive_node": _archive_node,
-}
+# ── Adaptive registry (v0.2.1, v0.3 path reserved) ──────────────────
+# Same dynamic pattern as ingest_sources / slash_runners. See
+# `app/capabilities/registry.py` for the canonical adaptive pattern.
+
+ACTION_HANDLERS: Dict[str, ActionHandler] = {}
+
+
+def register_action(name: str, handler: ActionHandler) -> None:
+    existing = ACTION_HANDLERS.get(name)
+    if existing is handler:
+        return
+    if existing is not None:
+        raise ValueError(
+            f"action_button name conflict: {name!r} already registered; "
+            f"refusing to overwrite."
+        )
+    ACTION_HANDLERS[name] = handler
+    logger.debug("registered action_button: %s", name)
+
+
+def discover_entry_points() -> None:
+    """v0.3 hook — scan installed packages under
+    `workspaceos.action_handlers` entry-point group. No-op for now."""
+    return None  # ← Phase 3: replace with importlib.metadata scan
 
 
 def list_handlers() -> list[str]:
     return sorted(ACTION_HANDLERS.keys())
+
+
+# In-tree defaults
+register_action("mark_as_decision", _mark_as_decision)
+register_action("archive_node", _archive_node)
+
+# v0.3 activation: uncomment the next line.
+# discover_entry_points()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────

@@ -201,16 +201,55 @@ class OllamaClient(AIClient):
 # Provider factory
 # ---------------------------------------------------------------------------
 
+# ── Adaptive provider registry (v0.2.1, v0.3 path reserved) ─────────
+# Same dynamic pattern as the capability registries. Adding a new
+# in-tree provider is a 1-line register call below. v0.3's
+# `discover_ai_provider_entry_points()` will let pip-installed
+# packages auto-register their providers without core changes.
+
+AI_PROVIDERS: Dict[str, type] = {}
+
+
+def register_ai_provider(name: str, cls: type) -> None:
+    existing = AI_PROVIDERS.get(name)
+    if existing is cls:
+        return
+    if existing is not None:
+        raise ValueError(
+            f"ai_provider name conflict: {name!r} already registered as "
+            f"{existing.__name__}; refusing to overwrite."
+        )
+    AI_PROVIDERS[name] = cls
+    logger.debug("registered ai_provider: %s → %s", name, cls.__name__)
+
+
+def discover_ai_provider_entry_points() -> None:
+    """v0.3 hook — scan installed packages under the
+    `workspaceos.ai_providers` entry-point group. No-op for now.
+    Activation in v0.3 is a one-line uncomment at the bottom of this
+    file."""
+    return None  # ← Phase 3: replace with importlib.metadata scan
+
+
 def _build_client(provider: str) -> AIClient:
     provider = provider.lower().strip()
-    if provider == "ollama":
-        return OllamaClient()
-    elif provider == "gemini":
-        return GeminiClient()
-    elif provider == "anthropic":
-        return AnthropicClient()
-    else:
-        return OpenAIClient()
+    cls = AI_PROVIDERS.get(provider)
+    if cls is not None:
+        return cls()
+    # Fallback to OpenAI for unknown values (legacy behavior).
+    logger.warning("Unknown AI provider %r, falling back to openai", provider)
+    return OpenAIClient()
+
+
+# In-tree providers — register at import time so the registry is
+# populated when the rest of the app calls _build_client().
+register_ai_provider("openai", OpenAIClient)
+register_ai_provider("anthropic", AnthropicClient)
+register_ai_provider("gemini", GeminiClient)
+register_ai_provider("ollama", OllamaClient)
+
+# v0.3 activation: uncomment the next line.
+# discover_ai_provider_entry_points()
 
 
 # Cached singletons

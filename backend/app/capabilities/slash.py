@@ -58,11 +58,40 @@ async def _trigger_local_files_scan(
     return {"ok": True, "ingested": count, "toast": f"Scanned — {count} new files."}
 
 
-# name → handler. Frontend POSTs to /capabilities/runners/<name>/trigger.
-SLASH_RUNNERS: Dict[str, SlashHandler] = {
-    "trigger_local_files_scan": _trigger_local_files_scan,
-}
+# ── Adaptive registry (v0.2.1, v0.3 path reserved) ──────────────────
+# Single source of truth — mutated by register_slash_runner() at import
+# time. v0.3 path: discover_entry_points() will scan installed
+# packages under `workspaceos.slash_runners`. See
+# `app/capabilities/registry.py` for the canonical adaptive pattern.
+
+SLASH_RUNNERS: Dict[str, SlashHandler] = {}
+
+
+def register_slash_runner(name: str, handler: SlashHandler) -> None:
+    existing = SLASH_RUNNERS.get(name)
+    if existing is handler:
+        return
+    if existing is not None:
+        raise ValueError(
+            f"slash_runner name conflict: {name!r} already registered; "
+            f"refusing to overwrite."
+        )
+    SLASH_RUNNERS[name] = handler
+    logger.debug("registered slash_runner: %s", name)
+
+
+def discover_entry_points() -> None:
+    """v0.3 hook — scan installed packages under
+    `workspaceos.slash_runners` entry-point group. No-op for now."""
+    return None  # ← Phase 3: replace with importlib.metadata scan
 
 
 def list_runners() -> list[str]:
     return sorted(SLASH_RUNNERS.keys())
+
+
+# In-tree defaults
+register_slash_runner("trigger_local_files_scan", _trigger_local_files_scan)
+
+# v0.3 activation: uncomment the next line.
+# discover_entry_points()

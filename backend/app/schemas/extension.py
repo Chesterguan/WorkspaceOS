@@ -110,11 +110,22 @@ class ExtensionManifest(BaseModel):
         description="Map of cadence → relative path to a worklog prompt override.",
     )
 
-    # ── Phase 2: capabilities (declared, not activated yet) ────────────
+    # ── Phase 2: capabilities (3 of 4 kinds runtime-active in v0.2.1) ─
     capabilities: List[Capability] = Field(
         default_factory=list,
-        description="Phase 2 capability declarations. Schema is stable; runtime "
-                    "behavior arrives in a later release. Authors can list "
-                    "intended ingest sources / slash commands / action buttons "
-                    "now to communicate forward-compatible intent.",
+        description="Capability declarations. Runtime-active kinds in v0.2.1: "
+                    "ingest_source, slash_command, action_button. "
+                    "Reserved (declared, runtime arrives later): "
+                    "surface_widget.",
+    )
+
+    # ── Phase 4: wizard fragments (reserved, not activated yet) ───────
+    # Extensions will be able to extend the onboarding wizard with
+    # their own questions in v0.4. The shape is reserved here so
+    # manifests authored today stay forward-compatible. Schema-only.
+    wizard_fragments: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="v0.4 wizard fragments — schema reserved, runtime "
+                    "ignores. Authors declaring fragments here today get "
+                    "validated by Pydantic but no UI effect until v0.4.",
     )
