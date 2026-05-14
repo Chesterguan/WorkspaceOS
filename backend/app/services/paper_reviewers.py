@@ -15,11 +15,14 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from app.config import settings
-from app.schemas.domain_config import Persona
+from app.schemas.domain_config import Persona, PersonaPool
 from app.services.agents import AgentLog, NamedAgent
 from app.services.ai_client import OpenAIClient, get_cloud_client
 from app.services.domain_config import get_loader
+from app.services.extensions import get_all_extensions
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +185,12 @@ async def run_review_roundtable(
     For reviewers in _OPENAI_REVIEWER_IDS, prefers OpenAI when configured
     (cross-model diversity against the Gemini writer). Falls back to the cloud
     client for everyone else.
+
+    Bio auto-pick (v0.2.6): when the paper's content is heavily bio-shaped
+    AND the active reviewer pool isn't already a bio-tuned one, swap in
+    the bio-research extension's reviewers so a synbio/plant paper gets
+    reviewed by Endy/Doudna/Pauly/Mortimer/etc. instead of a generic
+    academic panel.
     """
     if agent_log is None:
         agent_log = AgentLog()
@@ -192,7 +201,7 @@ async def run_review_roundtable(
     else:
         openai_client = cloud
 
-    reviewers = REVIEWER_REGISTRY.values()
+    reviewers = _select_reviewer_pool(paper_content, agent_log)
     agent_log.add(
         agent="roundtable",
         action="start",
@@ -219,6 +228,160 @@ async def run_review_roundtable(
     )
 
     return list(reviews)
+
+
+
+# ---------------------------------------------------------------------------
+# Bio-domain auto-pick (v0.2.6)
+# ---------------------------------------------------------------------------
+
+# Keywords that indicate biological content. Tuned for synbio / molecular
+# biology / plant biology / cell wall — the domains the bio-research
+# extension reviewers actually critique well. The list is intentionally
+# broader than "synbio only" because a Topol or Doudna review adds value
+# to clinical / molecular biology papers too.
+_BIO_KEYWORDS = frozenset(
+    [
+        "synbio",
+        "synthetic biology",
+        "plant",
+        "cell wall",
+        "polysaccharide",
+        "glycan",
+        "lignin",
+        "cellulose",
+        "mannan",
+        "mannose",
+        "glucan",
+        "hemicellulose",
+        "biomass",
+        "bioenergy",
+        "biotech",
+        "biotechnology",
+        "bioreactor",
+        "ferment",
+        "metabolic",
+        "biosynthesis",
+        "enzyme",
+        "promoter",
+        "vector",
+        "plasmid",
+        "construct",
+        "strain",
+        "transformation",
+        "transgenic",
+        "transformant",
+        "agrobacterium",
+        "biolistic",
+        "cultivar",
+        "ecotype",
+        "crispr",
+        "cas9",
+        "guide rna",
+        "knockout",
+        "knockin",
+        "gene expression",
+        "transcript",
+        "rna-seq",
+        "in vivo",
+        "in vitro",
+        "in planta",
+        "phenotype",
+        "phenotyping",
+        "regeneration",
+        "tissue culture",
+    ]
+)
+
+# Number of distinct keyword hits required to trigger bio swap. Tuned to
+# require multiple corroborating signals — a single mention of "plant" or
+# "enzyme" shouldn't flip the pool.
+_BIO_SWAP_THRESHOLD = 4
+
+# Reviewer IDs that only the bio-research extension declares. If any of
+# these appear in the active pool, we're already bio — no need to swap.
+_BIO_RESEARCH_REVIEWER_IDS = frozenset(
+    [
+        "drew_endy",
+        "church",
+        "keasling",
+        "doudna",
+        "topol",
+        "tim_lu",
+        "pauly",
+        "mortimer",
+        "plant_methods_reviewer",
+    ]
+)
+
+
+def _bio_keyword_score(content: str) -> int:
+    """Count distinct bio keywords in paper content. Case-insensitive."""
+    if not content:
+        return 0
+    lower = content.lower()
+    return sum(1 for kw in _BIO_KEYWORDS if kw in lower)
+
+
+def _load_bio_research_personas() -> List[Persona]:
+    """Load the bio-research extension's research personas directly,
+    bypassing the active domain config. Returns [] if the extension
+    isn't installed or its YAML is malformed."""
+    try:
+        for ext in get_all_extensions():
+            if ext.manifest.id != "bio-research":
+                continue
+            for rel_path, yaml_text in ext.personas_files.items():
+                # Match anything that looks like the research pool file —
+                # the bundled file is "personas/research.yaml" but be
+                # forgiving about extension authors' folder conventions.
+                if "research" not in rel_path.lower():
+                    continue
+                data = yaml.safe_load(yaml_text)
+                pool = PersonaPool.model_validate(data)
+                return list(pool.personas)
+    except Exception:
+        logger.exception("bio-research persona load failed; falling back to default pool")
+    return []
+
+
+def _select_reviewer_pool(paper_content: str, agent_log: AgentLog) -> List[Persona]:
+    """Decide which reviewer pool to dispatch for this paper.
+
+    - If the active "research" pool already contains bio-research
+      reviewers (the user is on bio-research extension), use it as-is.
+    - Otherwise, score the paper content for bio keywords. If the score
+      crosses the threshold, swap in the bio-research extension's pool.
+    - Otherwise, use the active pool unchanged.
+    """
+    default_pool = REVIEWER_REGISTRY.values()
+    if not default_pool:
+        return default_pool
+
+    active_ids = {p.id for p in default_pool}
+    if active_ids & _BIO_RESEARCH_REVIEWER_IDS:
+        # Already on a bio pool — nothing to do.
+        return default_pool
+
+    score = _bio_keyword_score(paper_content)
+    if score < _BIO_SWAP_THRESHOLD:
+        return default_pool
+
+    bio_pool = _load_bio_research_personas()
+    if not bio_pool:
+        return default_pool
+
+    agent_log.add(
+        agent="roundtable",
+        action="bio_auto_pick",
+        detail=(
+            f"Paper content scored {score} bio keywords (threshold "
+            f"{_BIO_SWAP_THRESHOLD}); swapping in bio-research reviewer "
+            f"pool ({len(bio_pool)} reviewers) instead of the active "
+            f"domain pool ({len(default_pool)})."
+        ),
+    )
+    return bio_pool
 
 
 # ---------------------------------------------------------------------------
