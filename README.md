@@ -3,6 +3,12 @@
 A configurable single-surface workbench framework for focused,
 long-running creative work.
 
+<p align="center">
+  <img src="docs/screenshots/wizard-preview.jpeg" width="700" alt="Onboarding wizard preview pane — Bio Research extension matched, 10 personas + 12 taxonomy nodes generated"/>
+  <br/>
+  <em>Answer 7 questions → matched extension → live config preview → apply.</em>
+</p>
+
 You answer 7 questions about your domain. The framework generates a
 workbench tailored to it — advisor panel, knowledge taxonomy, prompt
 tone, surface layout — and you can keep customizing from there. Domain
@@ -36,6 +42,31 @@ A bench with six opt-in surfaces, each driven by your domain config:
 Plus a `⌘K` command palette, slide-in project inspector, and a
 right-side TUI log streaming every AI call, sync, and extraction in
 real time.
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%">
+  <img src="docs/screenshots/wizard-step1.jpeg" alt="Wizard step 1 — domain question"/>
+  <br/><sub><b>Onboarding wizard, step 1.</b> Free-text domain answer drives extension matching.</sub>
+</td>
+<td width="50%">
+  <img src="docs/screenshots/wizard-wait.jpeg" alt="Wait state — 5-chapter SVG tutorial animation"/>
+  <br/><sub><b>Wait state.</b> 5-chapter SVG tutorial loops while generation runs; SSE captions update under it.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+  <img src="docs/screenshots/wizard-preview.jpeg" alt="Preview pane with Bio Research extension matched"/>
+  <br/><sub><b>Preview pane.</b> Matched extension badge, personas, taxonomy chips, raw YAML disclosure.</sub>
+</td>
+<td width="50%">
+  <img src="docs/screenshots/bench-research.jpeg" alt="Research surface — bio-research persona panel"/>
+  <br/><sub><b>Research surface.</b> Drew Endy / George Church / Jay Keasling / Doudna / Topol / Tim Lu after Bio Research extension applied.</sub>
+</td>
+</tr>
+</table>
 
 ## Quick start
 

@@ -51,18 +51,25 @@ export function KnowledgeGraph({ nodes, onSelect }: Props) {
 
   const initialNodes: Node[] = useMemo(
     () =>
-      nodes.map((n) => ({
-        id: n.id,
-        data: { label: <NodeLabel node={n} /> },
-        position: { x: 0, y: 0 },
-        style: {
-          background: 'white',
-          border: `2px solid ${nodeColor(taxonomy, n.node_type)}`,
-          borderRadius: 8,
-          padding: 8,
-          width: NODE_W,
-        },
-      })),
+      nodes.map((n) => {
+        const color = nodeColor(taxonomy, n.node_type);
+        return {
+          id: n.id,
+          data: { label: <NodeLabel node={n} color={color} /> },
+          position: { x: 0, y: 0 },
+          // Dark-theme styling: tint the node with the type color at low
+          // alpha, full-color border. Foreground text handled inside
+          // NodeLabel so it's themed against the tinted bg (not white).
+          style: {
+            background: `${color}26`,         // ~15% alpha — readable on dark bench
+            border: `1.5px solid ${color}`,
+            borderRadius: 8,
+            padding: 8,
+            width: NODE_W,
+            color: 'rgb(229, 231, 235)',      // gray-200 fallback for any default-styled text
+          },
+        };
+      }),
     [nodes, taxonomy],
   );
 
@@ -128,11 +135,13 @@ export function KnowledgeGraph({ nodes, onSelect }: Props) {
   );
 }
 
-function NodeLabel({ node }: { node: KnowledgeNode }) {
+function NodeLabel({ node, color }: { node: KnowledgeNode; color: string }) {
   return (
     <div className="text-xs text-left">
-      <div className="font-medium truncate">{node.title}</div>
-      <div className="opacity-70 truncate">{node.node_type}</div>
+      <div className="font-medium truncate text-foreground">{node.title}</div>
+      <div className="truncate font-mono text-[10px] mt-0.5" style={{ color }}>
+        {node.node_type}
+      </div>
     </div>
   );
 }
