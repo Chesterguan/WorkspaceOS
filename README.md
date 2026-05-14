@@ -232,16 +232,30 @@ Three capability kinds are runtime-active today:
   fields. Example: "Mark as decision" shows on claim/hypothesis/
   insight/question nodes; "Archive" shows on all nodes.
 
+**WorkspaceOS is the secretary, not the replacement.** Benchling,
+Zotero, Mail, etc. stay where they are — capabilities just pull
+breadcrumbs into the knowledge graph so the bench has context across
+your tools.
+
 Shipped extensions:
 
-- **`local-files-watcher`** — `ingest_source: local_files`. Walk a
-  directory under `WORKSPACE_HOST_PATH`, dedup by mtime+size, cap 100
-  files/tick, skip dot-dirs + `node_modules` + `.git`.
-- **`macos-mail`** — `ingest_source: macos_mail`. Declared; runs as a
-  host-side AppleScript bridge via
-  `scripts/outlook_bridge/install.sh`. Reads Apple Mail + Outlook for
-  Mac, POSTs to `/skills/local-ingest/items`. No in-container code
-  because Mail.app isn't accessible from Docker.
+- **`local-files-watcher`** — `ingest_source: local_files`. Walks a
+  directory under `WORKSPACE_HOST_PATH`, dedups by mtime+size, caps
+  100 files/tick, skips dot-dirs + `node_modules` + `.git`.
+- **`macos-mail`** — `ingest_source: macos_mail`. Host-side
+  AppleScript bridge via `scripts/outlook_bridge/install.sh`. Reads
+  Apple Mail + Outlook for Mac, POSTs to
+  `/skills/local-ingest/items`. No in-container code because Mail.app
+  isn't accessible from Docker.
+- **`benchling`** — `ingest_source: benchling_import`. Pulls recent
+  notebook entries from your Benchling tenant every 6h as
+  `benchling_entry` knowledge nodes. Title + author + date + link.
+  Body content stays in Benchling. Set `api_key` + `tenant` in the
+  extension manifest to enable.
+- **`zotero`** — `ingest_source: zotero_sync`. Pulls top-level
+  library items every 6h as `paper_reference` knowledge nodes. Title
+  + first author + year + DOI + venue. Set `api_key` + `library_id`
+  + `library_type` to enable.
 - **`bench-extras`** — utility pack: 2 slash commands + 2 action
   buttons. Use as the working example when authoring your own.
 
@@ -311,6 +325,30 @@ arbitrary file-drop, no `eval`, no extension-injected JSX.
   prior answers.
 - **Custom surface types** — not on the roadmap. The 6 surface types
   cover the framework's scope. Surface code stays in core.
+
+## Persona grounding (v0.2.2)
+
+Research roundtable personas can declare a `grounding` hint in their
+YAML — at chat time, WorkspaceOS looks up the persona's recent papers
+via Semantic Scholar (24h-cached) and prepends the paper titles to
+the system prompt. **"Drew Endy says X"** is anchored to actual Endy
+publications instead of fabricated.
+
+```yaml
+- id: drew_endy
+  name: Drew Endy
+  color: "#ef4444"
+  system_prompt: |
+    You are Drew Endy …
+  grounding:
+    source: semantic_scholar     # other sources reserved
+    query: "Drew Endy synthetic biology"
+    max_papers: 5
+```
+
+The `bio-research` extension's reviewers all ship with `grounding` set.
+Fails gracefully — if Semantic Scholar is down or rate-limited, the
+persona reverts to ungrounded behavior; the chat keeps working.
 
 ## In-app feedback
 

@@ -12,6 +12,14 @@ personas:
       compose with other parts and whether the work moves the field
       toward predictable, modular biology — or just re-discovers
       ad-hoc tricks.
+    # v0.2.2 grounding: pull this persona's actual recent papers from
+    # Semantic Scholar and prepend their titles to the system prompt
+    # at chat time, so the LLM anchors against real Endy work instead
+    # of fabricating positions.
+    grounding:
+      source: semantic_scholar
+      query: "Drew Endy synthetic biology"
+      max_papers: 5
 
   - id: church
     name: George Church
@@ -21,6 +29,10 @@ personas:
       genomic-scale thinking. You're allergic to small experiments
       that prove a known principle; you push for scale, novelty of
       method, and contributions that unlock downstream programs.
+    grounding:
+      source: semantic_scholar
+      query: "George Church genomics"
+      max_papers: 5
 
   - id: keasling
     name: Jay Keasling
@@ -31,6 +43,10 @@ personas:
       to commercial yield. You ask the question almost no one asks in
       academic settings: would this strain actually run for 14 days
       at 100,000-liter scale, and what would break?
+    grounding:
+      source: semantic_scholar
+      query: "Jay Keasling metabolic engineering"
+      max_papers: 5
 
   - id: doudna
     name: Jennifer Doudna
@@ -40,6 +56,10 @@ personas:
       specificity, off-target effects, mechanistic clarity. You're
       sharp on the difference between an in-vitro proof and an
       in-cellulo claim, and you flag overreach quickly.
+    grounding:
+      source: semantic_scholar
+      query: "Jennifer Doudna CRISPR"
+      max_papers: 5
 
   - id: topol
     name: Eric Topol
@@ -49,6 +69,10 @@ personas:
       evidence quality. You ask: what's the actual patient outcome?
       Is the cohort representative? Is the comparator fair? You're
       generous with promising work and ruthless with overclaiming.
+    grounding:
+      source: semantic_scholar
+      query: "Eric Topol digital medicine"
+      max_papers: 5
 
   - id: tim_lu
     name: Tim Lu
@@ -58,3 +82,7 @@ personas:
       biology and therapeutic / industrial application. You ask what
       this becomes outside the lab: does it scale, does it survive
       regulatory review, is the IP defensible, who's the buyer?
+    grounding:
+      source: semantic_scholar
+      query: "Timothy Lu synthetic biology therapeutic"
+      max_papers: 5

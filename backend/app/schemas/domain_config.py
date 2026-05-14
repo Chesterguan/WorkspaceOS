@@ -28,6 +28,24 @@ class AppConfig(BaseModel):
 # Personas
 # ---------------------------------------------------------------------------
 
+class PersonaGrounding(BaseModel):
+    """Optional publication-grounding hint. When set, the research chat
+    service looks up the persona's recent papers via the configured
+    source and prepends paper titles to the system prompt — so "Drew
+    Endy says X" is anchored to real Endy publications instead of LLM
+    fabrication.
+
+    Source `semantic_scholar` uses the existing scholar_service. Other
+    sources (orcid, openalex, custom) can be added without schema
+    changes — `extra_config` is a free-form dict.
+    """
+
+    source: Literal["semantic_scholar"] = "semantic_scholar"
+    query: str = Field(..., description="Author name or topic string for the lookup.")
+    max_papers: int = Field(default=5, ge=1, le=20)
+    extra_config: dict = Field(default_factory=dict)
+
+
 class Persona(BaseModel):
     id: str
     name: str
@@ -39,6 +57,10 @@ class Persona(BaseModel):
     # Research-style metadata — present on academic reviewers, optional for cofounders.
     modeled_after: Optional[str] = None
     focus: Optional[str] = None
+    # Optional publication grounding (v0.2.2). Research personas get
+    # anchored to real papers when configured; cofounder personas
+    # typically leave this null.
+    grounding: Optional[PersonaGrounding] = None
 
 
 class PersonaRouting(BaseModel):

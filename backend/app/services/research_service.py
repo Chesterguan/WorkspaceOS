@@ -26,6 +26,7 @@ from app.services.paper_reviewers import (
     get_reviewer,
     route_to_research_reviewers,
 )
+from app.services.persona_grounding import grounding_prompt_fragment
 from app.services.repo_context import get_generation_context
 from app.services import knowledge_extractor
 from app.services.scholar_service import (
@@ -432,14 +433,25 @@ async def send_research_message(
         if suffix_marker in base_prompt:
             base_prompt = base_prompt[:base_prompt.index(suffix_marker)]
 
-        system = (
-            f"{base_prompt}\n\n"
+        # v0.2.2 grounding: if the persona declares a grounding hint,
+        # look up their recent papers via Semantic Scholar (cached 24h)
+        # and prepend them to the system prompt so factual claims
+        # anchor to real publications instead of being fabricated.
+        grounding_block = ""
+        if reviewer.grounding:
+            grounding_block = await grounding_prompt_fragment(reviewer.grounding)
+
+        system_parts = [base_prompt]
+        if grounding_block:
+            system_parts.append(grounding_block)
+        system_parts.append(
             f"ADDITIONAL CONTEXT: You are also acting as a research advisor in a chat conversation. "
             f"When the researcher asks questions, provide detailed, citation-aware advice from your "
             f"perspective as {reviewer.modeled_after}. Reference specific papers from the literature "
-            f"context when relevant. Use [N] citation notation matching the numbered papers in context.\n\n"
-            f"RESEARCH ASSISTANT GUIDELINES:\n{RESEARCH_SYSTEM}"
+            f"context when relevant. Use [N] citation notation matching the numbered papers in context."
         )
+        system_parts.append(f"RESEARCH ASSISTANT GUIDELINES:\n{RESEARCH_SYSTEM}")
+        system = "\n\n".join(system_parts)
 
         try:
             reply_text = await ai.complete(system=system, user=user_prompt)

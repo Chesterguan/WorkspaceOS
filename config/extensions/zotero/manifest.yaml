@@ -1,0 +1,27 @@
+id: zotero
+name: Zotero Library Sync
+description: Read-only sync of your Zotero library into the knowledge
+  graph. Each top-level item becomes a `paper_reference` node — title,
+  first author, year, DOI, venue. Lets the research roundtable and
+  paper pipeline anchor responses against papers you've actually read,
+  without making you migrate citation libraries.
+version: 0.1.0
+author: workspaceos
+
+matches:
+  domain_keywords: []   # opt-in only
+
+capabilities:
+  - kind: ingest_source
+    name: zotero_sync
+    description: |
+      Pulls top-level items from your Zotero library every 6h.
+      To enable: set api_key + library_id + library_type below.
+      api_key: https://www.zotero.org/settings/keys
+      library_id: numeric (your user id, or group id)
+    config:
+      api_key: ""
+      library_id: ""
+      library_type: "user"           # "user" or "group"
+      items_limit: 100
+      poll_interval_seconds: 21600    # 6 hours

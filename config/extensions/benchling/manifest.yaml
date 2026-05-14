@@ -1,0 +1,31 @@
+id: benchling
+name: Benchling Notebook Sync
+description: |
+  Read-only daily sync of recent Benchling notebook entries into the
+  knowledge graph. Each entry becomes a `benchling_entry` node with
+  title, author, last-modified date, and a link back to Benchling.
+  Body content stays in Benchling — this is a pointer-into-your-ELN,
+  not a mirror. v1 ships notebook entries only.
+version: 0.1.0
+author: workspaceos
+
+matches:
+  domain_keywords: []   # opt-in only — user adds keys to .env to enable
+
+capabilities:
+  - kind: ingest_source
+    name: benchling_import
+    description: |
+      Pulls notebook entries modified in the last N days from your
+      Benchling tenant. To enable: set api_key + tenant in the
+      config below (or override via the extension's settings panel
+      once that lands).
+    config:
+      # Required — get from Benchling Settings → API Keys.
+      api_key: ""
+      # Required — your tenant subdomain (e.g. "mylab.benchling.com").
+      tenant: ""
+      # Optional — how far back to look on each tick.
+      days_back: 14
+      page_size: 50
+      poll_interval_seconds: 21600     # 6 hours

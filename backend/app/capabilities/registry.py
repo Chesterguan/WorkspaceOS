@@ -82,8 +82,12 @@ def list_ingest_sources() -> list[str]:
 # runner is a 2-line change here.
 
 from app.capabilities.local_files import LocalFilesIngest  # noqa: E402
+from app.capabilities.benchling_import import BenchlingImport  # noqa: E402
+from app.capabilities.zotero_sync import ZoteroSync  # noqa: E402
 
 register_ingest_source("local_files", LocalFilesIngest)
+register_ingest_source("benchling_import", BenchlingImport)
+register_ingest_source("zotero_sync", ZoteroSync)
 
 # v0.3 activation: uncomment the next line.
 # discover_entry_points()
