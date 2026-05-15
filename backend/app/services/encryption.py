@@ -1,8 +1,17 @@
 """Simple Fernet encryption for API keys stored in the database.
 
 The encryption key is auto-generated on first use and stored at
-/app/backend_data/fernet.key (inside the Docker volume so it persists
-across container restarts).
+/app/data/fernet.key. /app/data IS the mounted Docker volume
+(`backend_data:/app/data` in docker-compose.yml), so the key
+persists across container restarts AND recreates.
+
+History: the default used to be /app/backend_data/fernet.key, which
+was NEVER mounted — every `docker compose up --force-recreate`
+generated a fresh key and silently invalidated every DB-encrypted
+secret (API keys saved via Settings would "work" then mysteriously
+revert to .env after a rebuild). Pointing at the actual persisted
+volume fixes that. Override with FERNET_KEY_PATH if you mount the
+volume elsewhere.
 """
 import logging
 import os
@@ -12,7 +21,7 @@ from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
 
-_KEY_PATH = Path(os.environ.get("FERNET_KEY_PATH", "/app/backend_data/fernet.key"))
+_KEY_PATH = Path(os.environ.get("FERNET_KEY_PATH", "/app/data/fernet.key"))
 _fernet = None
 
 
