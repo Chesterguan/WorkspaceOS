@@ -30,7 +30,16 @@ interface StepProps {
 // 1 · Domain
 // ---------------------------------------------------------------------------
 
+const DOMAIN_MAX = 1000;
+
 export function DomainStep({ answers, onChange, onNext }: StepProps) {
+  const len = answers.domain.length;
+  // Counter only appears once the answer is substantial, so it
+  // reassures rather than nags. maxLength hard-stops at the backend's
+  // limit so the wizard can never produce a 422 the user only
+  // discovers after filling every step.
+  const showCount = len > 500;
+  const nearLimit = len > 900;
   return (
     <StepShell
       title="What field are you in?"
@@ -39,16 +48,29 @@ export function DomainStep({ answers, onChange, onNext }: StepProps) {
       <Input
         autoFocus
         value={answers.domain}
-        onChange={(e) => onChange({ domain: e.target.value })}
+        maxLength={DOMAIN_MAX}
+        onChange={(e) => onChange({ domain: e.target.value.slice(0, DOMAIN_MAX) })}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && answers.domain.trim()) onNext();
         }}
         placeholder="e.g. medical imaging with diffusion models"
         className="text-lg h-14 px-5 bg-card/40 border-border/60 focus:border-violet-500/60"
       />
-      <p className="text-xs text-muted-foreground">
-        We&apos;ll use this to pick your advisor panel, taxonomy, and prompt tone.
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          We&apos;ll use this to pick your advisor panel, taxonomy, and prompt tone.
+        </p>
+        {showCount && (
+          <span
+            className={cn(
+              'text-[11px] tabular-nums shrink-0',
+              nearLimit ? 'text-amber-400' : 'text-muted-foreground/60',
+            )}
+          >
+            {len}/{DOMAIN_MAX}
+          </span>
+        )}
+      </div>
     </StepShell>
   );
 }

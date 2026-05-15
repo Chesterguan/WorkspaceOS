@@ -43,30 +43,127 @@ const SENSITIVE_KEYS = new Set([
   'password', 'secret', 'client_secret',
 ]);
 
-// Per-capability field help — small inline hints under each input.
-// Frontend-owned because a non-CS user won't read the docs page; they
-// need the explanation right next to the field. Expandable to a
-// data-source-from-backend later.
-const FIELD_HELP: Record<string, Record<string, string>> = {
+// Per-capability, per-field metadata. Frontend-owned because a non-CS
+// user won't read a docs page — they need a plain label, a one-line
+// explanation, a "where do I get this" link, and (for list fields) a
+// checkbox picker right next to the input. This is the same treatment
+// the AI & API Keys card got; the cold-open UX test showed the raw
+// `entity_types` free-text field was undiscoverable.
+interface FieldMeta {
+  label?: string; // human label; falls back to a humanized key
+  help?: string; // plain-language one-liner
+  getUrl?: string; // "where to get this" external link
+  getLabel?: string; // link text (default "Where to get this")
+  kind?: 'multiselect'; // special input rendering
+  options?: { value: string; label: string; hint?: string }[];
+}
+
+const FIELD_META: Record<string, Record<string, FieldMeta>> = {
   benchling_import: {
-    api_key: 'Benchling Settings → API keys → Create new API key. Permissions: notebook read.',
-    tenant: 'Your subdomain. For lab.benchling.com use "lab.benchling.com" (no https://).',
-    days_back: 'How many days of recent entries to pull each tick. Default 14.',
-    page_size: 'Items per API call. Max 100.',
+    api_key: {
+      label: 'Benchling API key',
+      help: 'A token that lets WorkspaceOS read your Benchling data. It is stored encrypted.',
+      getUrl: 'https://benchling.com',
+      getLabel: 'Benchling → Settings → API keys → Create new key (notebook read)',
+    },
+    tenant: {
+      label: 'Your Benchling address',
+      help: 'Just the part before benchling.com. If you log in at lab.benchling.com, enter "lab.benchling.com" — no https://.',
+    },
+    entity_types: {
+      label: 'What to pull from Benchling',
+      help: 'Pick the kinds of Benchling data you want to appear in your knowledge graph.',
+      kind: 'multiselect',
+      options: [
+        { value: 'entries', label: 'Notebook entries', hint: 'Your day-to-day lab notebook' },
+        { value: 'dna_sequences', label: 'Plasmids / DNA sequences', hint: 'Your plasmid registry → Construct nodes' },
+        { value: 'custom_entities', label: 'Strains / custom entities', hint: 'Needs the schema filter below' },
+      ],
+    },
+    custom_entity_schemas: {
+      label: 'Strain schema names (optional)',
+      help: 'Only if you ticked "Strains" above. Type the Benchling schema name(s) to pull, e.g. "strain". Comma-separated, case-insensitive. Leave blank to skip strains.',
+    },
+    days_back: {
+      label: 'How far back to look',
+      help: 'Number of days of recent changes to pull each sync. Default 14.',
+    },
+    page_size: { label: 'Items per request', help: 'How many items to fetch per API call. Max 100.' },
   },
   zotero_sync: {
-    api_key: 'zotero.org/settings/keys → Create new private key. Allow library access.',
-    library_id: 'Your Zotero userID (shown on the API keys page). Click Auto-fill to derive.',
-    library_type: '"user" for personal library, "group" for a group library.',
-    items_limit: 'Items per tick. Max 100. Default 100.',
+    api_key: {
+      label: 'Zotero API key',
+      help: 'A private key that lets WorkspaceOS read your Zotero library. Stored encrypted.',
+      getUrl: 'https://www.zotero.org/settings/keys',
+      getLabel: 'zotero.org → Settings → Keys → Create new private key',
+    },
+    library_id: {
+      label: 'Zotero library ID',
+      help: 'Your numeric Zotero userID (shown on the API keys page). Or click Auto-fill to derive it from your key.',
+    },
+    library_type: {
+      label: 'Library type',
+      help: 'Type "user" for your personal library, or "group" for a shared group library.',
+    },
+    items_limit: { label: 'Items per sync', help: 'Max items to pull each tick. Max 100. Default 100.' },
+  },
+  github_user_tools: {
+    usernames: {
+      label: 'GitHub usernames',
+      help: 'The GitHub handle(s) whose public repos become Tool nodes. Comma-separated for multiple, e.g. "qiandemoni, labmate".',
+    },
+    token: {
+      label: 'GitHub token (optional)',
+      help: 'Only needed if you hit rate limits. A fine-grained token with public-repo read is enough.',
+      getUrl: 'https://github.com/settings/personal-access-tokens/new',
+      getLabel: 'GitHub → Settings → Developer settings → Fine-grained tokens',
+    },
+  },
+  preprint_ingest: {
+    keywords: {
+      label: 'Topics to follow',
+      help: 'Comma-separated phrases. A preprint is pulled if any phrase appears in its title/abstract, e.g. "plant cell wall, glucomannan, hemicellulose". Leave blank and nothing is pulled.',
+    },
+    sources: {
+      label: 'Preprint servers',
+      help: 'Which servers to watch. "biorxiv" for biology, "medrxiv" for clinical. Comma-separated.',
+    },
+    days_back: { label: 'How far back to look', help: 'Days of recent preprints to scan each run. Default 7.' },
   },
   local_files: {
-    watch_path: 'Directory inside the backend container. Default /projects — set WORKSPACE_HOST_PATH in .env to control the bind-mount source.',
-    poll_interval_seconds: 'How often to walk the directory. Default 30.',
-    max_files_per_tick: 'Cap to prevent floods on first run. Default 100.',
-    max_size_mb: 'Skip files larger than this. Default 1.0.',
+    watch_path: {
+      label: 'Folder to watch',
+      help: 'A directory the backend can see. Default /projects. Changing this needs a Docker bind-mount — ask whoever set up your install.',
+    },
+    max_files_per_tick: { label: 'Max files per scan', help: 'Cap to avoid floods on first run. Default 100.' },
+    max_size_mb: { label: 'Max file size (MB)', help: 'Skip files bigger than this. Default 1.0.' },
+  },
+  ot2_protocols: {
+    watch_path: {
+      label: 'Protocol folder',
+      help: 'Folder of Opentrons .py protocols the backend can see. Default /protocols. Changing this needs a Docker bind-mount — ask whoever set up your install.',
+    },
+    recursive: { label: 'Include subfolders', help: 'true to walk subdirectories, false for top-level only.' },
   },
 };
+
+// Humanize a raw config key for display when there's no explicit label.
+function humanizeKey(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\bseconds\b/i, '(seconds)')
+    .replace(/^\w/, (c) => c.toUpperCase());
+}
+
+// Render a *_seconds interval as a human phrase, e.g. 21600 → "every 6 hours".
+function intervalLabel(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  const h = seconds / 3600;
+  const m = seconds / 60;
+  if (h >= 1 && Number.isInteger(h)) return `= every ${h} hour${h === 1 ? '' : 's'}`;
+  if (m >= 1 && Number.isInteger(m)) return `= every ${m} minute${m === 1 ? '' : 's'}`;
+  return `= every ${seconds}s`;
+}
 
 function isAutoFillSupported(capabilityName: string): boolean {
   return capabilityName === 'zotero_sync';
@@ -188,8 +285,23 @@ export function ConfigureCapabilityModal({
   }
 
   const fieldKeys = Object.keys(config);
-  const help = FIELD_HELP[capabilityName] || {};
+  const metaForCap = FIELD_META[capabilityName] || {};
   const autoFillOk = isAutoFillSupported(capabilityName);
+
+  function toggleMultiValue(key: string, optionValue: string) {
+    setConfig((prev) => {
+      const cur = prev[key];
+      const arr: string[] = Array.isArray(cur)
+        ? (cur as string[])
+        : typeof cur === 'string' && cur
+          ? cur.split(',').map((s) => s.trim()).filter(Boolean)
+          : [];
+      const nextArr = arr.includes(optionValue)
+        ? arr.filter((v) => v !== optionValue)
+        : [...arr, optionValue];
+      return { ...prev, [key]: nextArr };
+    });
+  }
 
   // a11y plumbing: Escape closes, focus returns to the trigger that
   // opened the modal, and the dialog is announced by its h2 title.
@@ -284,38 +396,93 @@ export function ConfigureCapabilityModal({
             fieldKeys.map((key) => {
               const isSensitive = SENSITIVE_KEYS.has(key);
               const fromOverlay = overlayKeys.includes(key);
-              const value = String(config[key] ?? '');
+              const meta = metaForCap[key] || {};
+              const label = meta.label || humanizeKey(key);
+              const rawVal = config[key];
+              const value = Array.isArray(rawVal)
+                ? (rawVal as string[]).join(', ')
+                : String(rawVal ?? '');
+              const selectedSet = new Set(
+                Array.isArray(rawVal)
+                  ? (rawVal as string[])
+                  : typeof rawVal === 'string' && rawVal
+                    ? rawVal.split(',').map((s) => s.trim()).filter(Boolean)
+                    : [],
+              );
+              const intervalHint =
+                key.endsWith('_seconds') && value && Number(value)
+                  ? intervalLabel(Number(value))
+                  : '';
               return (
                 <div key={key} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-medium text-muted-foreground">
-                      {key}
-                      {fromOverlay && (
-                        <span className="ml-1.5 text-[9px] text-emerald-300">
-                          (saved)
-                        </span>
-                      )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <label className="text-xs font-medium text-foreground">
+                      {label}
                     </label>
+                    {fromOverlay && (
+                      <span className="text-[9px] text-emerald-300">saved</span>
+                    )}
+                    {meta.getUrl && (
+                      <a
+                        href={meta.getUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-0.5 text-[10px] text-violet-400 hover:text-violet-300"
+                      >
+                        {meta.getLabel || 'Where to get this'} ↗
+                      </a>
+                    )}
                   </div>
-                  <Input
-                    type={isSensitive ? 'password' : 'text'}
-                    value={value}
-                    onChange={(e) => setField(key, e.target.value)}
-                    placeholder={isSensitive && value === '***' ? '***' : ''}
-                    // Disable browser autofill — otherwise the browser
-                    // happily fills library_id with the user's email,
-                    // names like "tenant" with anything in autofill,
-                    // etc. These are all narrow config values, not
-                    // saved-credential fields the browser should help
-                    // with.
-                    autoComplete="off"
-                    spellCheck={false}
-                    autoCorrect="off"
-                    name={`cap-${key}-${Math.random().toString(36).slice(2, 7)}`}
-                    className="bg-card/40 border-border/60 h-9 text-sm font-mono"
-                  />
-                  {help[key] && (
-                    <p className="text-[10px] text-muted-foreground/80">{help[key]}</p>
+
+                  {meta.kind === 'multiselect' && meta.options ? (
+                    <div className="space-y-1.5 rounded-md border border-border/60 bg-card/40 p-2.5">
+                      {meta.options.map((opt) => (
+                        <label
+                          key={opt.value}
+                          className="flex items-start gap-2 cursor-pointer text-xs"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSet.has(opt.value)}
+                            onChange={() => toggleMultiValue(key, opt.value)}
+                            className="mt-0.5 accent-violet-500"
+                          />
+                          <span>
+                            <span className="text-foreground">{opt.label}</span>
+                            {opt.hint && (
+                              <span className="block text-[10px] text-muted-foreground/80">
+                                {opt.hint}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <Input
+                      type={isSensitive ? 'password' : 'text'}
+                      value={value}
+                      onChange={(e) => setField(key, e.target.value)}
+                      placeholder={isSensitive && value === '***' ? '***' : ''}
+                      // Disable browser autofill — otherwise the browser
+                      // fills these narrow config values with saved
+                      // emails/passwords.
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
+                      name={`cap-${key}-${Math.random().toString(36).slice(2, 7)}`}
+                      className="bg-card/40 border-border/60 h-9 text-sm font-mono"
+                    />
+                  )}
+
+                  {meta.help && (
+                    <p className="text-[10px] text-muted-foreground/80">{meta.help}</p>
+                  )}
+                  {intervalHint && (
+                    <p className="text-[10px] text-violet-300/80">{intervalHint}</p>
+                  )}
+                  {!meta.label && !meta.help && (
+                    <p className="text-[9px] text-muted-foreground/50 font-mono">{key}</p>
                   )}
                 </div>
               );

@@ -25,7 +25,13 @@ class OnboardingAnswers(BaseModel):
 
     domain: str = Field(
         ..., description="Free-text research/work domain, e.g. 'computational biology'.",
-        min_length=1, max_length=200,
+        # 1000, not 200: the wizard explicitly asks the user to "be
+        # specific" with "a sentence or two". A real domain answer
+        # ("Plant synthetic biology — engineering cell wall
+        # polysaccharide biosynthesis in Arabidopsis…") runs 200-400
+        # chars easily; the old 200 cap hard-failed onboarding with a
+        # raw 422 after the user filled the whole wizard.
+        min_length=1, max_length=1000,
     )
     primary_outputs: List[str] = Field(
         default_factory=list,
