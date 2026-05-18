@@ -1,0 +1,48 @@
+id: datamaster
+name: DataMaster Data Experiment
+description: |
+  Runs SJTU DataMaster's data-centric DataTree search as an isolated
+  sidecar service. Grounds the task in the current project's knowledge
+  graph (open Experiments, Claims, paper references), streams the
+  trajectory into the bench TUI log, and lands the result as an
+  Experiment node linked to the nodes that seeded it. Opt-in: enable
+  and point sidecar_base_url at a running DataMaster sidecar in
+  Settings. No framework code runs in the WorkspaceOS backend.
+version: 0.1.0
+author: workspaceos
+
+matches:
+  domain_keywords: []   # opt-in only — user enables via Settings
+
+capabilities:
+  - kind: slash_command
+    name: run_data_experiment
+    description: |
+      Run a DataMaster data-pipeline search for the current project,
+      grounded in the knowledge graph. Result becomes an Experiment node.
+    config:
+      label: "Run DataMaster experiment"
+      keywords: [datamaster, data experiment, pipeline search, run datamaster]
+      icon: "flask-conical"
+      handler_kind: api_call
+      handler_target: "/capabilities/runners/run_data_experiment/trigger"
+      sidecar_base_url: "http://datamaster:8800"
+      sidecar_token: ""
+      default_max_minutes: 30
+      allowed_dataset_root: ""
+      inputs:
+        - name: objective
+          label: "Objective"
+          type: textarea
+          required: true
+          placeholder: "e.g. improve validation AUC by finding better feature transforms"
+        - name: dataset_ref
+          label: "Dataset"
+          type: text
+          required: true
+          placeholder: "hf:org/name  or  /projects/<allowed path>"
+        - name: max_minutes
+          label: "Max minutes"
+          type: number
+          required: false
+          placeholder: "30"

@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # encrypted DB; we just don't echo it back over the wire.
 SENSITIVE_KEYS: Set[str] = {
     "api_key", "api_token", "token", "access_token", "password",
-    "secret", "client_secret",
+    "secret", "client_secret", "sidecar_token",
 }
 
 
