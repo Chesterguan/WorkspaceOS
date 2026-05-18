@@ -1,5 +1,5 @@
 id: datamaster
-name: DataMaster Data Experiment
+name: DataMaster Sidecar
 description: |
   Runs SJTU DataMaster's data-centric DataTree search as an isolated
   sidecar service. Grounds the task in the current project's knowledge

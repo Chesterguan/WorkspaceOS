@@ -4,6 +4,7 @@ from app.services.capability_settings_service import SENSITIVE_KEYS
 
 
 def test_datamaster_extension_loads_with_slash_capability():
+    ext_service.reload_extensions()
     exts = {e.manifest.id: e for e in ext_service.get_all_extensions()}
     assert "datamaster" in exts, "datamaster extension not loaded"
     caps = exts["datamaster"].manifest.capabilities
