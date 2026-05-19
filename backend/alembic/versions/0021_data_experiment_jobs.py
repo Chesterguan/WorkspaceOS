@@ -37,7 +37,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True),
                   server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
+                  server_default=sa.func.now(), onupdate=sa.func.now(),
+                  nullable=False),
     )
     op.create_index("ix_data_experiment_jobs_user_id",
                     "data_experiment_jobs", ["user_id"])
