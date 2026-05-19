@@ -218,6 +218,16 @@ _EXTENSION_ID = "datamaster"
 _CAP_NAME = "run_data_experiment"
 _SOURCE = "datamaster"
 
+# Module-level set retains task references so CPython's GC cannot collect a
+# running task before it completes (asyncio only holds a weak reference).
+_background_tasks: "set[asyncio.Task]" = set()
+
+
+def _spawn_run_job(**kwargs: Any) -> None:
+    task = asyncio.create_task(_run_job(**kwargs))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
 
 async def effective_config() -> Dict[str, Any]:
     """Manifest config merged with the user's encrypted Settings overlay."""
@@ -276,6 +286,7 @@ async def _run_job(
     async with _session() as db:
         await _set_status(db, job_id, status="running")
     sidecar_job_id = str(job_id)
+    persisted_node_id: Optional[uuid.UUID] = None
     try:
         await sidecar.submit_job(base_url, token, {
             "job_id": sidecar_job_id,
@@ -328,6 +339,7 @@ async def _run_job(
                 result=result,
                 seed_node_ids=seed_node_ids,
             )
+            persisted_node_id = node_id
             await _set_status(db, job_id, status="done",
                               score=result.get("score"),
                               result_node_id=node_id)
@@ -336,9 +348,22 @@ async def _run_job(
              f"(score {result.get('score')})")
     except Exception as exc:  # noqa: BLE001 — surface, never crash the loop
         logger.exception("datamaster _run_job failed")
-        emit("error", _SOURCE, f"DataMaster run crashed: {exc}")
-        async with _session() as db:
-            await _set_status(db, job_id, status="error", error=str(exc)[:4000])
+        try:
+            if persisted_node_id is not None:
+                # The experiment landed; only post-persist bookkeeping failed.
+                emit("warn", _SOURCE,
+                     f"DataMaster experiment persisted but status update "
+                     f"hiccuped: {exc}")
+                async with _session() as db:
+                    await _set_status(db, job_id, status="done",
+                                      result_node_id=persisted_node_id)
+            else:
+                emit("error", _SOURCE, f"DataMaster run crashed: {exc}")
+                async with _session() as db:
+                    await _set_status(db, job_id, status="error",
+                                      error=str(exc)[:4000])
+        except Exception:  # noqa: BLE001 — last-resort: never let the task die uncaught
+            logger.exception("datamaster _run_job error-handler also failed")
 
 
 async def run_data_experiment_handler(
@@ -356,6 +381,8 @@ async def run_data_experiment_handler(
                 "needs project context."}
     if not objective:
         return {"ok": False, "toast": "Objective is required."}
+    if not dataset_ref:
+        return {"ok": False, "toast": "Dataset is required."}
     try:
         project_id = uuid.UUID(str(project_id_raw))
     except ValueError:
@@ -412,11 +439,11 @@ async def run_data_experiment_handler(
          f"DataMaster run queued for project {project_id} "
          f"({len(seed_ids)} KG seeds, <={max_minutes} min)")
 
-    asyncio.create_task(_run_job(
+    _spawn_run_job(
         job_id=job.id, base_url=base_url, token=token,
         max_minutes=max_minutes, brief=brief, seed_node_ids=seed_ids,
         dataset=dataset, objective=objective,
-    ))
+    )
 
     return {"ok": True, "job_id": str(job.id),
             "toast": "DataMaster run started — watch the TUI log; the "

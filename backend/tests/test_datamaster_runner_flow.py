@@ -94,6 +94,32 @@ async def test_run_job_sidecar_error_marks_error_no_node(
     assert refreshed.result_node_id is None
 
 
+def test_spawn_run_job_retains_task_reference(monkeypatch):
+    import asyncio as _aio
+
+    captured = {}
+
+    def fake_create_task(coro):
+        t = _DummyTask(coro)
+        captured["task"] = t
+        return t
+
+    class _DummyTask:
+        def __init__(self, coro):
+            self._cb = None
+            coro.close()  # don't actually run
+
+        def add_done_callback(self, cb):
+            self._cb = cb
+
+    monkeypatch.setattr(R.asyncio, "create_task", fake_create_task)
+    R._spawn_run_job(job_id=None, base_url="x", token=None, max_minutes=1,
+                     brief="b", seed_node_ids=[], dataset={}, objective="o")
+    assert captured["task"] in R._background_tasks
+    captured["task"]._cb(captured["task"])  # simulate completion
+    assert captured["task"] not in R._background_tasks
+
+
 @pytest.mark.asyncio
 async def test_handler_rejects_invalid_dataset(
     db_session, sample_user, monkeypatch
