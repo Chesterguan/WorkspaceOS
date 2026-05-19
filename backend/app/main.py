@@ -166,6 +166,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.capabilities import ingest_runner
     ingest_runner.start_all()
 
+    # Reconcile any DataMaster jobs left 'running' by a previous process crash
+    from app.capabilities.datamaster_runner import reconcile_running_jobs
+    asyncio.create_task(reconcile_running_jobs())
+
     yield
     sync_task.cancel()
     backup_task.cancel()
