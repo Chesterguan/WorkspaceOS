@@ -97,5 +97,9 @@ register_slash_runner("trigger_local_files_scan", _trigger_local_files_scan)
 from app.capabilities.methods_drafter import draft_methods_handler  # noqa: E402
 register_slash_runner("draft_methods", draft_methods_handler)
 
+# v0.2.7 — DataMaster data-experiment runner (ai-research capability)
+from app.capabilities.datamaster_runner import run_data_experiment_handler  # noqa: E402
+register_slash_runner("run_data_experiment", run_data_experiment_handler)
+
 # v0.3 activation: uncomment the next line.
 # discover_entry_points()

@@ -9,6 +9,8 @@ Spec: docs/superpowers/specs/2026-05-18-datamaster-capability-design.md
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import re
 import uuid
@@ -18,7 +20,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import AsyncSessionLocal
+from app.models.data_experiment import DataExperimentJob
 from app.models.knowledge import KnowledgeEdge, KnowledgeNode
+from app.services import capability_settings_service as cs
+from app.services import extensions as ext_service
+from app.services.event_stream import emit
+from app.capabilities import datamaster_sidecar as sidecar
 
 _HF_REF_RE = re.compile(r"^[\w.\-]+/[\w.\-]+$")
 
@@ -202,3 +210,214 @@ async def persist_result(
                 await sp.rollback()
     await db.commit()
     return node.id
+
+
+logger = logging.getLogger(__name__)
+
+_EXTENSION_ID = "datamaster"
+_CAP_NAME = "run_data_experiment"
+_SOURCE = "datamaster"
+
+
+async def effective_config() -> Dict[str, Any]:
+    """Manifest config merged with the user's encrypted Settings overlay."""
+    manifest_cfg: Dict[str, Any] = {}
+    for ext in ext_service.get_all_extensions():
+        if ext.manifest.id != _EXTENSION_ID:
+            continue
+        for cap in ext.manifest.capabilities:
+            if cap.name == _CAP_NAME:
+                manifest_cfg = cap.config or {}
+                break
+    overlay = await cs.get_overlay(_EXTENSION_ID, _CAP_NAME)
+    return cs.effective_config(manifest_cfg, overlay)
+
+
+async def _set_status(db: AsyncSession, job_id: uuid.UUID, **fields: Any) -> None:
+    job = (await db.execute(
+        select(DataExperimentJob).where(DataExperimentJob.id == job_id)
+    )).scalar_one_or_none()
+    if job is None:
+        return
+    for k, v in fields.items():
+        setattr(job, k, v)
+    await db.commit()
+
+
+async def _run_job(
+    *,
+    job_id: uuid.UUID,
+    base_url: str,
+    token: Optional[str],
+    max_minutes: int,
+    brief: str,
+    seed_node_ids: List[uuid.UUID],
+    dataset: Dict[str, Any],
+    objective: str,
+    _db: Optional[AsyncSession] = None,
+) -> None:
+    """Background worker: submit -> relay SSE -> persist. Owns its own
+    DB session (the request session is closed by the time this runs).
+
+    ``_db`` is a test-only seam: when provided, all DB operations use
+    that session instead of opening new ``AsyncSessionLocal()`` sessions.
+    Production callers leave it ``None``.
+    """
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _session():  # type: ignore[override]
+        if _db is not None:
+            yield _db
+        else:
+            async with AsyncSessionLocal() as s:
+                yield s
+
+    async with _session() as db:
+        await _set_status(db, job_id, status="running")
+    sidecar_job_id = str(job_id)
+    try:
+        await sidecar.submit_job(base_url, token, {
+            "job_id": sidecar_job_id,
+            "objective": objective,
+            "brief_md": brief,
+            "dataset": dataset,
+            "limits": {"max_minutes": max_minutes},
+        })
+
+        result: Optional[Dict[str, Any]] = None
+        err: Optional[str] = None
+
+        async def _consume() -> None:
+            nonlocal result, err
+            async for evt in sidecar.stream_job(base_url, token, sidecar_job_id):
+                level, summary, _meta = map_event(evt)
+                emit(level, _SOURCE, summary)
+                if evt.get("type") == "done":
+                    result = evt.get("data") or {}
+                    return
+                if evt.get("type") == "error":
+                    d = evt.get("data") or {}
+                    err = d.get("message") or d.get("raw") or "sidecar error"
+                    return
+
+        try:
+            await asyncio.wait_for(_consume(), timeout=max_minutes * 60)
+        except asyncio.TimeoutError:
+            err = f"run exceeded {max_minutes} min — cancelled"
+            await sidecar.cancel_job(base_url, token, sidecar_job_id)
+
+        if err is not None or result is None:
+            msg = err or "sidecar closed stream without a result"
+            emit("error", _SOURCE, f"DataMaster failed: {msg}")
+            async with _session() as db:
+                await _set_status(db, job_id, status="error", error=msg[:4000])
+            return
+
+        async with _session() as db:
+            job = (await db.execute(
+                select(DataExperimentJob).where(
+                    DataExperimentJob.id == job_id)
+            )).scalar_one()
+            node_id = await persist_result(
+                db,
+                user_id=job.user_id,
+                project_id=job.project_id,
+                objective=objective,
+                sidecar_job_id=sidecar_job_id,
+                result=result,
+                seed_node_ids=seed_node_ids,
+            )
+            await _set_status(db, job_id, status="done",
+                              score=result.get("score"),
+                              result_node_id=node_id)
+        emit("success", _SOURCE,
+             f"DataMaster experiment landed as an Experiment node "
+             f"(score {result.get('score')})")
+    except Exception as exc:  # noqa: BLE001 — surface, never crash the loop
+        logger.exception("datamaster _run_job failed")
+        emit("error", _SOURCE, f"DataMaster run crashed: {exc}")
+        async with _session() as db:
+            await _set_status(db, job_id, status="error", error=str(exc)[:4000])
+
+
+async def run_data_experiment_handler(
+    payload: Dict[str, Any],
+    db: AsyncSession,
+    user_id: uuid.UUID,
+) -> Dict[str, Any]:
+    """Slash handler. Validates, healthchecks, guards concurrency,
+    persists the job row, spawns the background runner, returns fast."""
+    project_id_raw = payload.get("project_id")
+    objective = str(payload.get("objective") or "").strip()
+    dataset_ref = str(payload.get("dataset_ref") or "").strip()
+    if not project_id_raw:
+        return {"ok": False, "toast": "Open a project first — DataMaster "
+                "needs project context."}
+    if not objective:
+        return {"ok": False, "toast": "Objective is required."}
+    try:
+        project_id = uuid.UUID(str(project_id_raw))
+    except ValueError:
+        return {"ok": False, "toast": f"invalid project_id {project_id_raw!r}"}
+
+    if dataset_ref.startswith("hf:"):
+        dataset = {"kind": "hf", "ref": dataset_ref[3:].strip()}
+    else:
+        dataset = {"kind": "path", "ref": dataset_ref}
+
+    cfg = await effective_config()
+    ok, why = validate_dataset(dataset, cfg.get("allowed_dataset_root") or "")
+    if not ok:
+        return {"ok": False, "toast": f"Bad dataset: {why}"}
+
+    base_url = cfg.get("sidecar_base_url") or ""
+    token = cfg.get("sidecar_token") or None
+    if not base_url:
+        return {"ok": False, "toast": "DataMaster sidecar not configured — "
+                "set sidecar_base_url in Settings."}
+    if not await sidecar.healthz(base_url, token):
+        return {"ok": False,
+                "toast": f"DataMaster sidecar unreachable at {base_url}."}
+
+    # Concurrency guard: one in-flight run per user.
+    inflight = (await db.execute(
+        select(DataExperimentJob).where(
+            DataExperimentJob.user_id == user_id,
+            DataExperimentJob.status.in_(("queued", "running")),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if inflight is not None:
+        return {"ok": False, "toast": "A DataMaster run is already in "
+                "progress — wait for it to finish."}
+
+    try:
+        max_minutes = int(payload.get("max_minutes")
+                          or cfg.get("default_max_minutes") or 30)
+    except (TypeError, ValueError):
+        max_minutes = int(cfg.get("default_max_minutes") or 30)
+    max_minutes = max(1, min(max_minutes, 240))
+
+    brief, seed_ids = await assemble_brief(db, user_id, project_id, objective)
+
+    job = DataExperimentJob(
+        user_id=user_id, project_id=project_id,
+        objective=objective, dataset_ref=dataset_ref, status="queued",
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    emit("info", _SOURCE,
+         f"DataMaster run queued for project {project_id} "
+         f"({len(seed_ids)} KG seeds, <={max_minutes} min)")
+
+    asyncio.create_task(_run_job(
+        job_id=job.id, base_url=base_url, token=token,
+        max_minutes=max_minutes, brief=brief, seed_node_ids=seed_ids,
+        dataset=dataset, objective=objective,
+    ))
+
+    return {"ok": True, "job_id": str(job.id),
+            "toast": "DataMaster run started — watch the TUI log; the "
+            "result will appear as an Experiment node."}
