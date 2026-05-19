@@ -73,6 +73,18 @@ services:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
       NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY}
 
+  datamaster:
+    image: ${DATAMASTER_SIDECAR_IMAGE:-ghcr.io/REPLACE_ME/datamaster-sidecar:latest}
+    profiles: ["sidecars"]
+    networks:
+      - workspaceos
+    ports:
+      - "8800:8800"
+    env_file:
+      - path: ./sidecars/datamaster/.env
+        required: false
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   backend_data:
