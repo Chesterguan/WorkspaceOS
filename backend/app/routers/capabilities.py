@@ -120,6 +120,7 @@ async def list_slash_commands(
                 "icon": cfg.get("icon"),
                 "handler_kind": cfg.get("handler_kind", "api_call"),
                 "handler_target": cfg.get("handler_target"),
+                "inputs": cfg.get("inputs") or [],
                 "source_extension": ext.manifest.id,
             })
     return items
