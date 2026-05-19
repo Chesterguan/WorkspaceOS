@@ -15,7 +15,7 @@ import os
 import re
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -258,7 +258,7 @@ async def _set_status(db: AsyncSession, job_id: uuid.UUID, **fields: Any) -> Non
 @asynccontextmanager
 async def _session(  # type: ignore[misc]
     _db: Optional[AsyncSession] = None,
-):
+) -> AsyncGenerator[AsyncSession, None]:
     """Async-context helper that yields either the caller-supplied session
     (test seam, not closed on exit) or a fresh ``AsyncSessionLocal()``
     (production path, closed on exit)."""
@@ -470,34 +470,59 @@ async def reconcile_running_jobs(
         cfg = await effective_config()
         base_url = cfg.get("sidecar_base_url") or ""
         token = cfg.get("sidecar_token") or None
+        # Snapshot the ids first so each job gets its own session.
         async with _session(_db) as db:
-            rows = list((await db.execute(
-                select(DataExperimentJob).where(
+            job_ids = list((await db.execute(
+                select(DataExperimentJob.id).where(
                     DataExperimentJob.status == "running")
             )).scalars().all())
-            for job in rows:
-                done_result: Optional[Dict[str, Any]] = None
-                if base_url:
-                    try:
-                        info = await sidecar.get_job(
-                            base_url, token, str(job.id))
-                        if info.get("status") == "done":
-                            done_result = info.get("result") or {}
-                    except Exception:  # noqa: BLE001
-                        done_result = None
-                if done_result is not None:
-                    node_id = await persist_result(
-                        db, user_id=job.user_id, project_id=job.project_id,
-                        objective=job.objective,
-                        sidecar_job_id=str(job.id),
-                        result=done_result, seed_node_ids=[])
-                    job.status = "done"
-                    job.score = done_result.get("score")
-                    job.result_node_id = node_id
-                else:
-                    job.status = "error"
-                    job.error = ("orphaned by a backend restart; sidecar "
-                                 "could not confirm a result")
-                await db.commit()
+        for jid in job_ids:
+            try:
+                async with _session(_db) as db:
+                    job = (await db.execute(
+                        select(DataExperimentJob).where(
+                            DataExperimentJob.id == jid)
+                    )).scalar_one_or_none()
+                    if job is None or job.status != "running":
+                        continue
+                    done_result: Optional[Dict[str, Any]] = None
+                    if base_url:
+                        try:
+                            info = await sidecar.get_job(
+                                base_url, token, str(job.id))
+                            if info.get("status") == "done":
+                                done_result = info.get("result") or {}
+                        except Exception:  # noqa: BLE001
+                            done_result = None
+                    if done_result is not None:
+                        node_id = await persist_result(
+                            db, user_id=job.user_id,
+                            project_id=job.project_id,
+                            objective=job.objective,
+                            sidecar_job_id=str(job.id),
+                            result=done_result, seed_node_ids=[])
+                        job.status = "done"
+                        job.score = done_result.get("score")
+                        job.result_node_id = node_id
+                    else:
+                        job.status = "error"
+                        job.error = ("orphaned by a backend restart; sidecar "
+                                     "could not confirm a result")
+                    await db.commit()
+            except Exception:  # noqa: BLE001 — one bad job must not block the rest
+                logger.exception(
+                    "datamaster reconcile: job %s failed to reconcile", jid)
     except Exception:  # noqa: BLE001
         logger.exception("datamaster reconcile_running_jobs failed")
+
+
+def spawn_reconcile() -> None:
+    """Spawn reconcile_running_jobs as a retained background task.
+
+    Uses the module-level ``_background_tasks`` set to prevent CPython's GC
+    from collecting the task before it completes (asyncio only holds a weak
+    reference to scheduled tasks).
+    """
+    task = asyncio.create_task(reconcile_running_jobs())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
