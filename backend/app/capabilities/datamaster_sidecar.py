@@ -35,7 +35,7 @@ def parse_sse_block(block: str) -> Optional[Dict[str, Any]]:
     {"type": <event>, "data": <dict>}. Returns None for comments/blanks.
     `data:` is parsed as JSON when possible, else wrapped as {"raw": ...}.
     """
-    block = block.strip("\n")
+    block = block.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
     if not block or block.startswith(":"):
         return None
     event = "message"
@@ -93,11 +93,16 @@ async def stream_job(base_url: str, token: Optional[str],
             buf = ""
             async for chunk in resp.aiter_text():
                 buf += chunk
+                buf = buf.replace("\r\n", "\n").replace("\r", "\n")
                 while "\n\n" in buf:
                     block, buf = buf.split("\n\n", 1)
                     evt = parse_sse_block(block)
                     if evt is not None:
                         yield evt
+            if buf.strip():
+                evt = parse_sse_block(buf)
+                if evt is not None:
+                    yield evt
 
 
 async def get_job(base_url: str, token: Optional[str],
