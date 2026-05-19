@@ -43,6 +43,14 @@ export interface CapabilityListing {
   runner_registered: boolean;
 }
 
+export interface SlashCommandInput {
+  name: string;
+  label: string;
+  type: 'text' | 'textarea' | 'number';
+  required?: boolean;
+  placeholder?: string;
+}
+
 export interface SlashCommandEntry {
   id: string;
   name: string;
@@ -51,6 +59,7 @@ export interface SlashCommandEntry {
   icon?: string | null;
   handler_kind: 'api_call' | 'navigate';
   handler_target: string;
+  inputs?: SlashCommandInput[];
   source_extension: string;
 }
 

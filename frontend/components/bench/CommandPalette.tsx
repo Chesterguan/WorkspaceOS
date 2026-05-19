@@ -7,7 +7,9 @@ import { useKnowledgeNodes } from '@/lib/hooks/useKnowledge';
 import {
   useSlashCommands,
   useCapabilityDispatcher,
+  type SlashCommandEntry,
 } from '@/lib/capabilities';
+import { CapabilityInputDialog } from '@/components/bench/CapabilityInputDialog';
 
 interface PaletteItem {
   id: string;
@@ -23,13 +25,15 @@ interface Props {
   onProjectSelect: (id: string | undefined) => void;
   onOverlayOpen: (id: 'files' | 'memory' | 'portfolio') => void;
   onNewProject: () => void;
+  activeProjectId?: string;
 }
 
 export function CommandPalette({
-  open, onClose, onProjectSelect, onOverlayOpen, onNewProject,
+  open, onClose, onProjectSelect, onOverlayOpen, onNewProject, activeProjectId,
 }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState('');
+  const [pendingCmd, setPendingCmd] = useState<SlashCommandEntry | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: projects = [] } = useProjects();
@@ -80,6 +84,10 @@ export function CommandPalette({
       hint: cmd.source_extension,
       group: 'commands' as const,
       run: async () => {
+        if (cmd.inputs && cmd.inputs.length > 0) {
+          setPendingCmd(cmd);
+          return;
+        }
         onClose();
         await dispatch(
           cmd.handler_kind,
@@ -107,42 +115,63 @@ export function CommandPalette({
     : items.slice(0, 30);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24 animate-in fade-in-0 duration-150"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
+    <>
       <div
-        className="w-[560px] max-w-[90vw] rounded-lg border border-border bg-card shadow-xl animate-in zoom-in-95 fade-in-0 duration-150"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24 animate-in fade-in-0 duration-150"
+        onClick={onClose}
+        role="dialog"
+        aria-modal="true"
       >
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search surfaces, projects, knowledge…"
-          className="w-full bg-transparent px-4 py-3 text-sm text-foreground outline-none border-b border-border/60"
-        />
-        <ul className="max-h-[420px] overflow-y-auto p-1 text-sm">
-          {filtered.length === 0 ? (
-            <li className="px-3 py-4 text-center text-xs text-muted-foreground">No results</li>
-          ) : (
-            filtered.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={item.run}
-                  className="flex w-full items-center justify-between rounded px-3 py-2 text-left hover:bg-muted/40"
-                >
-                  <span className="text-foreground">{item.label}</span>
-                  <span className="text-xs text-muted-foreground">{item.hint}</span>
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
+        <div
+          className="w-[560px] max-w-[90vw] rounded-lg border border-border bg-card shadow-xl animate-in zoom-in-95 fade-in-0 duration-150"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search surfaces, projects, knowledge…"
+            className="w-full bg-transparent px-4 py-3 text-sm text-foreground outline-none border-b border-border/60"
+          />
+          <ul className="max-h-[420px] overflow-y-auto p-1 text-sm">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-4 text-center text-xs text-muted-foreground">No results</li>
+            ) : (
+              filtered.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={item.run}
+                    className="flex w-full items-center justify-between rounded px-3 py-2 text-left hover:bg-muted/40"
+                  >
+                    <span className="text-foreground">{item.label}</span>
+                    <span className="text-xs text-muted-foreground">{item.hint}</span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
       </div>
-    </div>
+      {pendingCmd && pendingCmd.inputs && (
+        <CapabilityInputDialog
+          title={pendingCmd.label}
+          inputs={pendingCmd.inputs}
+          onClose={() => setPendingCmd(null)}
+          onSubmit={async (vals) => {
+            const payload: Record<string, unknown> = { ...vals };
+            if (activeProjectId) payload.project_id = activeProjectId;
+            setPendingCmd(null);
+            onClose();
+            await dispatch(
+              pendingCmd.handler_kind,
+              pendingCmd.handler_target,
+              (path) => router.push(path),
+              payload,
+            );
+          }}
+        />
+      )}
+    </>
   );
 }

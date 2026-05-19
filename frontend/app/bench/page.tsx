@@ -143,6 +143,7 @@ function BenchContent() {
       onProjectSelect={(id) => update({ projectId: id })}
       onOverlayOpen={(id) => update({ overlay: id })}
       onNewProject={() => setNewProjectOpen(true)}
+      activeProjectId={state.projectId}
     />
     <NewProjectModal
       open={newProjectOpen}
