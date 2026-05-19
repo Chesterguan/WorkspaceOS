@@ -18,8 +18,13 @@ _HF_REF_RE = re.compile(r"^[\w.\-]+/[\w.\-]+$")
 
 def validate_dataset(dataset: Dict[str, Any],
                      allowed_root: str) -> Tuple[bool, str]:
-    """Allow hf:<org/name> always; path datasets only when they resolve
-    strictly inside a configured allowed_root. Reject everything else."""
+    """Policy gate on the user-supplied dataset pointer. hf:<org/name>
+    accepted by shape. A `path` dataset is accepted only when the
+    normalized, absolute path string is the configured allowed_root or
+    lies under it — a SYNTACTIC containment check. The path itself is
+    resolved and read by the external sidecar in its own filesystem;
+    this function does not (and cannot) resolve symlinks here. Reject
+    everything else."""
     kind = (dataset or {}).get("kind")
     ref = str((dataset or {}).get("ref") or "").strip()
     if not ref:

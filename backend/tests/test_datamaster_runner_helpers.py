@@ -38,3 +38,27 @@ def test_map_event_levels_and_summaries():
     lvl, summ, _ = map_event({"type": "node",
                               "data": {"color": "red", "summary": "explore"}})
     assert lvl == "info" and "red" in summ
+
+
+def test_map_event_metric_phase_and_fallthrough_are_info():
+    lvl, summ, _ = map_event({"type": "metric",
+                              "data": {"name": "auc", "value": 0.9}})
+    assert lvl == "info" and "auc" in summ and "0.9" in summ
+    lvl, summ, _ = map_event({"type": "phase",
+                              "data": {"name": "explore"}})
+    assert lvl == "info" and "explore" in summ
+    lvl, summ, _ = map_event({"type": "log",
+                              "data": {"line": "fitting model"}})
+    assert lvl == "info" and "fitting model" in summ
+    lvl, summ, _ = map_event({"type": "wat", "data": {"raw": "huh"}})
+    assert lvl == "info" and "huh" in summ
+
+
+def test_map_event_missing_data_key_does_not_crash():
+    lvl, summ, meta = map_event({"type": "phase"})
+    assert lvl == "info" and isinstance(summ, str) and meta == {}
+
+
+def test_validate_dataset_none_input_rejected():
+    ok, msg = validate_dataset(None, "")
+    assert ok is False and msg
