@@ -52,11 +52,14 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (pendingCmd) { setPendingCmd(null); return; }
+        onClose();
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  }, [open, onClose, pendingCmd, setPendingCmd]);
 
   if (!open) return null;
 

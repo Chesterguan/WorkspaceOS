@@ -25,7 +25,12 @@ export function CapabilityInputDialog({ title, inputs, onSubmit, onClose }: Prop
     for (const f of inputs) {
       const raw = (values[f.name] || '').trim();
       if (!raw) continue;
-      payload[f.name] = f.type === 'number' ? Number(raw) : raw;
+      if (f.type === 'number') {
+        const n = Number(raw);
+        if (Number.isFinite(n)) payload[f.name] = n;
+        continue;
+      }
+      payload[f.name] = raw;
     }
     onSubmit(payload);
   };
@@ -36,12 +41,13 @@ export function CapabilityInputDialog({ title, inputs, onSubmit, onClose }: Prop
       onClick={onClose}
       role="dialog"
       aria-modal="true"
+      aria-labelledby="cap-dialog-title"
     >
       <div
         className="w-[560px] max-w-[90vw] rounded-lg border border-border bg-card p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-3 text-sm font-medium text-foreground">{title}</h2>
+        <h2 id="cap-dialog-title" className="mb-3 text-sm font-medium text-foreground">{title}</h2>
         <div className="space-y-3">
           {inputs.map((f) => (
             <label key={f.name} className="block text-xs text-muted-foreground">
@@ -68,12 +74,14 @@ export function CapabilityInputDialog({ title, inputs, onSubmit, onClose }: Prop
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button
+            type="button"
             className="rounded px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={onClose}
           >
             Cancel
           </button>
           <button
+            type="button"
             className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50"
             disabled={missingRequired}
             onClick={submit}
