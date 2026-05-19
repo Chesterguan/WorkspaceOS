@@ -75,3 +75,30 @@ async def test_persist_result_creates_experiment_node_and_edges(
     assert len(edges) == 1
     assert edges[0].target_node_id == seed.id
     assert edges[0].edge_type == "derived_from"
+
+
+@pytest.mark.asyncio
+async def test_persist_result_is_idempotent_on_duplicate_edges(
+    db_session, sample_user, sample_project
+):
+    seed = KnowledgeNode(
+        user_id=sample_user.id, project_id=sample_project.id,
+        node_type="claim", title="seed-dup", content="x",
+        source_refs=[], metadata_={}, created_by="manual",
+    )
+    db_session.add(seed)
+    await db_session.commit()
+    await db_session.refresh(seed)
+
+    common = dict(
+        user_id=sample_user.id, project_id=sample_project.id,
+        objective="dup run", sidecar_job_id="sc-d",
+        result={"score": 0.5, "pipeline_summary_md": "p", "artifacts": []},
+        seed_node_ids=[seed.id, seed.id],  # same target twice -> one edge
+    )
+    node_id = await persist_result(db_session, **common)
+    assert node_id is not None
+    edges = (await db_session.execute(
+        select(KnowledgeEdge).where(KnowledgeEdge.source_node_id == node_id)
+    )).scalars().all()
+    assert len(edges) == 1  # duplicate (source,target,derived_from) collapsed

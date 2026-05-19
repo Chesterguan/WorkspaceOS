@@ -15,6 +15,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge import KnowledgeEdge, KnowledgeNode
@@ -184,18 +185,20 @@ async def persist_result(
     await db.refresh(node)
 
     for target_id in seed_node_ids:
-        edge = KnowledgeEdge(
-            user_id=user_id,
-            source_node_id=node.id,
-            target_node_id=target_id,
-            edge_type="derived_from",
-            created_by="capability",
-        )
-        db.add(edge)
-        try:
-            await db.commit()
-        except Exception:
-            # Duplicate (uq_knowledge_edges_triple) or vanished target —
-            # the result node still stands; skip this edge.
-            await db.rollback()
+        # Use a savepoint so a duplicate-edge IntegrityError (uq_knowledge_edges_triple)
+        # or a vanished-target FK violation drops only this edge without rolling back
+        # the result node or previously written edges.
+        async with db.begin_nested() as sp:
+            try:
+                db.add(KnowledgeEdge(
+                    user_id=user_id,
+                    source_node_id=node.id,
+                    target_node_id=target_id,
+                    edge_type="derived_from",
+                    created_by="capability",
+                ))
+                await db.flush()
+            except IntegrityError:
+                await sp.rollback()
+    await db.commit()
     return node.id
