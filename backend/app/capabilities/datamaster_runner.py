@@ -288,9 +288,10 @@ async def _run_job(
     that session instead of opening new ``AsyncSessionLocal()`` sessions.
     Production callers leave it ``None``.
     """
-    async with _session(_db) as db:
-        await _set_status(db, job_id, status="running")
     sidecar_job_id = str(job_id)
+    async with _session(_db) as db:
+        await _set_status(db, job_id, status="running",
+                          sidecar_job_id=sidecar_job_id)
     persisted_node_id: Optional[uuid.UUID] = None
     try:
         await sidecar.submit_job(base_url, token, {
@@ -408,10 +409,6 @@ async def run_data_experiment_handler(
     if not base_url:
         return {"ok": False, "toast": "DataMaster sidecar not configured — "
                 "set sidecar_base_url in Settings."}
-    if not await sidecar.healthz(base_url, token):
-        return {"ok": False,
-                "toast": f"DataMaster sidecar unreachable at {base_url}."}
-
     # Concurrency guard: one in-flight run per user.
     inflight = (await db.execute(
         select(DataExperimentJob).where(
@@ -422,6 +419,10 @@ async def run_data_experiment_handler(
     if inflight is not None:
         return {"ok": False, "toast": "A DataMaster run is already in "
                 "progress — wait for it to finish."}
+
+    if not await sidecar.healthz(base_url, token):
+        return {"ok": False,
+                "toast": f"DataMaster sidecar unreachable at {base_url}."}
 
     try:
         max_minutes = int(payload.get("max_minutes")
@@ -495,6 +496,8 @@ async def reconcile_running_jobs(
                         except Exception:  # noqa: BLE001
                             done_result = None
                     if done_result is not None:
+                        # Recovery path: original brief seeds are not stored on the row, so the
+                        # recovered Experiment node lands without `derived_from` edges (v1).
                         node_id = await persist_result(
                             db, user_id=job.user_id,
                             project_id=job.project_id,
