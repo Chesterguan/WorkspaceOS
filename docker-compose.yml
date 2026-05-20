@@ -74,7 +74,8 @@ services:
       NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY}
 
   datamaster:
-    image: ${DATAMASTER_SIDECAR_IMAGE:-ghcr.io/REPLACE_ME/datamaster-sidecar:latest}
+    image: ${DATAMASTER_SIDECAR_IMAGE:-workspaceos/datamaster-sidecar:stub}
+    build: ./sidecars/datamaster
     profiles: ["sidecars"]
     networks:
       - workspaceos

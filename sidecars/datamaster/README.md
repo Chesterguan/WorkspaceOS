@@ -36,3 +36,7 @@ If `sidecar_token` is set in the capability Settings, WorkspaceOS sends
 Set `sidecar_base_url` in WorkspaceOS Settings → Capabilities →
 DataMaster to your sidecar's URL. With the bundled compose profile:
 `DATAMASTER_SIDECAR_IMAGE=<your-image> docker compose --profile sidecars up datamaster`
+
+## Reference stub
+
+This repo ships a minimal STUB implementation (FastAPI app under `sidecars/datamaster/`) that emits a canned DataTree trajectory — useful for testing WorkspaceOS's wire end-to-end and as a reference implementation for contributors building a real sidecar. Bring it up with `docker compose --profile sidecars up --build -d datamaster`. NOT a real ML agent; the canned trajectory always produces the same result. Replace it with your own implementation via `DATAMASTER_SIDECAR_IMAGE=<your-image> docker compose --profile sidecars up datamaster`.
