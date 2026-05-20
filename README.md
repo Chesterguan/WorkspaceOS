@@ -328,6 +328,29 @@ Shipped extensions:
 - **`bench-extras`** — utility pack: 2 slash commands + 2 action
   buttons. Use as the working example when authoring your own.
 
+Added in **v0.2.6** (bio-researcher build):
+
+- **`preprints`** — `ingest_source: preprint_ingest`. Polls bioRxiv
+  (and optionally medRxiv) daily for keyword-matching preprints and
+  adds them as `paper_reference` nodes — same type as Zotero items, so
+  the research panel and paper pipeline pick them up automatically.
+  Opt-in: empty keyword list = nothing imported.
+- **`ot2-protocols`** — `ingest_source: ot2_protocols`. Walks a
+  directory of Opentrons OT-2 Python protocols and creates one
+  `protocol` node per file (name, author, API level, labware, source
+  excerpt). Re-ingested on content change.
+- **`methods-drafter`** — `slash_command: draft_methods`. Drafts a
+  publication-style Methods section grounded in the project's actual
+  knowledge graph — experiments, constructs (Benchling), strains,
+  OT-2 protocols, custom GitHub tools. Default style `plant_synbio`;
+  switch via the slash payload. Saved as a Papers-surface draft tagged
+  `paper` + `methods_draft`.
+- **`github-tools`** — `ingest_source: github_user_tools`. Syncs your
+  public GitHub repos once a day as `tool` nodes (name, description,
+  language, stars, truncated README). Citable by `/draft_methods`
+  when writing Methods. PAT optional but lifts the rate limit from 60
+  to 5000 req/h.
+
 ### Discovery + setup — where users find and configure capabilities
 
 | Where | Shows |
