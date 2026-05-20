@@ -65,7 +65,7 @@ real time.
 </td>
 <td width="50%">
   <img src="docs/screenshots/bench-research.jpeg" alt="Research surface — bio-research persona panel"/>
-  <br/><sub><b>Research surface.</b> Drew Endy / George Church / Jay Keasling / Doudna / Topol / Tim Lu after Bio Research extension applied.</sub>
+  <br/><sub><b>Research surface.</b> Drew Endy / George Church / Jay Keasling / Doudna / Topol / Tim Lu + plant-synbio reviewers (Markus Pauly, Jenny Mortimer, Plant Methods Reviewer) after Bio Research extension applied.</sub>
 </td>
 </tr>
 </table>
@@ -328,7 +328,10 @@ Shipped extensions:
 - **`bench-extras`** — utility pack: 2 slash commands + 2 action
   buttons. Use as the working example when authoring your own.
 
-Added in **v0.2.6** (bio-researcher build):
+Added in **v0.2.6** (bio-researcher build) — alongside a
+Knowledge-surface upgrade that links `Experiment` nodes to the
+`Claim` / `Construct` nodes they support, so the graph reflects the
+actual evidence trail:
 
 - **`preprints`** — `ingest_source: preprint_ingest`. Polls bioRxiv
   (and optionally medRxiv) daily for keyword-matching preprints and
@@ -423,10 +426,10 @@ arbitrary file-drop, no `eval`, no extension-injected JSX.
 
 - **More capability runners** — Gmail (OAuth), Calendar (CalDAV /
   Google), Slack, Notion. Contributions welcome.
-- **Other capability kinds** — `slash_command` (⌘K palette entry),
-  `action_button` (per-node context action), `surface_widget`
-  (sub-component in an existing surface). Manifest schema reserves
-  these today; runtime activation arrives next.
+- **`surface_widget` capability kind** — sub-component injected into
+  an existing surface. Manifest schema reserves it today; runtime
+  activation arrives next. `slash_command` and `action_button` are
+  already shipped (see `bench-extras`, `methods-drafter`).
 - **More content extensions** — `indie-founder`, `phd-student`,
   `engineering-manager`. Contributions welcome.
 - **Settings → "Personalize"** — re-run the wizard with prefilled
