@@ -29,6 +29,7 @@ from app.models.memory import MemoryEntry
 from app.models.project import Project
 from app.services import inbox_service
 from app.services.ai_client import get_cloud_client
+from app.services.egress_recorder import EgressRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,18 @@ async def classify_into_project(
     # Inbox fallback is the right behaviour when they happen.
     ai = get_cloud_client()
     try:
-        raw = await ai.complete(system=_SYSTEM_PROMPT, user=user_prompt)
+        async with EgressRecorder(
+            surface="inbox",
+            service="classifier_service.classify",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=user_id,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", _SYSTEM_PROMPT)
+            rec.field("project_catalogue", json.dumps(catalogue, indent=2))
+            rec.field("item_content", content[:4000])
+            raw = await ai.complete(system=_SYSTEM_PROMPT, user=user_prompt)
     except Exception as exc:
         logger.warning("classifier: AI call failed: %s", exc)
         inbox = await inbox_service.get_or_create_inbox(user_id, db)
