@@ -4,7 +4,7 @@ Agentic generation service: multi-model, multi-round draft pipeline.
 Three-model architecture:
   1. LOCAL (Ollama) — privacy scan: checks draft for leaked secrets/private info before cloud calls
   2. CLOUD (Gemini) — generator: writes and revises drafts (fast, cheap, good quality)
-  3. REVIEWER (OpenAI) — judge: scores and critiques drafts (strong reasoning)
+  3. REVIEWER (cloud) — judge: scores and critiques drafts (strong reasoning)
 
 Flow per round:
   1. Generator writes/revises draft
@@ -38,7 +38,7 @@ from app.utils.prompts import get_template
 
 logger = logging.getLogger(__name__)
 
-# Cached reviewer client (OpenAI)
+# Cached reviewer client (cloud)
 _reviewer_client = None
 
 
@@ -117,7 +117,7 @@ async def agentic_generate_draft(
         (final_content, draft_id, loop_trace)
     """
     generator = get_cloud_client()   # Gemini — writes drafts
-    reviewer = _get_reviewer()       # OpenAI — judges quality
+    reviewer = _get_reviewer()       # cloud reviewer — judges quality
 
     # --- Build context ---
     project_result = await db.execute(select(Project).where(Project.id == project_id))
@@ -258,9 +258,9 @@ async def agentic_generate_draft(
                 f"Rewrite the draft with ALL sensitive information removed. Output only the clean draft."
             )
 
-    # --- Step 3: Review loop (OpenAI reviews, Gemini revises) ---
+    # --- Step 3: Review loop (cloud reviewer scores, Gemini revises) ---
     for round_num in range(1, max_rounds + 1):
-        # OpenAI reviews
+        # cloud reviewer scores
         review_template_fn = get_template("review")
         review_system, review_user = review_template_fn({
             "platform": platform,
@@ -291,13 +291,13 @@ async def agentic_generate_draft(
             "privacy_clean": is_clean,
             "privacy_note": scan_msg,
             "generator": "gemini",
-            "reviewer": "openai",
+            "reviewer": "cloud",
         })
 
         if score >= 8 and is_clean:
             break
 
-        # Gemini revises based on OpenAI's critique
+        # Gemini revises based on cloud reviewer's critique
         revision_notes = []
         if score < 8:
             revision_notes.append(

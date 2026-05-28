@@ -189,12 +189,12 @@ def create_pipeline_agents(agent_log: AgentLog) -> Dict[str, NamedAgent]:
     Agent roles:
       gemini_planner    — outline and section planning (cloud)
       gemini_writer     — drafting and revision (cloud)
-      openai_critic     — peer review critique (OpenAI if available, else cloud)
+      openai_critic     — peer review critique (cloud)
       gemini_editor     — editing and condensing (cloud)
       ollama_literature — literature retrieval and local analysis (local)
 
-    Using OpenAI as the critic when available ensures the reviewer is a
-    genuinely different model from the Gemini writer (avoids self-review bias).
+    Critic uses the configured cloud client. Cross-model review diversity is
+    reserved for the paper-reviewer roundtable (see paper_reviewers.py).
     """
     cloud = get_cloud_client()
     local = get_local_client()
