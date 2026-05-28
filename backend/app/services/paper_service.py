@@ -31,8 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.blog import BlogPost, BlogPostVersion
 from app.models.project import Project
 from app.schemas.blog import BlogPostCreate, BlogPostUpdate
-from app.config import settings
-from app.services.ai_client import OpenAIClient, get_cloud_client, get_local_client
+from app.services.ai_client import get_cloud_client, get_local_client, get_paper_reviewer_client
 from app.services.blog_service import create_blog_post, get_version_chain, update_blog_post
 from app.services.narrative_service import build_context_block, get_or_create
 from app.services.repo_context import get_generation_context
@@ -48,14 +47,14 @@ logger = logging.getLogger(__name__)
 
 
 def _get_paper_reviewer():
-    """Get reviewer client — OpenAI if available, else cloud client (Gemini).
+    """Get reviewer client — gated through get_paper_reviewer_client().
 
     Using a different model for review than for drafting/revision avoids the
     failure mode where a model cannot objectively critique its own output.
+    Returns the OpenAI client when "openai" is in settings.paper_reviewer_providers;
+    otherwise falls back to the configured cloud client transparently.
     """
-    if settings.openai_api_key:
-        return OpenAIClient()
-    return get_cloud_client()
+    return get_paper_reviewer_client("openai")
 
 
 # ---------------------------------------------------------------------------

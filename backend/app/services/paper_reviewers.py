@@ -17,10 +17,9 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from app.config import settings
 from app.schemas.domain_config import Persona, PersonaPool
 from app.services.agents import AgentLog, NamedAgent
-from app.services.ai_client import OpenAIClient, get_cloud_client
+from app.services.ai_client import get_cloud_client, get_paper_reviewer_client
 from app.services.domain_config import get_loader
 from app.services.extensions import get_all_extensions
 
@@ -196,10 +195,7 @@ async def run_review_roundtable(
         agent_log = AgentLog()
 
     cloud = get_cloud_client()
-    if settings.openai_api_key:
-        openai_client: Any = OpenAIClient()
-    else:
-        openai_client = cloud
+    openai_client: Any = get_paper_reviewer_client("openai")
 
     reviewers = _select_reviewer_pool(paper_content, agent_log)
     agent_log.add(
