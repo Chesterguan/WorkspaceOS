@@ -296,3 +296,18 @@ def reset_clients() -> None:
 def get_ai_client() -> AIClient:
     """Backward compat — returns the cloud client (used by generation code)."""
     return get_cloud_client()
+
+
+def get_paper_reviewer_client(provider: str) -> AIClient:
+    """Explicit, gated cloud client for the paper-reviewer roundtable.
+
+    The paper-reviewer surface is the one place where multi-provider
+    diversity is structural (see docs/privacy/capability-matrix.md
+    rows 24-26). This helper grants access to a specific provider only
+    if it's in settings.paper_reviewer_providers — otherwise returns
+    the configured cloud client, transparently degrading.
+    """
+    allowed = settings.paper_reviewer_providers
+    if provider not in allowed:
+        return get_cloud_client()
+    return _build_client(provider)
