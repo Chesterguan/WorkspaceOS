@@ -1,7 +1,7 @@
 # Privacy Prototype — Design
 
 **Date:** 2026-05-28
-**Status:** Draft (brainstorming) — pending user review
+**Status:** Foundation landed 2026-05-28. Plans 2-7 (W5-W10) pending.
 **Author:** chesterguan + Claude
 
 ## Summary
