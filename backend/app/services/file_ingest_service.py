@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.memory import MemoryEntry
 from app.services.agents import extract_json
 from app.services.ai_client import get_cloud_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.memory_service import add_entry
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,19 @@ async def auto_tag(filename: str, text_preview: str, mime_type: str) -> Dict:
             f"MIME type: {mime_type}\n"
             f"Preview (first 2000 chars):\n{text_preview[:2000]}"
         )
-        raw = await ai.complete(system, user)
+        async with EgressRecorder(
+            surface="ingest",
+            service="file_ingest_service.auto_tag",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", system)
+            rec.field("filename", filename)
+            rec.field("mime_type", mime_type)
+            rec.field("text_preview", text_preview[:2000])
+            raw = await ai.complete(system, user)
         result = extract_json(raw)
         if result and "tags" in result and "summary" in result:
             return result
