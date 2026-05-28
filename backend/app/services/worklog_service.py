@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.ai_client import get_cloud_client
+from app.services.egress_recorder import EgressRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +276,20 @@ async def generate_report(
     user_prompt = "\n".join(user_parts)
 
     client = get_cloud_client()
-    content = await client.complete(system_prompt, user_prompt)
+    async with EgressRecorder(
+        surface="worklog",
+        service="worklog_service.generate_report",
+        provider=type(client).__name__.lower().replace("client", ""),
+        model=getattr(client, "_model", None) or getattr(client, "chat_model", None),
+        user_id=None,
+        project_id=None,
+    ) as rec:
+        rec.field("system_prompt", system_prompt)
+        rec.field("metrics", str(period_data.get("commits_by_project", "")) + str(period_data.get("papers", "")) + str(period_data.get("drafts_by_status", "")) + str(period_data.get("syncs", "")))
+        rec.field("drafts", str(period_data.get("drafts_by_status", "")))
+        rec.field("papers", str(period_data.get("papers", "")))
+        rec.field("goals", str(goals or ""))
+        content = await client.complete(system_prompt, user_prompt)
     try:
         from app.services.event_stream import emit
         emit(
