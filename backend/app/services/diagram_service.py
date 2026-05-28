@@ -23,6 +23,8 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from app.services.egress_recorder import EgressRecorder
+
 logger = logging.getLogger(__name__)
 
 # Kroki.io public instance — free for open usage
@@ -228,7 +230,17 @@ async def generate_comparison_table(
     )
 
     try:
-        raw = await ai.complete(system=system, user=user)
+        async with EgressRecorder(
+            surface="diagram",
+            service="diagram_service.generate_comparison_table",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", system)
+            rec.field("content_to_diagram", user)
+            raw = await ai.complete(system=system, user=user)
         # Extract the table block (first contiguous block of lines starting with |)
         table_lines: List[str] = []
         in_table = False
@@ -304,7 +316,17 @@ async def generate_data_chart(
     data: Dict = {"labels": [], "values": []}
     mermaid_src = ""
     try:
-        raw = await ai.complete(system=system, user=user)
+        async with EgressRecorder(
+            surface="diagram",
+            service="diagram_service.generate_data_chart",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", system)
+            rec.field("content_to_diagram", user)
+            raw = await ai.complete(system=system, user=user)
         # Strip any accidental code fences
         raw = _strip_json_fences(raw)
         parsed = _json.loads(raw)
@@ -468,7 +490,17 @@ async def generate_flow_diagram(
     )
 
     try:
-        raw = await ai.complete(system=system, user=user)
+        async with EgressRecorder(
+            surface="diagram",
+            service="diagram_service.generate_flow_diagram",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", system)
+            rec.field("content_to_diagram", user)
+            raw = await ai.complete(system=system, user=user)
         mermaid_src = _strip_code_fences(raw).strip()
         # Validate the output starts with a known Mermaid keyword
         valid_starts = ("flowchart", "graph", "sequenceDiagram", "classDiagram", "stateDiagram")
