@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from app.schemas.domain_config import SurfaceExtractionRefs
 from app.services.domain_config import get_loader
+from app.services.egress_recorder import EgressRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,18 @@ async def _classify_extractable(ai: Any, user: str, ai_response: str) -> bool:
         extra_vars={"user": user[:1500], "ai": ai_response[:3000]},
     )
     try:
-        raw = await ai.complete(system, user_prompt)
+        async with EgressRecorder(
+            surface="knowledge",
+            service="knowledge_extractor.classify",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", system)
+            rec.field("user_message", user[:1500])
+            rec.field("ai_message", ai_response[:3000])
+            raw = await ai.complete(system, user_prompt)
     except Exception:
         logger.exception("knowledge classifier failed")
         return False
@@ -147,10 +159,19 @@ async def _extract_structured(
     node_types, edge_types = _allowed_extraction_types()
 
     try:
-        raw = await ai.complete(
-            system_prompt,
-            _build_extraction_user(user, ai_response, conversation_kind, recent_turns),
-        )
+        extraction_user = _build_extraction_user(user, ai_response, conversation_kind, recent_turns)
+        async with EgressRecorder(
+            surface="knowledge",
+            service="knowledge_extractor.extract",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", system_prompt)
+            rec.field("user_message", user[:1500])
+            rec.field("ai_message", ai_response[:4000])
+            raw = await ai.complete(system_prompt, extraction_user)
     except Exception:
         logger.exception("knowledge structured extraction failed")
         return ExtractionResult()
