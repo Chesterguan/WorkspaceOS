@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.config import settings
-from app.services.ai_client import OpenAIClient, get_cloud_client, get_local_client
+from app.services.ai_client import get_cloud_client, get_local_client
 
 logger = logging.getLogger(__name__)
 
@@ -199,11 +199,11 @@ def create_pipeline_agents(agent_log: AgentLog) -> Dict[str, NamedAgent]:
     cloud = get_cloud_client()
     local = get_local_client()
 
-    # Critic: prefer OpenAI for genuine cross-model critique
-    if settings.openai_api_key:
-        critic_client: Any = OpenAIClient()
-    else:
-        critic_client = cloud
+    # Critic: route through the configured cloud provider — direct
+    # instantiation of the OpenAI class is not used here; cross-model
+    # diversity for paper reviewers goes through get_paper_reviewer_client()
+    # in paper_reviewers.py instead.
+    critic_client: Any = get_cloud_client()
 
     return {
         "gemini_planner": NamedAgent("gemini_planner", cloud, agent_log),

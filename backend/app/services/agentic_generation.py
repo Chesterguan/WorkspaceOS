@@ -26,7 +26,7 @@ from app.models.memory import MemoryEntry
 from app.models.project import Project
 from app.models.sync import GitHubRelease
 from app.schemas.draft import DraftCreate
-from app.services.ai_client import get_cloud_client, get_local_client, OpenAIClient
+from app.services.ai_client import get_cloud_client, get_local_client
 from app.services.repo_context import get_generation_context
 from app.services.draft_service import create_draft
 from app.services.feedback_service import get_preference_summary
@@ -45,18 +45,14 @@ def _get_reviewer():
     """
     Return the reviewer client for draft judging.
 
-    Prefers OpenAI (stronger reasoning) but falls back to the configured
-    cloud client (e.g. Gemini) when no OpenAI API key is present so the
-    pipeline still works in single-provider setups.
+    Routes through get_cloud_client() so CLOUD_AI_PROVIDER is respected.
+    The multi-provider diversity rationale that justifies a direct OpenAI
+    call only applies to the paper-reviewer roundtable (paper_reviewers.py);
+    agentic draft review uses the configured cloud provider like everything else.
     """
     global _reviewer_client
     if _reviewer_client is None:
-        from app.config import settings
-        if settings.openai_api_key:
-            _reviewer_client = OpenAIClient()
-        else:
-            # Fall back to cloud client for review when OpenAI key is absent
-            _reviewer_client = get_cloud_client()
+        _reviewer_client = get_cloud_client()
     return _reviewer_client
 
 
