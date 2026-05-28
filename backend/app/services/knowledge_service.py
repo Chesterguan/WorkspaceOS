@@ -14,7 +14,7 @@ from app.models.knowledge import KnowledgeEdge, KnowledgeNode
 from app.services._hybrid_search import (
     reciprocal_rank_fusion_ids, rerank_passages,
 )
-from app.services.ai_client import get_cloud_client
+from app.services.ai_client import get_cloud_client, get_local_client
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +25,13 @@ class KnowledgeHit:
     score: float
 
 
-async def _embed_query(query: str) -> List[float]:
-    """Wrap ai.embed for easier mocking in tests."""
-    return await get_cloud_client().embed(query)
+async def query_embedding(query: str) -> List[float]:
+    """Embed a query for knowledge search.
+
+    Embeddings are foundation ops — must stay local. See
+    docs/privacy/known-leaks.md#l-1.
+    """
+    return await get_local_client().embed(query)
 
 
 def _scope_clauses(
@@ -101,7 +105,7 @@ async def search_knowledge(
     fetch = limit * 2
 
     try:
-        embedding = await _embed_query(query)
+        embedding = await query_embedding(query)
     except Exception:
         logger.exception("embed failed during knowledge search; using BM25 only")
         embedding = []

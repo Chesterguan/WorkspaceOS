@@ -19,7 +19,7 @@ async def test_search_returns_user_scoped_results(db_session, sample_user):
     ])
     await db_session.commit()
 
-    with patch("app.services.knowledge_service._embed_query",
+    with patch("app.services.knowledge_service.query_embedding",
                new=AsyncMock(return_value=[0.0]*768)):
         hits = await search_knowledge(
             user_id=sample_user.id, query="pgvector", limit=5, db=db_session,
@@ -35,7 +35,7 @@ async def test_search_filters_archived(db_session, sample_user):
         archived=True, created_by="manual_promote",
     ))
     await db_session.commit()
-    with patch("app.services.knowledge_service._embed_query",
+    with patch("app.services.knowledge_service.query_embedding",
                new=AsyncMock(return_value=[0.0]*768)):
         hits = await search_knowledge(
             user_id=sample_user.id, query="pgvector", limit=5, db=db_session,
@@ -54,7 +54,7 @@ async def test_search_scopes_by_project_when_provided(db_session, sample_user, s
                       content="cross-project, no project_id", created_by="manual_promote"),
     ])
     await db_session.commit()
-    with patch("app.services.knowledge_service._embed_query",
+    with patch("app.services.knowledge_service.query_embedding",
                new=AsyncMock(return_value=[0.0]*768)):
         hits = await search_knowledge(
             user_id=sample_user.id, query="decision", limit=5, db=db_session,
