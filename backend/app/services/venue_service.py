@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.venue import VenueCache
 from app.services.agents import extract_json
 from app.services.ai_client import get_cloud_client
+from app.services.egress_recorder import EgressRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,17 @@ async def _infer_with_ai(venue_name: str) -> Optional[VenueGuidelines]:
 
     try:
         client = get_cloud_client()
-        raw = await client.complete(system_prompt, user_prompt)
+        async with EgressRecorder(
+            surface="publish",
+            service="venue_service.suggest",
+            provider=type(client).__name__.lower().replace("client", ""),
+            model=getattr(client, "_model", None) or getattr(client, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", system_prompt)
+            rec.field("project_profile", user_prompt)
+            raw = await client.complete(system_prompt, user_prompt)
         data = extract_json(raw)
         if not data:
             return None
