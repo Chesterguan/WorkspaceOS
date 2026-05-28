@@ -89,6 +89,13 @@ class Settings(BaseSettings):
     # Notion (future)
     notion_api_key: str = ""
 
+    # Explicit list of providers the paper-reviewer roundtable is allowed
+    # to call directly. Bypasses CLOUD_AI_PROVIDER so the roundtable can
+    # use multi-provider critique diversity (the deliberate design intent).
+    # Empty list = roundtable uses only get_cloud_client().
+    # See docs/privacy/known-leaks.md#l-2.
+    paper_reviewer_providers: List[str] = []
+
     # Budget tracking
     daily_budget_warning_usd: float = 5.0  # warn when daily spend exceeds this
 
