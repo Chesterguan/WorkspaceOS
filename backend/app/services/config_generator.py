@@ -44,6 +44,7 @@ from app.schemas.onboarding import (
 )
 from app.services import extensions as ext_service
 from app.services.ai_client import get_cloud_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.event_stream import emit
 
 logger = logging.getLogger(__name__)
@@ -274,7 +275,17 @@ async def _generate_with_llm(answers: OnboardingAnswers) -> Dict[str, object]:
     """
     client = get_cloud_client()
     user = _llm_user_prompt(answers)
-    raw = await client.complete(_LLM_SYSTEM_PROMPT, user)
+    async with EgressRecorder(
+        surface="onboarding",
+        service="config_generator.synthesize_pack",
+        provider=type(client).__name__.lower().replace("client", ""),
+        model=getattr(client, "_model", None) or getattr(client, "chat_model", None),
+        user_id=None,
+        project_id=None,
+    ) as rec:
+        rec.field("system_prompt", _LLM_SYSTEM_PROMPT)
+        rec.field("wizard_answers", user)
+        raw = await client.complete(_LLM_SYSTEM_PROMPT, user)
     data = _parse_llm_json(raw)
     return _normalize_llm_pack(data, answers)
 
