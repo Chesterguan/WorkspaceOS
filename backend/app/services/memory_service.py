@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.memory import MemoryEntry
 from app.services.ai_client import get_local_client
+from app.services.egress_recorder import EgressRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -473,7 +474,18 @@ async def upsert_wiki_summary(
         )
 
     try:
-        wiki_content = await ai.complete(system=_WIKI_SYSTEM, user=user_prompt)
+        async with EgressRecorder(
+            surface="wiki",
+            service="memory_service.update_wiki_summary",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=project_id,
+        ) as rec:
+            rec.field("system_prompt", _WIKI_SYSTEM)
+            rec.field("context_blocks", "\n\n".join(context_parts))
+            rec.field("previous_wiki", existing_entry.content if existing_entry else "")
+            wiki_content = await ai.complete(system=_WIKI_SYSTEM, user=user_prompt)
     except Exception:
         logger.exception("Wiki: AI generation failed for project %s", project_id)
         if existing_entry:
