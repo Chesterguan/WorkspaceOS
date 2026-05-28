@@ -27,6 +27,7 @@ from app.models.project import Project
 from app.models.sync import GitHubRelease
 from app.schemas.draft import DraftCreate
 from app.services.ai_client import get_cloud_client, get_local_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.repo_context import get_generation_context
 from app.services.draft_service import create_draft
 from app.services.feedback_service import get_preference_summary
@@ -220,20 +221,42 @@ async def agentic_generate_draft(
     system, user_prompt = template_fn(ctx)
 
     # --- Step 1: Initial generation (Gemini) ---
-    content = await generator.complete(system, user_prompt)
+    async with EgressRecorder(
+        surface="drafts",
+        service="agentic_generation.run.writer",
+        provider=type(generator).__name__.lower().replace("client", ""),
+        model=getattr(generator, "_model", None) or getattr(generator, "chat_model", None),
+        user_id=None,
+        project_id=project_id,
+    ) as rec:
+        rec.field("system_prompt", system)
+        rec.field("seed", changes_summary)
+        rec.field("memory_context", memory_context)
+        content = await generator.complete(system, user_prompt)
     loop_trace: List[Dict] = []
 
     # --- Step 2: Privacy scan (Local Ollama) ---
     is_clean, scan_msg = await _privacy_scan(content)
     if not is_clean:
         # Auto-revise to remove flagged content
-        content = await generator.complete(
-            system,
-            f"Your previous draft contained private/sensitive information that must be removed.\n"
-            f"Privacy scan result: {scan_msg}\n\n"
-            f"Original draft:\n{content}\n\n"
-            f"Rewrite the draft with ALL sensitive information removed. Output only the clean draft."
-        )
+        async with EgressRecorder(
+            surface="drafts",
+            service="agentic_generation.run.writer",
+            provider=type(generator).__name__.lower().replace("client", ""),
+            model=getattr(generator, "_model", None) or getattr(generator, "chat_model", None),
+            user_id=None,
+            project_id=project_id,
+        ) as rec:
+            rec.field("system_prompt", system)
+            rec.field("seed", f"privacy-fix: {scan_msg[:200]}")
+            rec.field("memory_context", content[:1000])
+            content = await generator.complete(
+                system,
+                f"Your previous draft contained private/sensitive information that must be removed.\n"
+                f"Privacy scan result: {scan_msg}\n\n"
+                f"Original draft:\n{content}\n\n"
+                f"Rewrite the draft with ALL sensitive information removed. Output only the clean draft."
+            )
 
     # --- Step 3: Review loop (OpenAI reviews, Gemini revises) ---
     for round_num in range(1, max_rounds + 1):
@@ -244,7 +267,17 @@ async def agentic_generate_draft(
             "draft_content": content,
             "project_name": project.name,
         })
-        review_response = await reviewer.complete(review_system, review_user)
+        async with EgressRecorder(
+            surface="drafts",
+            service="agentic_generation.run.reviewer",
+            provider=type(reviewer).__name__.lower().replace("client", ""),
+            model=getattr(reviewer, "_model", None) or getattr(reviewer, "chat_model", None),
+            user_id=None,
+            project_id=project_id,
+        ) as rec:
+            rec.field("system_prompt", review_system)
+            rec.field("writer_output", content[:4000])
+            review_response = await reviewer.complete(review_system, review_user)
         score = _parse_score(review_response)
 
         # Privacy scan each revision
@@ -280,7 +313,18 @@ async def agentic_generate_draft(
             + "\n\n".join(revision_notes) +
             "\n\nRewrite the draft addressing all points. Output only the improved draft."
         )
-        content = await generator.complete(system, refine_user)
+        async with EgressRecorder(
+            surface="drafts",
+            service="agentic_generation.run.writer",
+            provider=type(generator).__name__.lower().replace("client", ""),
+            model=getattr(generator, "_model", None) or getattr(generator, "chat_model", None),
+            user_id=None,
+            project_id=project_id,
+        ) as rec:
+            rec.field("system_prompt", system)
+            rec.field("seed", f"round-{round_num}-revise")
+            rec.field("memory_context", review_response[:1000])
+            content = await generator.complete(system, refine_user)
 
     # --- Save final draft ---
     rendered_prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user_prompt}"
