@@ -147,11 +147,22 @@ async def route_to_advisors(user_message: str) -> List[str]:
     IDs are validated against the live persona pool (not a hardcoded dict).
     """
     from app.services.ai_client import get_cloud_client  # local import avoids circular
+    from app.services.egress_recorder import EgressRecorder
 
     try:
         client = get_cloud_client()
         system_prompt = _build_router_prompt()
-        raw = await client.complete(system_prompt, user_message)
+        async with EgressRecorder(
+            surface="roundtable",
+            service="advisors.route_to_advisors",
+            provider=type(client).__name__.lower().replace("client", ""),
+            model=getattr(client, "_model", None) or getattr(client, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", system_prompt)
+            rec.field("user_message", user_message)
+            raw = await client.complete(system_prompt, user_message)
 
         # Strip markdown fences if the model wraps in ```json ... ```
         cleaned = raw.strip()
