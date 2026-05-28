@@ -44,6 +44,7 @@ async def test_knowledge_extractor_embed_uses_local_client():
     assert result == [0.0] * 768
 
 
+import uuid
 import importlib
 import inspect
 from pathlib import Path
@@ -79,3 +80,30 @@ def test_no_direct_openai_client_instantiation_outside_ai_client():
         "get_cloud_client() or get_paper_reviewer_client():\n  "
         + "\n  ".join(offenders)
     )
+
+
+@pytest.mark.asyncio
+async def test_ingest_propagates_privacy_tag_to_entry(db_session, sample_project):
+    """Privacy tag from user_tags must land in MemoryEntry.metadata_['tags']."""
+    from app.services import file_ingest_service
+    from app.services.file_ingest_service import ingest_file
+    from app.services.privacy_tags import LOCAL_ONLY
+
+    # Stub out auto_tag to avoid a real cloud AI call in this unit test.
+    # The contract under test is tag propagation, not AI tagging.
+    async def _fake_auto_tag(filename, text_preview, mime_type):
+        return {"tags": ["data", "csv"], "summary": "test csv"}
+
+    with patch.object(file_ingest_service, "auto_tag", side_effect=_fake_auto_tag):
+        entry = await ingest_file(
+            project_id=sample_project.id,
+            filename="results.csv",
+            content_bytes=b"col_a,col_b\n1,2\n3,4\n",
+            source="manual",
+            mime_type="text/csv",
+            user_tags=[LOCAL_ONLY],
+            db=db_session,
+        )
+
+    tags = (entry.metadata_ or {}).get("tags", [])
+    assert LOCAL_ONLY in tags, f"expected {LOCAL_ONLY} in {tags}"
