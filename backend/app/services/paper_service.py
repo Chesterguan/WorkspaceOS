@@ -32,6 +32,7 @@ from app.models.blog import BlogPost, BlogPostVersion
 from app.models.project import Project
 from app.schemas.blog import BlogPostCreate, BlogPostUpdate
 from app.services.ai_client import get_cloud_client, get_local_client, get_paper_reviewer_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.blog_service import create_blog_post, get_version_chain, update_blog_post
 from app.services.narrative_service import build_context_block, get_or_create
 from app.services.repo_context import get_generation_context
@@ -479,7 +480,19 @@ async def generate_paper(
     )
 
     try:
-        initial_draft = await cloud_ai.complete(system=_WRITER_SYSTEM, user=draft_prompt)
+        async with EgressRecorder(
+            surface="paper",
+            service="paper_service.generate_paper",
+            provider=type(cloud_ai).__name__.lower().replace("client", ""),
+            model=getattr(cloud_ai, "_model", None) or getattr(cloud_ai, "chat_model", None),
+            user_id=None,
+            project_id=project_id,
+        ) as rec:
+            rec.field("system_prompt", _WRITER_SYSTEM)
+            rec.field("paper_body", draft_prompt)
+            rec.field("venue", target_venue or "")
+            rec.field("additional_instructions", additional_instructions or "")
+            initial_draft = await cloud_ai.complete(system=_WRITER_SYSTEM, user=draft_prompt)
     except Exception:
         logger.exception("paper_service: initial draft generation failed")
         raise
@@ -894,7 +907,19 @@ async def generate_portfolio_paper(
     )
 
     try:
-        initial_draft = await cloud_ai.complete(system=_WRITER_SYSTEM, user=draft_prompt)
+        async with EgressRecorder(
+            surface="paper",
+            service="paper_service.generate_portfolio_paper",
+            provider=type(cloud_ai).__name__.lower().replace("client", ""),
+            model=getattr(cloud_ai, "_model", None) or getattr(cloud_ai, "chat_model", None),
+            user_id=None,
+            project_id=first_project_id,
+        ) as rec:
+            rec.field("system_prompt", _WRITER_SYSTEM)
+            rec.field("paper_body", draft_prompt)
+            rec.field("venue", target_venue or "")
+            rec.field("additional_instructions", additional_instructions or "")
+            initial_draft = await cloud_ai.complete(system=_WRITER_SYSTEM, user=draft_prompt)
     except Exception:
         logger.exception("paper_service: portfolio paper initial draft generation failed")
         raise
@@ -1201,7 +1226,19 @@ async def generate_paper_titles(
     )
 
     try:
-        raw = await ai.complete(system=system, user=user)
+        async with EgressRecorder(
+            surface="paper",
+            service="paper_service.generate_paper_titles",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=project_id,
+        ) as rec:
+            rec.field("system_prompt", system)
+            rec.field("paper_body", narrative_summary)
+            rec.field("venue", target_venue or "")
+            rec.field("additional_instructions", "")
+            raw = await ai.complete(system=system, user=user)
     except Exception:
         logger.exception("generate_paper_titles: AI call failed")
         return []
