@@ -13,6 +13,7 @@ from app.models.memory import MemoryEntry
 from app.models.project import Project
 from app.models.sync import GitHubRelease, SyncRun
 from app.services.ai_client import get_ai_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.draft_service import create_draft
 from app.services.memory_service import get_recent_entries, search_memory
 from app.services.narrative_service import build_context_block, get_or_create
@@ -171,7 +172,18 @@ async def generate_draft(
     rendered_prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
 
     ai = get_ai_client()
-    content = await ai.complete(system, user)
+    async with EgressRecorder(
+        surface="drafts",
+        service="ai_generation.generate_draft",
+        provider=type(ai).__name__.lower().replace("client", ""),
+        model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+        user_id=None,
+        project_id=project_id,
+    ) as rec:
+        rec.field("system_prompt", system)
+        rec.field("seed", changes_summary)
+        rec.field("memory_context", memory_context)
+        content = await ai.complete(system, user)
 
     draft_data = DraftCreate(
         platform=platform,
@@ -244,7 +256,20 @@ async def generate_portfolio_draft(
     rendered_prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
 
     ai_client = get_ai_client()
-    content = await ai_client.complete(system, user)
+    async with EgressRecorder(
+        surface="drafts",
+        service="ai_generation.expand_draft",
+        provider=type(ai_client).__name__.lower().replace("client", ""),
+        model=getattr(ai_client, "_model", None) or getattr(ai_client, "chat_model", None),
+        user_id=None,
+        project_id=first_project_id,
+    ) as rec:
+        rec.field("system_prompt", system)
+        rec.field("seed", theme or "portfolio")
+        rec.field("memory_context", "\n".join(
+            pc.get("memory_context", "") for pc in project_contexts
+        ))
+        content = await ai_client.complete(system, user)
 
     # Compose a descriptive title for the draft
     names_joined = ", ".join(project_names)
@@ -309,7 +334,18 @@ async def generate_evolution_summary(sync_run_id: uuid.UUID, db: AsyncSession) -
     system, user = template_fn(ctx)
 
     ai = get_ai_client()
-    summary = await ai.complete(system, user)
+    async with EgressRecorder(
+        surface="drafts",
+        service="ai_generation.summarize",
+        provider=type(ai).__name__.lower().replace("client", ""),
+        model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+        user_id=None,
+        project_id=sync_run.project_id,
+    ) as rec:
+        rec.field("system_prompt", system)
+        rec.field("seed", ctx.get("commit_list", "") + ctx.get("release_list", ""))
+        rec.field("memory_context", ctx.get("project_name", ""))
+        summary = await ai.complete(system, user)
 
     # Persist the summary on the sync run
     sync_run.evolution_summary = summary
