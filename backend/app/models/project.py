@@ -37,6 +37,11 @@ class Project(Base):
     # Local filesystem path for workspace scanning (mounted via Docker volume)
     local_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
+    # Privacy default for entries without an explicit privacy:* tag.
+    # 'open' → untagged entries treated as public; 'strict' → treated as redact-content.
+    privacy_default: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="open", default="open"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

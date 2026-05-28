@@ -26,6 +26,8 @@ REDACT_VALUES = "privacy:redact-values"
 PUBLIC = "privacy:public"
 
 _RESERVED = {LOCAL_ONLY, REDACT_CONTENT, REDACT_VALUES, PUBLIC}
+# Public alias for use by router-layer code that shouldn't reach for the underscore name.
+RESERVED_TAGS = _RESERVED
 
 
 class PrivacyPolicy(enum.Enum):

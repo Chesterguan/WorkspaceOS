@@ -15,6 +15,8 @@ from app.dependencies import (
 from app.models.draft import Draft
 from app.models.project import Project
 from app.models.sync import SyncRun
+from pydantic import BaseModel
+
 from app.schemas.project import (
     ProjectCreate,
     ProjectResponse,
@@ -254,3 +256,43 @@ async def delete_project(
             "repo_cache cleanup failed for deleted project %s: %s",
             project_id, exc,
         )
+
+
+# ---------------------------------------------------------------------------
+# Privacy default — /projects/{project_id}/privacy-default
+# ---------------------------------------------------------------------------
+
+class _PrivacyDefaultPatch(BaseModel):
+    privacy_default: str  # 'open' | 'strict'
+
+
+@router.patch("/{project_id}/privacy-default")
+async def patch_privacy_default(
+    project_id: uuid.UUID,
+    body: _PrivacyDefaultPatch,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
+    """Set the project's privacy default ('open' or 'strict').
+
+    Ownership is enforced: JWT callers must own the project; API key
+    callers (admin/scripts) may patch any project. Unknown or
+    unauthorised projects both return 404 — callers cannot probe
+    whether a project exists.
+    """
+    if body.privacy_default not in {"open", "strict"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="privacy_default must be 'open' or 'strict'",
+        )
+    query = select(Project).where(Project.id == project_id)
+    if user_id:
+        query = query.where(Project.user_id == uuid.UUID(user_id))
+    result = await db.execute(query)
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+    project.privacy_default = body.privacy_default
+    await db.flush()
+    return {"id": str(project.id), "privacy_default": project.privacy_default}

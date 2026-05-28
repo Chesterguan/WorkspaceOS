@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel
+
 from app.dependencies import (
     get_db,
     get_optional_user_id,
@@ -12,6 +14,7 @@ from app.dependencies import (
     require_owned_project,
     verify_api_key,
 )
+from app.services.privacy_tags import RESERVED_TAGS
 from app.models.memory import MemoryEntry
 from app.models.project import Project
 from app.schemas.memory import (
@@ -155,3 +158,56 @@ async def backfill_embeddings(
         )
     updated = await memory_service.backfill_embeddings(db)
     return {"updated": updated, "message": f"Backfilled {updated} entries"}
+
+
+# ---------------------------------------------------------------------------
+# Tag editing — /memory/{entry_id}/tags
+# ---------------------------------------------------------------------------
+
+class _TagsPatch(BaseModel):
+    tags: List[str]
+
+
+@global_router.patch("/{entry_id}/tags")
+async def patch_tags(
+    entry_id: uuid.UUID,
+    body: _TagsPatch,
+    db: AsyncSession = Depends(get_db),
+    _key: str = Depends(verify_api_key),
+    jwt_user_id: Optional[str] = Depends(get_optional_user_id),
+) -> dict:
+    """Replace the tag list on a memory entry.
+
+    Ownership is enforced: the entry's project must be owned by the
+    authenticated user (404 for missing or unauthorised — don't reveal
+    whether the entry exists at all).
+
+    Multiple privacy:* tags collapse to one — if the request contains
+    more than one, only the last-listed one is kept (last-writer-wins
+    within a single request). Non-privacy tags are preserved verbatim.
+    """
+    entry = await db.get(MemoryEntry, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="memory entry not found")
+
+    # Ownership check via the owning project — adapt to the JWT vs API-key pattern
+    # used throughout this file: API key callers (jwt_user_id is None) pass through.
+    project = await db.get(Project, entry.project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="memory entry not found")
+    if jwt_user_id is not None:
+        owner_uuid = parse_jwt_user_uuid(jwt_user_id)
+        if project.user_id != owner_uuid:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="memory entry not found")
+
+    # Collapse multiple privacy:* tags — last one in the list wins.
+    explicit_privacy = [t for t in body.tags if t in RESERVED_TAGS]
+    cleaned_tags: List[str] = [t for t in body.tags if t not in RESERVED_TAGS]
+    if explicit_privacy:
+        cleaned_tags.append(explicit_privacy[-1])
+
+    md = dict(entry.metadata_ or {})
+    md["tags"] = cleaned_tags
+    entry.metadata_ = md
+    await db.commit()
+    return {"id": str(entry.id), "tags": cleaned_tags}
