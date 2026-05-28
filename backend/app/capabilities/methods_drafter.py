@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.blog import BlogPost
 from app.models.knowledge import KnowledgeNode
 from app.services.ai_client import get_cloud_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.event_stream import emit
 
 logger = logging.getLogger(__name__)
@@ -161,7 +162,18 @@ async def draft_methods_handler(
 
     try:
         ai = get_cloud_client()
-        drafted = await ai.complete(system=system_prompt, user=context_text)
+        async with EgressRecorder(
+            surface="paper",
+            service="methods_drafter.draft",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=user_id,
+            project_id=project_id,
+        ) as rec:
+            rec.field("system_prompt", system_prompt)
+            rec.field("paper_section", "Methods")
+            rec.field("context", context_text)
+            drafted = await ai.complete(system=system_prompt, user=context_text)
     except Exception as exc:
         logger.exception("draft_methods: cloud LLM call failed")
         emit("error", "draft-methods", f"LLM call failed: {exc}")
