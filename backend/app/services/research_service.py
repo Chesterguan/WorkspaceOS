@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.chat import ChatMessage
 from app.models.project import Project
 from app.services.ai_client import get_cloud_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.narrative_service import build_context_block, get_or_create
 from app.services.paper_reviewers import (
     REVIEWER_REGISTRY,
@@ -454,7 +455,22 @@ async def send_research_message(
         system = "\n\n".join(system_parts)
 
         try:
-            reply_text = await ai.complete(system=system, user=user_prompt)
+            async with EgressRecorder(
+                surface="research",
+                service="research_service.send_message",
+                provider=type(ai).__name__.lower().replace("client", ""),
+                model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+                user_id=None,
+                project_id=project_id,
+            ) as rec:
+                rec.field("system_prompt", system)
+                rec.field("lit_context", context_block)
+                rec.field("history", "\n".join(
+                    f"**{m.role}:** {m.content[:500]}"
+                    for m in history
+                ))
+                rec.field("user_message", user_message)
+                reply_text = await ai.complete(system=system, user=user_prompt)
         except Exception:
             logger.exception("Research reviewer %s failed", rid)
             reply_text = "I encountered an error generating a response. Please try again."
