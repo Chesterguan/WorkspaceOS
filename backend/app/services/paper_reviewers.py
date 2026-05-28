@@ -20,6 +20,7 @@ import yaml
 from app.schemas.domain_config import Persona, PersonaPool
 from app.services.agents import AgentLog, NamedAgent
 from app.services.ai_client import get_cloud_client, get_paper_reviewer_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.domain_config import get_loader
 from app.services.extensions import get_all_extensions
 
@@ -141,12 +142,23 @@ async def _run_single_reviewer(
         user_prompt += f"\n\nTARGET VENUE GUIDELINES:\n{venue_text}"
 
     try:
-        result = await agent.complete_json(
-            system=reviewer.system_prompt,
-            user=user_prompt,
-            action="roundtable_review",
-            section=reviewer.id,
-        )
+        async with EgressRecorder(
+            surface="paper",
+            service="paper_reviewers.run_review_roundtable",
+            provider=type(agent.client).__name__.lower().replace("client", ""),
+            model=getattr(agent.client, "_model", None) or getattr(agent.client, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", reviewer.system_prompt or "")
+            rec.field("paper_content", paper_content)
+            rec.field("venue_text", venue_text)
+            result = await agent.complete_json(
+                system=reviewer.system_prompt,
+                user=user_prompt,
+                action="roundtable_review",
+                section=reviewer.id,
+            )
     except Exception as exc:
         logger.error("Reviewer %s failed: %s", reviewer.id, exc, exc_info=True)
         result = {}
@@ -418,7 +430,18 @@ async def route_to_research_reviewers(user_message: str) -> List[str]:
     )
     try:
         ai = get_cloud_client()
-        raw = await ai.complete(system=_RESEARCH_ROUTER_SYSTEM, user=user_prompt)
+        async with EgressRecorder(
+            surface="paper",
+            service="paper_reviewers.route_to_research_reviewers",
+            provider=type(ai).__name__.lower().replace("client", ""),
+            model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+            user_id=None,
+            project_id=None,
+        ) as rec:
+            rec.field("system_prompt", _RESEARCH_ROUTER_SYSTEM)
+            rec.field("paper_content", user_message)
+            rec.field("venue_text", "")
+            raw = await ai.complete(system=_RESEARCH_ROUTER_SYSTEM, user=user_prompt)
         cleaned = raw.strip()
         if cleaned.startswith("```"):
             match = re.search(r"```(?:json)?\s*\n?(.*?)```", cleaned, re.DOTALL)
