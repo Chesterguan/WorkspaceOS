@@ -12,6 +12,7 @@ from app.models.project import Project
 from app.models.sync import GitHubCommit, GitHubRelease, SyncRun
 from app.schemas.blog import BlogPostCreate, BlogPostUpdate
 from app.services.ai_client import get_ai_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.memory_service import get_recent_entries, search_memory
 from app.services.narrative_service import build_context_block, get_or_create
 from app.utils.prompts import get_template
@@ -192,7 +193,19 @@ async def generate_blog_draft(
     system, user = template_fn(ctx)
 
     ai = get_ai_client()
-    generated_content = await ai.complete(system, user)
+    async with EgressRecorder(
+        surface="drafts",
+        service="blog_service.generate_blog",
+        provider=type(ai).__name__.lower().replace("client", ""),
+        model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+        user_id=None,
+        project_id=project_id,
+    ) as rec:
+        rec.field("system_prompt", system)
+        rec.field("seed", ctx.get("changes_summary", "") + ctx.get("context_hint", ""))
+        rec.field("memory_context", memory_context)
+        rec.field("style_summary", ctx.get("one_liner", ""))
+        generated_content = await ai.complete(system, user)
 
     # Save the generated content into the post (snapshot current first)
     update_data = BlogPostUpdate(
