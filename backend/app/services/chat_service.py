@@ -20,6 +20,7 @@ from app.models.draft import Draft
 from app.models.project import Project
 from app.services import knowledge_extractor
 from app.services.ai_client import get_cloud_client
+from app.services.egress_recorder import EgressRecorder
 from app.services.advisors import ADVISOR_REGISTRY, get_advisor, route_to_advisors
 from app.services.memory_service import search_memory
 from app.services.narrative_service import build_context_block, get_or_create
@@ -474,7 +475,22 @@ async def send_message(
             system = advisor.system_prompt
 
         try:
-            reply_text = await ai.complete(system=system, user=user_prompt)
+            async with EgressRecorder(
+                surface="roundtable",
+                service="chat_service.send_to_advisors",
+                provider=type(ai).__name__.lower().replace("client", ""),
+                model=getattr(ai, "_model", None) or getattr(ai, "chat_model", None),
+                user_id=None,
+                project_id=project_id,
+            ) as rec:
+                rec.field("system_prompt", system or "")
+                rec.field("history", "\n".join(
+                    f"**{m.role}:** {m.content[:500]}"
+                    for m in history
+                ))
+                rec.field("user_message", user_message)
+                rec.field("workspace_context", context_block)
+                reply_text = await ai.complete(system=system, user=user_prompt)
         except Exception:
             logger.exception("Advisor %s call failed", aid)
             reply_text = "I encountered an error generating a response. Please try again."
