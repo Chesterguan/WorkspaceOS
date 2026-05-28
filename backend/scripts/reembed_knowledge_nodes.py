@@ -26,22 +26,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("reembed")
 
 
-async def _process_batch(db: AsyncSession, nodes: List[KnowledgeNode], dry_run: bool) -> int:
+async def _process_batch(
+    db: AsyncSession, nodes: List[KnowledgeNode], dry_run: bool
+) -> tuple:
     ai = get_local_client()
     updated = 0
+    skipped = 0
     for node in nodes:
         embed_text = f"{node.title}\n\n{node.content or ''}"[:8000]
         try:
             vec = await ai.embed(embed_text)
         except Exception:
             log.exception("embed failed for node %s; skipping", node.id)
+            skipped += 1
             continue
         if not dry_run:
             node.embedding = vec
         updated += 1
     if not dry_run:
         await db.commit()
-    return updated
+    return updated, skipped
 
 
 async def main() -> int:
@@ -50,19 +54,23 @@ async def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    total = 0
+    total_updated = 0
+    total_skipped = 0
     async with AsyncSessionLocal() as db:
-        result = await db.execute(select(KnowledgeNode).where(KnowledgeNode.archived == False))
+        result = await db.execute(
+            select(KnowledgeNode).where(KnowledgeNode.archived.is_(False))
+        )
         all_nodes = list(result.scalars().all())
         log.info("found %d nodes to re-embed", len(all_nodes))
 
         for i in range(0, len(all_nodes), args.batch_size):
             batch = all_nodes[i:i + args.batch_size]
-            updated = await _process_batch(db, batch, args.dry_run)
-            total += updated
-            log.info("batch %d-%d: %d updated", i, i + len(batch), updated)
+            updated, skipped = await _process_batch(db, batch, args.dry_run)
+            total_updated += updated
+            total_skipped += skipped
+            log.info("batch %d-%d: %d updated, %d skipped", i, i + len(batch), updated, skipped)
 
-    log.info("done. updated %d nodes (dry_run=%s)", total, args.dry_run)
+    log.info("done. updated %d nodes, skipped %d (dry_run=%s)", total_updated, total_skipped, args.dry_run)
     return 0
 
 

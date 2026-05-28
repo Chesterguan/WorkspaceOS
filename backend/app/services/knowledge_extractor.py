@@ -240,12 +240,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge import KnowledgeEdge, KnowledgeNode
 from app.models.chat import ChatMessage
-from app.services.ai_client import get_cloud_client
+from app.services.ai_client import get_cloud_client, get_local_client
 
 
 async def _embed(text_to_embed: str) -> List[float]:
     """Wrap ai_client embed for easier mocking in tests."""
-    ai = get_cloud_client()
+    # Embeddings stay local — same invariant as memory_service.add_entry and
+    # knowledge_service.query_embedding. See docs/privacy/known-leaks.md#l-1.
+    ai = get_local_client()
     return await ai.embed(text_to_embed)
 
 

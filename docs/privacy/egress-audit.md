@@ -78,7 +78,7 @@ For every cloud-egress AI call we record five fields:
 | **Identifiability** | **VERY HIGH** — direct user-authored content, including decisions and hypotheses |
 | **Inspectable** | NO |
 | **Destination** | Gemini (`gemini-2.0-flash`) |
-| **Note** | Also performs a query-embedding call which **currently hits cloud — see [L-1](./known-leaks.md#l-1)** |
+| **Note** | Embedding now local after L-1 extended fix. |
 
 ### Generation: drafts & narratives
 

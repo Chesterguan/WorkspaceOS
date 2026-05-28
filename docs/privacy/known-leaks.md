@@ -26,6 +26,9 @@ resolves to.
 Gemini (default) or OpenAI. Identifiability: **MEDIUM** (queries reveal
 research intent / topic focus).
 
+Adjacent leak in `knowledge_extractor.py:248` (the `_embed` helper) was
+also fixed in the same change set.
+
 **Fix sketch.** One-line change: `get_cloud_client()` →
 `get_local_client()`. The embedding column is 768-dim — both
 `nomic-embed-text` (local default) and the Gemini Matryoshka path
