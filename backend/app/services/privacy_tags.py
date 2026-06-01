@@ -44,6 +44,18 @@ _TAG_TO_POLICY = {
     PUBLIC: PrivacyPolicy.PUBLIC,
 }
 
+# Most-restrictive-first. When an entry carries conflicting privacy:* tags
+# (e.g. an AI-emitted privacy:public plus a user-set privacy:local-only),
+# resolution must be safety-first and deterministic — never depend on tag
+# order, which differs between write paths (ingest prepends AI tags, the
+# PATCH endpoint keeps last). The earliest policy in this list wins.
+_POLICY_PRECEDENCE = [
+    PrivacyPolicy.LOCAL_ONLY,
+    PrivacyPolicy.REDACT_CONTENT,
+    PrivacyPolicy.REDACT_VALUES,
+    PrivacyPolicy.PUBLIC,
+]
+
 
 def resolve_policy(
     entry_tags: Optional[List[str]],
@@ -51,13 +63,15 @@ def resolve_policy(
 ) -> PrivacyPolicy:
     """Pick the effective policy for an entry.
 
-    Explicit privacy:* tag wins. Otherwise: strict default → REDACT_CONTENT,
-    open default → PUBLIC.
+    When explicit privacy:* tags are present, the MOST RESTRICTIVE one wins
+    (local-only > redact-content > redact-values > public) regardless of tag
+    order. Otherwise: strict default → REDACT_CONTENT, open default → PUBLIC.
     """
     tags = entry_tags or []
-    for tag in tags:
-        if tag in _TAG_TO_POLICY:
-            return _TAG_TO_POLICY[tag]
+    present = {_TAG_TO_POLICY[tag] for tag in tags if tag in _TAG_TO_POLICY}
+    for policy in _POLICY_PRECEDENCE:
+        if policy in present:
+            return policy
     if project_default == "strict":
         return PrivacyPolicy.REDACT_CONTENT
     return PrivacyPolicy.PUBLIC

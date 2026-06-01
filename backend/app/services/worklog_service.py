@@ -2,6 +2,7 @@
 import io
 import logging
 import re
+import uuid
 from datetime import date
 from typing import Any, Dict, List, Optional
 
@@ -214,6 +215,7 @@ async def generate_report(
     period_data: Dict[str, Any],
     goals: Optional[List[Dict[str, str]]] = None,
     additional_instructions: Optional[str] = None,
+    user_id: Optional[uuid.UUID] = None,
 ) -> str:
     """Call cloud AI to generate the progress report markdown."""
     from app.services.domain_config import get_loader
@@ -281,7 +283,7 @@ async def generate_report(
         service="worklog_service.generate_report",
         provider=type(client).__name__.lower().replace("client", ""),
         model=getattr(client, "_model", None) or getattr(client, "chat_model", None),
-        user_id=None,
+        user_id=user_id,
         project_id=None,
     ) as rec:
         rec.field("system_prompt", system_prompt)

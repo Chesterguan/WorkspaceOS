@@ -121,10 +121,29 @@ class EgressRecorder:
 async def _persist(payload: Dict[str, Any]) -> None:
     """Write one egress_logs row. Separated so tests can monkeypatch."""
     async with AsyncSessionLocal() as db:
+        user_id = payload["user_id"]
+        project_id = payload["project_id"]
+        # Backfill the owner from the project when the call site only had a
+        # project in scope. The audit feed (GET /egress/recent) filters
+        # strictly on user_id, so a NULL here makes the row invisible to the
+        # very user it belongs to. Project ownership is the user, so this is
+        # the correct attribution. One extra read per cloud call, off the
+        # request path.
+        if user_id is None and project_id is not None:
+            from sqlalchemy import select
+
+            from app.models.project import Project
+
+            user_id = (
+                await db.execute(
+                    select(Project.user_id).where(Project.id == project_id)
+                )
+            ).scalar_one_or_none()
+
         row = EgressLog(
             ts=payload["ts"],
-            user_id=payload["user_id"],
-            project_id=payload["project_id"],
+            user_id=user_id,
+            project_id=project_id,
             surface=payload["surface"],
             service=payload["service"],
             provider=payload["provider"],

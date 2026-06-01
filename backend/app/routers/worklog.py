@@ -70,6 +70,7 @@ async def generate_worklog(
         period_data,
         goals=goals_dicts,
         additional_instructions=body.additional_instructions,
+        user_id=parse_jwt_user_uuid(jwt_user_id) if jwt_user_id else None,
     )
 
     # Build title from period and project names

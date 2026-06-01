@@ -36,3 +36,24 @@ def test_public_tag_overrides_strict_default():
         project_default="strict",
     )
     assert policy is PrivacyPolicy.PUBLIC
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [
+        [PUBLIC, LOCAL_ONLY],  # AI-emitted public first, user local-only second
+        [LOCAL_ONLY, PUBLIC],  # reverse order
+    ],
+)
+def test_conflicting_tags_resolve_to_most_restrictive(tags):
+    """M-1: with conflicting privacy:* tags, the most restrictive wins
+    regardless of order. An AI-emitted privacy:public must never override a
+    user's privacy:local-only just because of list position."""
+    assert resolve_policy(tags, project_default="open") is PrivacyPolicy.LOCAL_ONLY
+
+
+def test_restrictiveness_ordering_is_total():
+    """redact-content beats redact-values beats public, order-independent."""
+    assert resolve_policy([PUBLIC, REDACT_VALUES]) is PrivacyPolicy.REDACT_VALUES
+    assert resolve_policy([REDACT_VALUES, REDACT_CONTENT]) is PrivacyPolicy.REDACT_CONTENT
+    assert resolve_policy([PUBLIC, REDACT_CONTENT, REDACT_VALUES]) is PrivacyPolicy.REDACT_CONTENT

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.database import AsyncSessionLocal
 from app.services.egress_recorder import EgressRecorder, RedactionSummary
 
 
@@ -40,3 +41,35 @@ async def test_recorder_records_field_bytes_and_total(monkeypatch):
     assert payload["fields"]["venue"] == 9
     assert payload["total_bytes"] == 20
     assert payload["redaction"]["spans_replaced"] == 2
+
+
+@pytest.mark.asyncio
+async def test_persist_backfills_user_id_from_project_owner(db_session, sample_project):
+    """H-1: a recorder with only project_id in scope must still land a row
+    attributed to the project owner — otherwise the audit feed (which filters
+    on user_id) never shows it. Persist runs for real against the DB here."""
+    from sqlalchemy import select, delete
+    from app.models.egress_log import EgressLog
+
+    async with EgressRecorder(
+        surface="drafts",
+        service="blog_service.generate_blog",
+        provider="gemini",
+        model="gemini-2.0-flash",
+        user_id=None,                       # call site had no user, only a project
+        project_id=sample_project.id,
+    ) as rec:
+        rec.field("seed", "draft seed")
+
+    # Read back from a fresh session (persist commits independently).
+    async with AsyncSessionLocal() as check:
+        row = (
+            await check.execute(
+                select(EgressLog).where(EgressLog.project_id == sample_project.id)
+            )
+        ).scalar_one()
+        assert row.user_id == sample_project.user_id
+        # Cleanup so reruns don't accumulate (FK CASCADE would also catch it
+        # at sample_user teardown, but be explicit).
+        await check.execute(delete(EgressLog).where(EgressLog.id == row.id))
+        await check.commit()
